@@ -56,3 +56,55 @@ flowchart LR
 ```
 
 Every session of the process adds a set of nodes, which are identified by their ids. To allow undoing insert operations a log.json file is kept with timestamp as key and list of inserted node ids as values.
+
+## Setup
+
+### Neo4j
+
+Neo4j Desktop is recommended — provides visual graph exploration alongside the database.
+
+1. Download and install [Neo4j Desktop](https://neo4j.com/download/)
+2. Create a new Project, then add a local DBMS (any recent version, 5.x recommended)
+3. Set a password and start the DBMS
+4. Note connection details (default: `bolt://localhost:7687`, user `neo4j`)
+5. Optionally install **APOC** plugin via the DBMS plugins panel — useful for bulk operations
+
+Configure connection in your environment:
+```
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your_password
+NEO4J_DATABASE=neo4j
+```
+
+`NEO4J_DATABASE` matches the database name shown in Neo4j Desktop (default database is `neo4j`). To use a different database, create it via Neo4j Desktop → DBMS → Manage → Databases, then set its name here.
+
+### Weaviate
+
+Follow the [official Weaviate installation guide](https://weaviate.io/developers/weaviate/installation) to run a local instance. Docker is the recommended approach for local development.
+
+Configure connection in your environment:
+```
+WEAVIATE_HOST=localhost
+WEAVIATE_PORT=8080
+WEAVIATE_COLLECTION=your_collection_name
+```
+
+`WEAVIATE_COLLECTION` is the name of the Weaviate collection that stores entry vectors. Collections can be inspected via the Weaviate console at `http://localhost:8080/v1/schema`.
+
+### Example `.env`
+
+Copy and fill in values:
+
+```env
+# Neo4j
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your_password
+NEO4J_DATABASE=neo4j
+
+# Weaviate
+WEAVIATE_HOST=localhost
+WEAVIATE_PORT=8080
+WEAVIATE_COLLECTION=your_collection_name
+```
