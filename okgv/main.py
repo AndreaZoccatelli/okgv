@@ -4,7 +4,7 @@ CLI for AI agents to interact with the self-organized knowledge base.
 Commands:
   least-topic    — Topic with fewest entries.
   similar        — Top-N most similar entries to a candidate within a topic (with content).
-  submit         — Upsert entry into both Neo4j and Weaviate.
+  submit         — Upsert entry into both graph and vector DBs.
   similar-batch  — Batch version of similar: single model load for N candidates.
   submit-batch   — Batch version of submit: single model load for N entries.
 
@@ -25,7 +25,7 @@ Exit codes:
   1 = general failure
   2 = usage error (bad input, missing fields)
   3 = resource not found (topic, collection)
-  4 = connection error (Neo4j or Weaviate unreachable)
+  4 = connection error (graph or vector DB unreachable)
 
 Examples:
   python candidate.py least-topic
@@ -45,21 +45,11 @@ import click
 
 _KB_DIR = Path(__file__).parent
 sys.path.insert(0, str(_KB_DIR))
-sys.path.insert(0, str(_KB_DIR / "neo4j"))
-sys.path.insert(0, str(_KB_DIR / "weaviate"))
 
-from neo4j_utils import Neo4jEntry, get_by_id as neo4j_get_by_id
-from upload_to_neo4j import DatasetEntry
-from upload_to_neo4j import upload_entry as neo4j_upload_entry
-from upload_to_weaviate import upload_entry as weaviate_upload_entry
-from weaviate_utils import (
-    WeaviateEntry,
-    get_by_id,
-    get_by_ids,
-    get_top_n_by_similarity,
-    make_embedder,
-)
-
+from protocols import GraphDB, VectorDB, VectorEntry
+from embedding import make_embedder
+from graph.client import Neo4jGraphDB
+from vector.client import WeaviateVectorDB
 from hashing import entry_id
 
 LOG_FILE = _KB_DIR / "log.json"
@@ -137,46 +127,37 @@ def _log(msg: str) -> None:
 # ── DB connections ────────────────────────────────────────────────────────
 
 
-def connect_neo4j():
-    from neo4j import GraphDatabase
-
+def connect_graph_db() -> GraphDB:
     try:
-        driver = GraphDatabase.driver(
-            _env("NEO4J_URI", "bolt://localhost:7687"),
-            auth=(_env("NEO4J_USER", "neo4j"), _env("NEO4J_PASSWORD", "password")),
+        return Neo4jGraphDB(
+            uri=_env("NEO4J_URI", "bolt://localhost:7687"),
+            user=_env("NEO4J_USER", "neo4j"),
+            password=_env("NEO4J_PASSWORD", "password"),
+            database=_env("NEO4J_DATABASE", "neo4j"),
         )
-        driver.verify_connectivity()
-        return driver
     except Exception as e:
         _err(
-            "neo4j_connection_failed",
+            "graph_db_connection_failed",
             detail=str(e),
-            suggestion="Check NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD env vars",
+            suggestion="Check NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, NEO4J_DATABASE env vars",
             exit_code=EXIT_CONNECTION,
         )
 
 
-def connect_weaviate():
-    import weaviate
-
+def connect_vector_db() -> VectorDB:
     try:
-        api_key = os.getenv("WEAVIATE_API_KEY")
-        auth = weaviate.auth.AuthApiKey(api_key) if api_key else None
-        host = _env("WEAVIATE_HOST", "localhost")
-        return weaviate.connect_to_custom(
-            http_host=host,
+        return WeaviateVectorDB(
+            host=_env("WEAVIATE_HOST", "localhost"),
             http_port=_env_int("WEAVIATE_PORT", 8080),
-            http_secure=False,
-            grpc_host=host,
             grpc_port=_env_int("WEAVIATE_GRPC_PORT", 50051),
-            grpc_secure=False,
-            auth_credentials=auth,
+            collection_name=_env("WEAVIATE_COLLECTION", "knowledge_base"),
+            api_key=os.getenv("WEAVIATE_API_KEY"),
         )
     except Exception as e:
         _err(
-            "weaviate_connection_failed",
+            "vector_db_connection_failed",
             detail=str(e),
-            suggestion="Check WEAVIATE_HOST, WEAVIATE_PORT env vars",
+            suggestion="Check WEAVIATE_HOST, WEAVIATE_PORT, WEAVIATE_COLLECTION env vars",
             exit_code=EXIT_CONNECTION,
         )
 
@@ -188,56 +169,35 @@ def _get_embedder():
 # ── Core logic ────────────────────────────────────────────────────────────
 
 
-def get_topic_entry_counts(neo4j_session) -> dict[str, int]:
-    result = neo4j_session.run(
-        """
-        MATCH (t:Topic)
-        RETURN t.name AS topic, coalesce(t.entry_count, 0) AS count
-        """
-    )
-    return {r["topic"]: r["count"] for r in result}
-
-
-def get_entry_ids_for_topic(neo4j_session, topic: str) -> list[str]:
-    result = neo4j_session.run(
-        """
-        MATCH (t:Topic {name: $topic})-[:HAS_ENTRY]->(e:Entry)
-        RETURN e.id AS id
-        """,
-        topic=topic,
-    )
-    return [r["id"] for r in result]
-
-
 def upsert_entry(
-    neo4j_session,
-    weaviate_client,
+    graph_db: GraphDB,
+    vector_db: VectorDB,
     topic: str,
     row: dict,
     embedder: Callable[[list[str]], list[list[float]]],
-    collection_name: str = "knowledge_base",
 ) -> str:
     eid = entry_id(row)
     options = list(row["dictionary"].keys())
 
-    neo4j_entry = DatasetEntry(
+    graph_db.upload_entry(
         topic=topic,
-        id=eid,
-        line=0,
+        entry_id=eid,
         question=row["question"],
         answer=row["answer"],
         options=options,
-        num_options=len(options),
     )
-    neo4j_upload_entry(neo4j_session, neo4j_entry)
 
-    weaviate_entry = WeaviateEntry(
-        id=eid,
-        question=row["question"],
-        options=row["dictionary"],
-        answer=row["answer"],
+    text = f"{row['question']} {row['answer']}"
+    vector = embedder([text])[0]
+    vector_db.upload_entry(
+        entry_id=eid,
+        properties={
+            "question": row["question"],
+            "options": row["dictionary"],
+            "answer": row["answer"],
+        },
+        vector=vector,
     )
-    weaviate_upload_entry(weaviate_client, weaviate_entry, embedder, collection_name)
 
     return eid
 
@@ -269,16 +229,15 @@ def least_topic():
     Output: {"topic": "name", "count": 3}
     Example: python candidate.py least-topic
     """
-    driver = connect_neo4j()
+    graph_db = connect_graph_db()
     try:
-        with driver.session() as session:
-            counts = get_topic_entry_counts(session)
+        counts = graph_db.get_topic_entry_counts()
         if not counts:
             _err("no_topics", detail="No topics found in graph", exit_code=EXIT_NOT_FOUND)
         topic = min(counts, key=lambda t: counts[t])
         _output({"topic": topic, "count": counts[topic]})
     finally:
-        driver.close()
+        graph_db.close()
 
 
 @cli.command()
@@ -304,14 +263,12 @@ def similar(topic: str, entry: str, top_k: int):
       echo '{"question":"...","answer":"...","dictionary":{"A":"..."}}' | python candidate.py similar --topic algebra --entry -
     """
     row = _read_entry(entry)
-    collection = _env("COLLECTION_NAME", "knowledge_base")
 
-    driver = connect_neo4j()
-    client = connect_weaviate()
+    graph_db = connect_graph_db()
+    vector_db = connect_vector_db()
     try:
         _log(f"Fetching entry IDs for topic '{topic}'...")
-        with driver.session() as session:
-            topic_ids = get_entry_ids_for_topic(session, topic)
+        topic_ids = graph_db.get_entry_ids_for_topic(topic)
         if not topic_ids:
             _err(
                 "no_entries_in_topic",
@@ -322,15 +279,13 @@ def similar(topic: str, entry: str, top_k: int):
         _log("Loading embedding model...")
         embedder = _get_embedder()
         query_text = f"{row['question']} {row['answer']}"
+        vector = embedder([query_text])[0]
         _log(f"Searching top-{top_k} similar entries in topic '{topic}'...")
-        matches = get_top_n_by_similarity(
-            client, query_text, embedder, n=top_k, collection_name=collection,
-            filter_ids=topic_ids,
-        )
+        matches = vector_db.get_top_n(vector, n=top_k, filter_ids=topic_ids)
 
         results = []
         for uid, certainty in matches:
-            matched = get_by_id(client, uid, collection_name=collection)
+            matched = vector_db.get_by_id(uid)
             item: dict = {"id": uid, "certainty": certainty}
             if matched:
                 item["question"] = matched.question
@@ -340,8 +295,8 @@ def similar(topic: str, entry: str, top_k: int):
 
         _output({"candidate_id": entry_id(row), "similar": results})
     finally:
-        client.close()
-        driver.close()
+        vector_db.close()
+        graph_db.close()
 
 
 @cli.command()
@@ -350,7 +305,7 @@ def similar(topic: str, entry: str, top_k: int):
     "--entry", required=True, help='Entry JSON string, or "-" to read from stdin.'
 )
 def submit(topic: str, entry: str):
-    """Upsert entry into both Neo4j and Weaviate.
+    """Upsert entry into both graph and vector DBs.
 
     \b
     Idempotent — safe to retry. Same entry ID produces same result.
@@ -363,21 +318,19 @@ def submit(topic: str, entry: str):
       echo '...' | python candidate.py submit --topic algebra --entry -
     """
     row = _read_entry(entry)
-    collection = _env("COLLECTION_NAME", "knowledge_base")
 
-    driver = connect_neo4j()
-    client = connect_weaviate()
+    graph_db = connect_graph_db()
+    vector_db = connect_vector_db()
     try:
         _log("Loading embedding model...")
         embedder = _get_embedder()
         _log(f"Upserting entry into topic '{topic}'...")
-        with driver.session() as session:
-            eid = upsert_entry(session, client, topic, row, embedder, collection)
+        eid = upsert_entry(graph_db, vector_db, topic, row, embedder)
         log_session(topic, [eid])
         _output({"id": eid, "submitted": True})
     finally:
-        client.close()
-        driver.close()
+        vector_db.close()
+        graph_db.close()
 
 
 @cli.command(name="similar-batch")
@@ -413,13 +366,11 @@ def similar_batch(topic: str, entries: str, top_k: int):
         _err("invalid_input", detail="Expected a JSON array of entries", exit_code=EXIT_USAGE)
     parsed = [_parse_entry(json.dumps(r)) for r in rows]
 
-    collection = _env("COLLECTION_NAME", "knowledge_base")
-    driver = connect_neo4j()
-    client = connect_weaviate()
+    graph_db = connect_graph_db()
+    vector_db = connect_vector_db()
     try:
         _log(f"Fetching entry IDs for topic '{topic}'...")
-        with driver.session() as session:
-            topic_ids = get_entry_ids_for_topic(session, topic)
+        topic_ids = graph_db.get_entry_ids_for_topic(topic)
         if not topic_ids:
             _err(
                 "no_entries_in_topic",
@@ -433,14 +384,12 @@ def similar_batch(topic: str, entries: str, top_k: int):
         output = []
         for i, row in enumerate(parsed):
             query_text = f"{row['question']} {row['answer']}"
+            vector = embedder([query_text])[0]
             _log(f"[{i+1}/{len(parsed)}] Searching top-{top_k} similar for candidate...")
-            matches = get_top_n_by_similarity(
-                client, query_text, embedder, n=top_k,
-                collection_name=collection, filter_ids=topic_ids,
-            )
+            matches = vector_db.get_top_n(vector, n=top_k, filter_ids=topic_ids)
             results = []
             for uid, certainty in matches:
-                matched = get_by_id(client, uid, collection_name=collection)
+                matched = vector_db.get_by_id(uid)
                 item: dict = {"id": uid, "certainty": certainty}
                 if matched:
                     item["question"] = matched.question
@@ -451,8 +400,8 @@ def similar_batch(topic: str, entries: str, top_k: int):
 
         _output(output)
     finally:
-        client.close()
-        driver.close()
+        vector_db.close()
+        graph_db.close()
 
 
 @cli.command(name="submit-batch")
@@ -461,7 +410,7 @@ def similar_batch(topic: str, entries: str, top_k: int):
     "--entries", required=True, help='JSON array of entry objects, or "-" to read from stdin.'
 )
 def submit_batch(topic: str, entries: str):
-    """Upsert multiple entries into Neo4j and Weaviate. Single model load.
+    """Upsert multiple entries into graph and vector DBs. Single model load.
 
     \b
     Idempotent — safe to retry. Each entry ID is deterministic.
@@ -485,43 +434,39 @@ def submit_batch(topic: str, entries: str):
         _err("invalid_input", detail="Expected a JSON array of entries", exit_code=EXIT_USAGE)
     parsed = [_parse_entry(json.dumps(r)) for r in rows]
 
-    collection = _env("COLLECTION_NAME", "knowledge_base")
-    driver = connect_neo4j()
-    client = connect_weaviate()
+    graph_db = connect_graph_db()
+    vector_db = connect_vector_db()
     try:
         _log(f"Loading embedding model (once for {len(parsed)} entries)...")
         embedder = _get_embedder()
         inserted_ids = []
         output = []
-        with driver.session() as session:
-            for i, row in enumerate(parsed):
-                _log(f"[{i+1}/{len(parsed)}] Upserting entry into topic '{topic}'...")
-                eid = upsert_entry(session, client, topic, row, embedder, collection)
-                inserted_ids.append(eid)
-                output.append({"id": eid, "submitted": True})
+        for i, row in enumerate(parsed):
+            _log(f"[{i+1}/{len(parsed)}] Upserting entry into topic '{topic}'...")
+            eid = upsert_entry(graph_db, vector_db, topic, row, embedder)
+            inserted_ids.append(eid)
+            output.append({"id": eid, "submitted": True})
         log_session(topic, inserted_ids)
         _output(output)
     finally:
-        client.close()
-        driver.close()
+        vector_db.close()
+        graph_db.close()
 
 
 @cli.command(name="get-by-topic")
 @click.option("--topic", required=True, help="Topic name to fetch entries from.")
 @click.option("--limit", default=3, show_default=True, help="Max entries to return.")
 def get_by_topic(topic: str, limit: int):
-    """Fetch sample entries for a topic from Weaviate. Useful to understand entry structure.
+    """Fetch sample entries for a topic from vector DB. Useful to understand entry structure.
 
     \b
     Output: [{"id": "...", "question": "...", "answer": "...", "options": {...}}, ...]
     Example: python candidate.py get-by-topic --topic algebra --limit 3
     """
-    collection = _env("COLLECTION_NAME", "knowledge_base")
-    driver = connect_neo4j()
-    client = connect_weaviate()
+    graph_db = connect_graph_db()
+    vector_db = connect_vector_db()
     try:
-        with driver.session() as session:
-            topic_ids = get_entry_ids_for_topic(session, topic)
+        topic_ids = graph_db.get_entry_ids_for_topic(topic)
         if not topic_ids:
             _err(
                 "no_entries_in_topic",
@@ -529,51 +474,49 @@ def get_by_topic(topic: str, limit: int):
                 suggestion="Check topic name or run least-topic to list topics",
                 exit_code=EXIT_NOT_FOUND,
             )
-        entries = get_by_ids(client, topic_ids[:limit], collection_name=collection)
+        entries = vector_db.get_by_ids(topic_ids[:limit])
         _output([
             {"id": e.id, "question": e.question, "answer": e.answer, "options": e.options}
             for e in entries
         ])
     finally:
-        client.close()
-        driver.close()
+        vector_db.close()
+        graph_db.close()
 
 
-@cli.command(name="get-weaviate")
+@cli.command(name="get-vector")
 @click.option("--id", "entry_id", required=True, help="Entry UUID to fetch.")
-def get_weaviate(entry_id: str):
-    """Fetch entry from Weaviate by ID.
+def get_vector(entry_id: str):
+    """Fetch entry from vector DB by ID.
 
     \b
     Output: {"id": "...", "question": "...", "answer": "...", "options": {...}}
-    Example: python candidate.py get-weaviate --id <uuid>
+    Example: python candidate.py get-vector --id <uuid>
     """
-    collection = _env("COLLECTION_NAME", "knowledge_base")
-    client = connect_weaviate()
+    vector_db = connect_vector_db()
     try:
-        matched = get_by_id(client, entry_id, collection_name=collection)
+        matched = vector_db.get_by_id(entry_id)
         if matched is None:
-            _err("not_found", detail=f"No entry with id '{entry_id}' in Weaviate", exit_code=EXIT_NOT_FOUND)
+            _err("not_found", detail=f"No entry with id '{entry_id}' in vector DB", exit_code=EXIT_NOT_FOUND)
         _output({"id": matched.id, "question": matched.question, "answer": matched.answer, "options": matched.options})
     finally:
-        client.close()
+        vector_db.close()
 
 
-@cli.command(name="get-neo4j")
+@cli.command(name="get-graph")
 @click.option("--id", "entry_id", required=True, help="Entry UUID to fetch.")
-def get_neo4j(entry_id: str):
-    """Fetch entry from Neo4j by ID.
+def get_graph(entry_id: str):
+    """Fetch entry from graph DB by ID.
 
     \b
     Output: {"id": "...", "topic": "...", "question": "...", "answer": "...", "options": [...]}
-    Example: python candidate.py get-neo4j --id <uuid>
+    Example: python candidate.py get-graph --id <uuid>
     """
-    driver = connect_neo4j()
+    graph_db = connect_graph_db()
     try:
-        with driver.session() as session:
-            matched = neo4j_get_by_id(session, entry_id)
+        matched = graph_db.get_by_id(entry_id)
         if matched is None:
-            _err("not_found", detail=f"No entry with id '{entry_id}' in Neo4j", exit_code=EXIT_NOT_FOUND)
+            _err("not_found", detail=f"No entry with id '{entry_id}' in graph DB", exit_code=EXIT_NOT_FOUND)
         _output({
             "id": matched.id,
             "topic": matched.topic,
@@ -582,13 +525,13 @@ def get_neo4j(entry_id: str):
             "options": matched.options,
         })
     finally:
-        driver.close()
+        graph_db.close()
 
 
 @cli.command()
 @click.argument("timestamp")
 def undo(timestamp: str):
-    """Delete all entries submitted after TIMESTAMP from Neo4j, Weaviate, and log.json.
+    """Delete all entries submitted after TIMESTAMP from both DBs and log.json.
 
     \b
     TIMESTAMP: ISO 8601 string (e.g. "2026-05-30T11:06:00+00:00").
@@ -598,8 +541,6 @@ def undo(timestamp: str):
     Output: {"deleted": ["uuid1", ...], "count": N}
     Example: python candidate.py undo "2026-05-30T11:06:00+00:00"
     """
-    from datetime import datetime, timezone
-
     try:
         cutoff = datetime.fromisoformat(timestamp)
     except ValueError as e:
@@ -631,29 +572,15 @@ def undo(timestamp: str):
         _output({"deleted": [], "count": 0})
         return
 
-    collection = _env("COLLECTION_NAME", "knowledge_base")
-    driver = connect_neo4j()
-    client = connect_weaviate()
+    graph_db = connect_graph_db()
+    vector_db = connect_vector_db()
     try:
-        _log(f"Deleting {len(ids_to_delete)} entries from Neo4j...")
-        with driver.session() as session:
-            session.run(
-                """
-                UNWIND $ids AS id
-                MATCH (t:Topic)-[:HAS_ENTRY]->(e:Entry {id: id})
-                SET t.entry_count = coalesce(t.entry_count, 0) - 1
-                DETACH DELETE e
-                """,
-                ids=ids_to_delete,
-            )
+        _log(f"Deleting {len(ids_to_delete)} entries from graph DB...")
+        graph_db.delete_entries(ids_to_delete)
 
-        _log(f"Deleting {len(ids_to_delete)} entries from Weaviate...")
-        weaviate_collection = client.collections.get(collection)
+        _log(f"Deleting {len(ids_to_delete)} entries from vector DB...")
         for uid in ids_to_delete:
-            try:
-                weaviate_collection.data.delete_by_id(uid)
-            except Exception:
-                pass  # not found is fine — idempotent
+            vector_db.delete_by_id(uid)
 
         for key in keys_to_remove:
             del log[key]
@@ -661,8 +588,8 @@ def undo(timestamp: str):
 
         _output({"deleted": ids_to_delete, "count": len(ids_to_delete)})
     finally:
-        client.close()
-        driver.close()
+        vector_db.close()
+        graph_db.close()
 
 
 if __name__ == "__main__":
