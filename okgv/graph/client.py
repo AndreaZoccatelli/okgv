@@ -128,9 +128,9 @@ class Neo4jGraphDB:
     def upload_entry(
         self, topic: str, entry_id: str, properties: dict, overwrite: bool = False
     ) -> None:
-        with self._session() as session:
+        def _work(tx):
             if not overwrite:
-                exists = session.run(
+                exists = tx.run(
                     "MATCH (e:Entry {id: $id}) RETURN e LIMIT 1",
                     id=entry_id,
                 ).single()
@@ -139,7 +139,7 @@ class Neo4jGraphDB:
                         f"Entry '{entry_id}' already exists in graph DB. "
                         f"Pass overwrite=True to replace."
                     )
-            session.run(
+            tx.run(
                 """
                 MERGE (t:Topic {path: $path})
                 MERGE (e:Entry {id: $id})
@@ -151,6 +151,9 @@ class Neo4jGraphDB:
                 id=entry_id,
                 props=properties,
             )
+
+        with self._session() as session:
+            session.execute_write(_work)
 
     def get_by_id(self, entry_id: str) -> GraphRecord | None:
         with self._session() as session:
@@ -189,9 +192,9 @@ class Neo4jGraphDB:
         name = source.rsplit("/", 1)[-1]
         new_path = f"{destination}/{name}"
 
-        with self._session() as session:
+        def _work(tx):
             # Check destination doesn't already have child with same name
-            conflict = session.run(
+            conflict = tx.run(
                 "MATCH (d:Topic {path: $dest})-[:HAS_SUBTOPIC]->(c:Topic) "
                 "WHERE c.name = $name RETURN c.path AS path",
                 dest=destination,
@@ -203,13 +206,13 @@ class Neo4jGraphDB:
                 )
 
             # Detach source from old parent
-            session.run(
+            tx.run(
                 "MATCH (p:Topic)-[r:HAS_SUBTOPIC]->(s:Topic {path: $source}) DELETE r",
                 source=source,
             )
 
             # Attach to new parent
-            session.run(
+            tx.run(
                 """
                 MATCH (d:Topic {path: $dest})
                 MATCH (s:Topic {path: $source})
@@ -220,7 +223,7 @@ class Neo4jGraphDB:
             )
 
             # Update paths: source and all descendants
-            session.run(
+            tx.run(
                 """
                 MATCH (s:Topic {path: $source})-[:HAS_SUBTOPIC*0..]->(desc:Topic)
                 WITH desc, desc.path AS old_path
@@ -230,17 +233,20 @@ class Neo4jGraphDB:
                 new_path=new_path,
             )
 
+        with self._session() as session:
+            session.execute_write(_work)
+
     def move_entry(self, entry_id: str, new_topic: str) -> None:
         """Move entry to a different topic."""
-        with self._session() as session:
-            session.run(
+        def _work(tx):
+            tx.run(
                 """
                 MATCH (t:Topic)-[r:HAS_ENTRY]->(e:Entry {id: $id})
                 DELETE r
                 """,
                 id=entry_id,
             )
-            session.run(
+            tx.run(
                 """
                 MATCH (d:Topic {path: $dest})
                 MATCH (e:Entry {id: $id})
@@ -249,6 +255,9 @@ class Neo4jGraphDB:
                 dest=new_topic,
                 id=entry_id,
             )
+
+        with self._session() as session:
+            session.execute_write(_work)
 
     def ensure_indexes(self) -> None:
         with self._session() as session:
