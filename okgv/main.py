@@ -8,12 +8,13 @@ Schema discovery (see config.py):
 Exit codes:  0=ok  1=failure  2=usage  3=not_found  4=connection
 """
 
+import atexit
 import json
 import sys
 
 import click
 
-from okgv.connections import connect_graph_db, connect_vector_db, get_embedder
+from okgv.connections import close_all, connect_graph_db, connect_vector_db, get_embedder
 from okgv.core import build_entry, log_session, upsert_entry
 from okgv.helpers import EXIT_NOT_FOUND, EXIT_USAGE, err, log, output, read_raw
 from okgv.protocols import entry_id
@@ -27,6 +28,9 @@ def get_schema():
         from okgv.config import load_schema
         _schema = load_schema()
     return _schema
+
+
+atexit.register(close_all)
 
 
 @click.group(
@@ -84,39 +88,36 @@ def create_topic(name: str, parents: bool):
     With --parents: creates all missing intermediate levels (like mkdir -p).
     """
     graph_db = connect_graph_db()
-    try:
-        segments = name.split("/")
+    segments = name.split("/")
 
-        if len(segments) == 1:
-            graph_db.create_topic(name)
-        else:
-            # Check/create each level
-            for i, segment in enumerate(segments):
-                if i == 0:
-                    if not graph_db.topic_exists(segment):
-                        if not parents:
-                            err(
-                                "parent_not_found",
-                                detail=f"Root topic '{segment}' does not exist",
-                                suggestion="Use --parents to create missing levels",
-                                exit_code=EXIT_NOT_FOUND,
-                            )
-                        graph_db.create_topic(segment)
-                else:
-                    parent_path = "/".join(segments[:i])
-                    if not graph_db.topic_exists(parent_path):
-                        if not parents:
-                            err(
-                                "parent_not_found",
-                                detail=f"Parent topic '{parent_path}' does not exist",
-                                suggestion="Use --parents to create missing levels",
-                                exit_code=EXIT_NOT_FOUND,
-                            )
-                    graph_db.create_subtopic(parent_path, segment)
+    if len(segments) == 1:
+        graph_db.create_topic(name)
+    else:
+        # Check/create each level
+        for i, segment in enumerate(segments):
+            if i == 0:
+                if not graph_db.topic_exists(segment):
+                    if not parents:
+                        err(
+                            "parent_not_found",
+                            detail=f"Root topic '{segment}' does not exist",
+                            suggestion="Use --parents to create missing levels",
+                            exit_code=EXIT_NOT_FOUND,
+                        )
+                    graph_db.create_topic(segment)
+            else:
+                parent_path = "/".join(segments[:i])
+                if not graph_db.topic_exists(parent_path):
+                    if not parents:
+                        err(
+                            "parent_not_found",
+                            detail=f"Parent topic '{parent_path}' does not exist",
+                            suggestion="Use --parents to create missing levels",
+                            exit_code=EXIT_NOT_FOUND,
+                        )
+                graph_db.create_subtopic(parent_path, segment)
 
-        output({"topic": name, "created": True})
-    finally:
-        graph_db.close()
+    output({"topic": name, "created": True})
 
 
 @cli.command(name="least-topic")
@@ -128,25 +129,22 @@ def create_topic(name: str, parents: bool):
 def least_topic(topic: str | None):
     """Return the child topic with the fewest entries."""
     graph_db = connect_graph_db()
-    try:
-        counts = graph_db.get_topic_entry_counts(parent=topic)
-        if not counts:
-            if topic:
-                err(
-                    "no_subtopics",
-                    detail=f"Topic '{topic}' has no subtopics",
-                    exit_code=EXIT_NOT_FOUND,
-                )
-            else:
-                err(
-                    "no_topics",
-                    detail="No topics found in graph",
-                    exit_code=EXIT_NOT_FOUND,
-                )
-        least = min(counts, key=lambda t: counts[t])
-        output({"topic": least, "count": counts[least], "all_counts": counts})
-    finally:
-        graph_db.close()
+    counts = graph_db.get_topic_entry_counts(parent=topic)
+    if not counts:
+        if topic:
+            err(
+                "no_subtopics",
+                detail=f"Topic '{topic}' has no subtopics",
+                exit_code=EXIT_NOT_FOUND,
+            )
+        else:
+            err(
+                "no_topics",
+                detail="No topics found in graph",
+                exit_code=EXIT_NOT_FOUND,
+            )
+    least = min(counts, key=lambda t: counts[t])
+    output({"topic": least, "count": counts[least], "all_counts": counts})
 
 
 @cli.command(name="topic-stats")
@@ -165,61 +163,58 @@ def topic_stats(topic: str, fields: str | None):
     from collections import Counter
 
     graph_db = connect_graph_db()
-    try:
-        entries = graph_db.get_entries_for_topic(topic)
-        if not entries:
-            err(
-                "no_entries_in_topic",
-                detail=f"Topic '{topic}' has no entries",
-                exit_code=EXIT_NOT_FOUND,
-            )
+    entries = graph_db.get_entries_for_topic(topic)
+    if not entries:
+        err(
+            "no_entries_in_topic",
+            detail=f"Topic '{topic}' has no entries",
+            exit_code=EXIT_NOT_FOUND,
+        )
 
-        # Determine which fields to group by
-        if fields:
-            group_fields = [f.strip() for f in fields.split(",")]
-            # Validate fields exist in at least one entry
-            all_keys = set()
-            for e in entries:
-                all_keys.update(e.properties.keys())
-            missing = set(group_fields) - all_keys
-            if missing:
-                err(
-                    "unknown_fields",
-                    detail=f"Fields not found in entries: {missing}",
-                    suggestion=f"Available fields: {sorted(all_keys)}",
-                    exit_code=EXIT_USAGE,
-                )
-        else:
-            # Use all metadata fields (intersection across entries for consistency)
-            all_keys = set()
-            for e in entries:
-                all_keys.update(e.properties.keys())
-            group_fields = sorted(all_keys)
-
-        # Group and count
-        counter: Counter = Counter()
+    # Determine which fields to group by
+    if fields:
+        group_fields = [f.strip() for f in fields.split(",")]
+        # Validate fields exist in at least one entry
+        all_keys = set()
         for e in entries:
-            key = tuple(
-                (f, e.properties.get(f)) for f in group_fields
+            all_keys.update(e.properties.keys())
+        missing = set(group_fields) - all_keys
+        if missing:
+            err(
+                "unknown_fields",
+                detail=f"Fields not found in entries: {missing}",
+                suggestion=f"Available fields: {sorted(all_keys)}",
+                exit_code=EXIT_USAGE,
             )
-            counter[key] += 1
+    else:
+        # Use all metadata fields (intersection across entries for consistency)
+        all_keys = set()
+        for e in entries:
+            all_keys.update(e.properties.keys())
+        group_fields = sorted(all_keys)
 
-        # Format output
-        groups = []
-        for combo, count in counter.most_common():
-            groups.append({
-                "fields": dict(combo),
-                "count": count,
-            })
+    # Group and count
+    counter: Counter = Counter()
+    for e in entries:
+        key = tuple(
+            (f, e.properties.get(f)) for f in group_fields
+        )
+        counter[key] += 1
 
-        output({
-            "topic": topic,
-            "total_entries": len(entries),
-            "group_by": group_fields,
-            "groups": groups,
+    # Format output
+    groups = []
+    for combo, count in counter.most_common():
+        groups.append({
+            "fields": dict(combo),
+            "count": count,
         })
-    finally:
-        graph_db.close()
+
+    output({
+        "topic": topic,
+        "total_entries": len(entries),
+        "group_by": group_fields,
+        "groups": groups,
+    })
 
 
 @cli.command()
@@ -238,34 +233,30 @@ def similar(topic: str, entry: str, top_k: int):
 
     graph_db = connect_graph_db()
     vector_db = connect_vector_db(schema)
-    try:
-        log(f"Fetching entry IDs for topic '{topic}'...")
-        topic_ids = graph_db.get_entry_ids_for_topic(topic)
-        if not topic_ids:
-            err(
-                "no_entries_in_topic",
-                detail=f"Topic '{topic}' has no entries",
-                suggestion="Check topic name or run least-topic to list topics",
-                exit_code=EXIT_NOT_FOUND,
-            )
-        log("Loading embedding model...")
-        embedder = get_embedder()
-        vector = embedder([schema.embedding_text(entry_obj)])[0]
-        log(f"Searching top-{top_k} similar entries in topic '{topic}'...")
-        matches = vector_db.get_top_n(vector, n=top_k, filter_ids=topic_ids)
+    log(f"Fetching entry IDs for topic '{topic}'...")
+    topic_ids = graph_db.get_entry_ids_for_topic(topic)
+    if not topic_ids:
+        err(
+            "no_entries_in_topic",
+            detail=f"Topic '{topic}' has no entries",
+            suggestion="Check topic name or run least-topic to list topics",
+            exit_code=EXIT_NOT_FOUND,
+        )
+    log("Loading embedding model...")
+    embedder = get_embedder()
+    vector = embedder([schema.embedding_text(entry_obj)])[0]
+    log(f"Searching top-{top_k} similar entries in topic '{topic}'...")
+    matches = vector_db.get_top_n(vector, n=top_k, filter_ids=topic_ids)
 
-        results = []
-        for uid, certainty in matches:
-            matched = vector_db.get_by_id(uid)
-            item: dict = {"id": uid, "certainty": certainty}
-            if matched:
-                item["properties"] = matched.properties
-            results.append(item)
+    results = []
+    for uid, certainty in matches:
+        matched = vector_db.get_by_id(uid)
+        item: dict = {"id": uid, "certainty": certainty}
+        if matched:
+            item["properties"] = matched.properties
+        results.append(item)
 
-        output({"candidate_id": entry_id(raw), "similar": results})
-    finally:
-        vector_db.close()
-        graph_db.close()
+    output({"candidate_id": entry_id(raw), "similar": results})
 
 
 @cli.command()
@@ -281,16 +272,12 @@ def submit(topic: str, entry: str, overwrite: bool):
 
     graph_db = connect_graph_db()
     vector_db = connect_vector_db(schema)
-    try:
-        log("Loading embedding model...")
-        embedder = get_embedder()
-        log(f"Upserting entry into topic '{topic}'...")
-        eid = upsert_entry(schema, graph_db, vector_db, topic, raw, embedder, overwrite=overwrite)
-        log_session(topic, [eid])
-        output({"id": eid, "submitted": True})
-    finally:
-        vector_db.close()
-        graph_db.close()
+    log("Loading embedding model...")
+    embedder = get_embedder()
+    log(f"Upserting entry into topic '{topic}'...")
+    eid = upsert_entry(schema, graph_db, vector_db, topic, raw, embedder, overwrite=overwrite)
+    log_session(topic, [eid])
+    output({"id": eid, "submitted": True})
 
 
 @cli.command(name="similar-batch")
@@ -326,38 +313,34 @@ def similar_batch(topic: str, entries: str, top_k: int):
 
     graph_db = connect_graph_db()
     vector_db = connect_vector_db(schema)
-    try:
-        log(f"Fetching entry IDs for topic '{topic}'...")
-        topic_ids = graph_db.get_entry_ids_for_topic(topic)
-        if not topic_ids:
-            err(
-                "no_entries_in_topic",
-                detail=f"Topic '{topic}' has no entries",
-                suggestion="Check topic name or run least-topic to list topics",
-                exit_code=EXIT_NOT_FOUND,
-            )
-        log(f"Loading embedding model (once for {len(rows)} candidates)...")
-        embedder = get_embedder()
+    log(f"Fetching entry IDs for topic '{topic}'...")
+    topic_ids = graph_db.get_entry_ids_for_topic(topic)
+    if not topic_ids:
+        err(
+            "no_entries_in_topic",
+            detail=f"Topic '{topic}' has no entries",
+            suggestion="Check topic name or run least-topic to list topics",
+            exit_code=EXIT_NOT_FOUND,
+        )
+    log(f"Loading embedding model (once for {len(rows)} candidates)...")
+    embedder = get_embedder()
 
-        results_all = []
-        for i, raw in enumerate(rows):
-            entry_obj = build_entry(schema, raw)
-            vector = embedder([schema.embedding_text(entry_obj)])[0]
-            log(f"[{i + 1}/{len(rows)}] Searching top-{top_k} similar for candidate...")
-            matches = vector_db.get_top_n(vector, n=top_k, filter_ids=topic_ids)
-            results = []
-            for uid, certainty in matches:
-                matched = vector_db.get_by_id(uid)
-                item: dict = {"id": uid, "certainty": certainty}
-                if matched:
-                    item["properties"] = matched.properties
-                results.append(item)
-            results_all.append({"candidate_id": entry_id(raw), "similar": results})
+    results_all = []
+    for i, raw in enumerate(rows):
+        entry_obj = build_entry(schema, raw)
+        vector = embedder([schema.embedding_text(entry_obj)])[0]
+        log(f"[{i + 1}/{len(rows)}] Searching top-{top_k} similar for candidate...")
+        matches = vector_db.get_top_n(vector, n=top_k, filter_ids=topic_ids)
+        results = []
+        for uid, certainty in matches:
+            matched = vector_db.get_by_id(uid)
+            item: dict = {"id": uid, "certainty": certainty}
+            if matched:
+                item["properties"] = matched.properties
+            results.append(item)
+        results_all.append({"candidate_id": entry_id(raw), "similar": results})
 
-        output(results_all)
-    finally:
-        vector_db.close()
-        graph_db.close()
+    output(results_all)
 
 
 @cli.command(name="submit-batch")
@@ -388,21 +371,17 @@ def submit_batch(topic: str, entries: str, overwrite: bool):
 
     graph_db = connect_graph_db()
     vector_db = connect_vector_db(schema)
-    try:
-        log(f"Loading embedding model (once for {len(rows)} entries)...")
-        embedder = get_embedder()
-        inserted_ids = []
-        results = []
-        for i, raw in enumerate(rows):
-            log(f"[{i + 1}/{len(rows)}] Upserting entry into topic '{topic}'...")
-            eid = upsert_entry(schema, graph_db, vector_db, topic, raw, embedder, overwrite=overwrite)
-            inserted_ids.append(eid)
-            results.append({"id": eid, "submitted": True})
-        log_session(topic, inserted_ids)
-        output(results)
-    finally:
-        vector_db.close()
-        graph_db.close()
+    log(f"Loading embedding model (once for {len(rows)} entries)...")
+    embedder = get_embedder()
+    inserted_ids = []
+    results = []
+    for i, raw in enumerate(rows):
+        log(f"[{i + 1}/{len(rows)}] Upserting entry into topic '{topic}'...")
+        eid = upsert_entry(schema, graph_db, vector_db, topic, raw, embedder, overwrite=overwrite)
+        inserted_ids.append(eid)
+        results.append({"id": eid, "submitted": True})
+    log_session(topic, inserted_ids)
+    output(results)
 
 
 @cli.command(name="create-structure")
@@ -444,26 +423,23 @@ def create_structure(file_path: str):
         )
 
     graph_db = connect_graph_db()
-    try:
-        created = []
-        stack: list[tuple[dict, str | None]] = [(structure, None)]
+    created = []
+    stack: list[tuple[dict, str | None]] = [(structure, None)]
 
-        while stack:
-            tree, parent = stack.pop()
-            for name, children in tree.items():
-                if parent is None:
-                    graph_db.create_topic(name)
-                    path = name
-                else:
-                    graph_db.create_subtopic(parent, name)
-                    path = f"{parent}/{name}"
-                created.append(path)
-                if isinstance(children, dict) and children:
-                    stack.append((children, path))
+    while stack:
+        tree, parent = stack.pop()
+        for name, children in tree.items():
+            if parent is None:
+                graph_db.create_topic(name)
+                path = name
+            else:
+                graph_db.create_subtopic(parent, name)
+                path = f"{parent}/{name}"
+            created.append(path)
+            if isinstance(children, dict) and children:
+                stack.append((children, path))
 
-        output({"created_topics": created, "count": len(created)})
-    finally:
-        graph_db.close()
+    output({"created_topics": created, "count": len(created)})
 
 
 @cli.command(name="move-topic")
@@ -480,11 +456,9 @@ def move_topic(source: str, destination: str, dry_run: bool):
     graph_db = connect_graph_db()
     try:
         graph_db.move_topic(source, destination)
-        output({"moved": source, "new_path": new_path})
     except ValueError as e:
         err("name_conflict", detail=str(e), exit_code=EXIT_USAGE)
-    finally:
-        graph_db.close()
+    output({"moved": source, "new_path": new_path})
 
 
 @cli.command(name="move-entry")
@@ -497,11 +471,8 @@ def move_entry(entry_id: str, destination: str, dry_run: bool):
         output({"dry_run": True, "would_move": entry_id, "destination": destination})
         return
     graph_db = connect_graph_db()
-    try:
-        graph_db.move_entry(entry_id, destination)
-        output({"id": entry_id, "moved_to": destination})
-    finally:
-        graph_db.close()
+    graph_db.move_entry(entry_id, destination)
+    output({"id": entry_id, "moved_to": destination})
 
 
 @cli.command(name="get-by-topic")
@@ -512,20 +483,16 @@ def get_by_topic(topic: str, limit: int):
     schema = get_schema()
     graph_db = connect_graph_db()
     vector_db = connect_vector_db(schema)
-    try:
-        topic_ids = graph_db.get_entry_ids_for_topic(topic)
-        if not topic_ids:
-            err(
-                "no_entries_in_topic",
-                detail=f"Topic '{topic}' has no entries",
-                suggestion="Check topic name or run least-topic to list topics",
-                exit_code=EXIT_NOT_FOUND,
-            )
-        entries = vector_db.get_by_ids(topic_ids[:limit])
-        output([{"id": e.id, **e.properties} for e in entries])
-    finally:
-        vector_db.close()
-        graph_db.close()
+    topic_ids = graph_db.get_entry_ids_for_topic(topic)
+    if not topic_ids:
+        err(
+            "no_entries_in_topic",
+            detail=f"Topic '{topic}' has no entries",
+            suggestion="Check topic name or run least-topic to list topics",
+            exit_code=EXIT_NOT_FOUND,
+        )
+    entries = vector_db.get_by_ids(topic_ids[:limit])
+    output([{"id": e.id, **e.properties} for e in entries])
 
 
 @cli.command(name="get-vector")
@@ -534,17 +501,14 @@ def get_vector(entry_id: str):
     """Fetch entry from vector DB by ID."""
     schema = get_schema()
     vector_db = connect_vector_db(schema)
-    try:
-        matched = vector_db.get_by_id(entry_id)
-        if matched is None:
-            err(
-                "not_found",
-                detail=f"No entry with id '{entry_id}' in vector DB",
-                exit_code=EXIT_NOT_FOUND,
-            )
-        output({"id": matched.id, **matched.properties})
-    finally:
-        vector_db.close()
+    matched = vector_db.get_by_id(entry_id)
+    if matched is None:
+        err(
+            "not_found",
+            detail=f"No entry with id '{entry_id}' in vector DB",
+            exit_code=EXIT_NOT_FOUND,
+        )
+    output({"id": matched.id, **matched.properties})
 
 
 @cli.command(name="get-graph")
@@ -552,17 +516,14 @@ def get_vector(entry_id: str):
 def get_graph(entry_id: str):
     """Fetch entry from graph DB by ID."""
     graph_db = connect_graph_db()
-    try:
-        matched = graph_db.get_by_id(entry_id)
-        if matched is None:
-            err(
-                "not_found",
-                detail=f"No entry with id '{entry_id}' in graph DB",
-                exit_code=EXIT_NOT_FOUND,
-            )
-        output({"id": matched.id, "topic": matched.topic, **matched.properties})
-    finally:
-        graph_db.close()
+    matched = graph_db.get_by_id(entry_id)
+    if matched is None:
+        err(
+            "not_found",
+            detail=f"No entry with id '{entry_id}' in graph DB",
+            exit_code=EXIT_NOT_FOUND,
+        )
+    output({"id": matched.id, "topic": matched.topic, **matched.properties})
 
 
 @cli.command()
@@ -618,46 +579,42 @@ def undo(timestamp: str, dry_run: bool):
     schema = get_schema()
     graph_db = connect_graph_db()
     vector_db = connect_vector_db(schema)
-    try:
-        deleted = []
-        failed_at = None
-        for i, uid in enumerate(ids_to_delete):
-            log(f"[{i + 1}/{len(ids_to_delete)}] Deleting {uid}...")
-            graph_db.delete_entries([uid])
-            try:
-                vector_db.delete_by_id(uid)
-            except Exception as e:
-                # Graph already deleted this entry but vector failed.
-                # Don't update log — ID stays so user can retry.
-                failed_at = {"id": uid, "error": str(e), "deleted_so_far": deleted}
-                log(f"Vector DB delete failed for {uid}: {e}")
-                break
-            deleted.append(uid)
+    deleted = []
+    failed_at = None
+    for i, uid in enumerate(ids_to_delete):
+        log(f"[{i + 1}/{len(ids_to_delete)}] Deleting {uid}...")
+        graph_db.delete_entries([uid])
+        try:
+            vector_db.delete_by_id(uid)
+        except Exception as e:
+            # Graph already deleted this entry but vector failed.
+            # Don't update log — ID stays so user can retry.
+            failed_at = {"id": uid, "error": str(e), "deleted_so_far": deleted}
+            log(f"Vector DB delete failed for {uid}: {e}")
+            break
+        deleted.append(uid)
 
-            # Progressive log update: remove this ID from log_data
-            for key in list(log_data.keys()):
-                if key in keys_to_remove:
-                    for _topic, ids in log_data[key].items():
-                        if uid in ids:
-                            ids.remove(uid)
-                    if all(len(ids) == 0 for ids in log_data[key].values()):
-                        del log_data[key]
-            log_file.write_text(json.dumps(log_data, indent=2))
+        # Progressive log update: remove this ID from log_data
+        for key in list(log_data.keys()):
+            if key in keys_to_remove:
+                for _topic, ids in log_data[key].items():
+                    if uid in ids:
+                        ids.remove(uid)
+                if all(len(ids) == 0 for ids in log_data[key].values()):
+                    del log_data[key]
+        log_file.write_text(json.dumps(log_data, indent=2))
 
-        if failed_at:
-            err(
-                "undo_partial_failure",
-                detail=f"Vector DB failed on entry '{failed_at['id']}': {failed_at['error']}. "
-                f"Entry was deleted from graph but remains in vector DB. "
-                f"{len(deleted)} entries fully deleted before failure.",
-                suggestion="Re-run undo to retry. The failed entry's graph node is already gone.",
-                exit_code=1,
-            )
+    if failed_at:
+        err(
+            "undo_partial_failure",
+            detail=f"Vector DB failed on entry '{failed_at['id']}': {failed_at['error']}. "
+            f"Entry was deleted from graph but remains in vector DB. "
+            f"{len(deleted)} entries fully deleted before failure.",
+            suggestion="Re-run undo to retry. The failed entry's graph node is already gone.",
+            exit_code=1,
+        )
 
-        output({"deleted": deleted, "count": len(deleted)})
-    finally:
-        vector_db.close()
-        graph_db.close()
+    output({"deleted": deleted, "count": len(deleted)})
 
 
 if __name__ == "__main__":
