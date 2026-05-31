@@ -469,13 +469,17 @@ def create_structure(file_path: str):
 @cli.command(name="move-topic")
 @click.option("--source", required=True, help="Path of topic/subtopic to move.")
 @click.option("--destination", required=True, help="Path of new parent topic.")
-def move_topic(source: str, destination: str):
+@click.option("--dry-run", is_flag=True, default=False, help="Preview without applying changes.")
+def move_topic(source: str, destination: str, dry_run: bool):
     """Move a topic/subtopic under a different parent. Blocked if name conflict."""
+    name = source.rsplit("/", 1)[-1]
+    new_path = f"{destination}/{name}"
+    if dry_run:
+        output({"dry_run": True, "would_move": source, "new_path": new_path})
+        return
     graph_db = connect_graph_db()
     try:
         graph_db.move_topic(source, destination)
-        name = source.rsplit("/", 1)[-1]
-        new_path = f"{destination}/{name}"
         output({"moved": source, "new_path": new_path})
     except ValueError as e:
         err("name_conflict", detail=str(e), exit_code=EXIT_USAGE)
@@ -486,8 +490,12 @@ def move_topic(source: str, destination: str):
 @cli.command(name="move-entry")
 @click.option("--id", "entry_id", required=True, help="Entry UUID to move.")
 @click.option("--destination", required=True, help="Path of target topic.")
-def move_entry(entry_id: str, destination: str):
+@click.option("--dry-run", is_flag=True, default=False, help="Preview without applying changes.")
+def move_entry(entry_id: str, destination: str, dry_run: bool):
     """Move an entry to a different topic."""
+    if dry_run:
+        output({"dry_run": True, "would_move": entry_id, "destination": destination})
+        return
     graph_db = connect_graph_db()
     try:
         graph_db.move_entry(entry_id, destination)
@@ -559,7 +567,8 @@ def get_graph(entry_id: str):
 
 @cli.command()
 @click.argument("timestamp")
-def undo(timestamp: str):
+@click.option("--dry-run", is_flag=True, default=False, help="Preview entries that would be deleted.")
+def undo(timestamp: str, dry_run: bool):
     """Delete all entries submitted after TIMESTAMP from both DBs and log.json."""
     from datetime import datetime, timezone
 
@@ -600,6 +609,10 @@ def undo(timestamp: str):
 
     if not ids_to_delete:
         output({"deleted": [], "count": 0})
+        return
+
+    if dry_run:
+        output({"dry_run": True, "would_delete": ids_to_delete, "count": len(ids_to_delete)})
         return
 
     schema = get_schema()
