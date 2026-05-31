@@ -41,6 +41,19 @@ def create_topic(name: str):
         graph_db.close()
 
 
+@cli.command(name="create-subtopic")
+@click.option("--parent", required=True, help="Parent topic name.")
+@click.option("--name", required=True, help="Sub-topic name to create.")
+def create_subtopic(parent: str, name: str):
+    """Create a sub-topic under an existing topic. Idempotent."""
+    graph_db = connect_graph_db()
+    try:
+        graph_db.create_subtopic(parent, name)
+        output({"parent": parent, "subtopic": name, "created": True})
+    finally:
+        graph_db.close()
+
+
 @cli.command(name="least-topic")
 def least_topic():
     """Return the topic with the fewest entries."""

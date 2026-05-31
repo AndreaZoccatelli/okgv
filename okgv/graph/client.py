@@ -1,4 +1,11 @@
-"""Neo4j implementation of the GraphDB protocol."""
+"""Neo4j implementation of the GraphDB protocol.
+
+Topic nodes have two properties:
+  - path: unique identifier, e.g. "algebra/linear_algebra" (used for lookups)
+  - name: display name, e.g. "linear_algebra" (last segment of path)
+
+Root topics have path == name.
+"""
 
 from __future__ import annotations
 
@@ -21,24 +28,56 @@ class Neo4jGraphDB:
     def create_topic(self, name: str) -> None:
         with self._session() as session:
             session.run(
-                "MERGE (t:Topic {name: $name}) ON CREATE SET t.entry_count = 0",
+                "MERGE (t:Topic {path: $path}) ON CREATE SET t.name = $name",
+                path=name,
                 name=name,
             )
 
-    def get_topic_entry_counts(self) -> dict[str, int]:
+    def create_subtopic(self, parent: str, name: str) -> None:
+        path = f"{parent}/{name}"
+        with self._session() as session:
+            session.run(
+                """
+                MATCH (p:Topic {path: $parent})
+                MERGE (c:Topic {path: $path})
+                  ON CREATE SET c.name = $name
+                MERGE (p)-[:HAS_SUBTOPIC]->(c)
+                """,
+                parent=parent,
+                path=path,
+                name=name,
+            )
+
+    def get_subtopics(self, topic: str) -> list[str]:
         with self._session() as session:
             result = session.run(
-                "MATCH (t:Topic) "
-                "RETURN t.name AS topic, coalesce(t.entry_count, 0) AS count"
+                "MATCH (t:Topic {path: $path})-[:HAS_SUBTOPIC]->(c:Topic) "
+                "RETURN c.path AS path",
+                path=topic,
+            )
+            return [r["path"] for r in result]
+
+    def get_topic_entry_counts(self) -> dict[str, int]:
+        """Return entry counts for all topics (recursive — includes sub-topic entries)."""
+        with self._session() as session:
+            result = session.run(
+                """
+                MATCH (t:Topic)
+                OPTIONAL MATCH (t)-[:HAS_SUBTOPIC*0..]->(desc:Topic)-[:HAS_ENTRY]->(e:Entry)
+                RETURN t.path AS topic, count(DISTINCT e) AS count
+                """
             )
             return {r["topic"]: r["count"] for r in result}
 
     def get_entry_ids_for_topic(self, topic: str) -> list[str]:
+        """Return entry IDs recursively (includes entries in all sub-topics)."""
         with self._session() as session:
             result = session.run(
-                "MATCH (t:Topic {name: $topic})-[:HAS_ENTRY]->(e:Entry) "
-                "RETURN e.id AS id",
-                topic=topic,
+                """
+                MATCH (t:Topic {path: $path})-[:HAS_SUBTOPIC*0..]->(desc:Topic)-[:HAS_ENTRY]->(e:Entry)
+                RETURN DISTINCT e.id AS id
+                """,
+                path=topic,
             )
             return [r["id"] for r in result]
 
@@ -47,20 +86,14 @@ class Neo4jGraphDB:
     ) -> None:
         with self._session() as session:
             session.run(
-                "MERGE (t:Topic {name: $topic}) ON CREATE SET t.entry_count = 0",
-                topic=topic,
-            )
-            session.run(
                 """
-                MATCH (t:Topic {name: $topic})
+                MERGE (t:Topic {path: $path})
                 MERGE (e:Entry {id: $id})
                   ON CREATE SET e += $props
                   ON MATCH SET e += $props
-                WITH t, e
-                MERGE (t)-[r:HAS_ENTRY]->(e)
-                  ON CREATE SET t.entry_count = coalesce(t.entry_count, 0) + 1
+                MERGE (t)-[:HAS_ENTRY]->(e)
                 """,
-                topic=topic,
+                path=topic,
                 id=entry_id,
                 props=properties,
             )
@@ -70,7 +103,7 @@ class Neo4jGraphDB:
             result = session.run(
                 """
                 MATCH (t:Topic)-[:HAS_ENTRY]->(e:Entry {id: $id})
-                RETURN e AS node, t.name AS topic
+                RETURN e AS node, t.path AS topic
                 """,
                 id=entry_id,
             )
@@ -91,8 +124,7 @@ class Neo4jGraphDB:
             session.run(
                 """
                 UNWIND $ids AS id
-                MATCH (t:Topic)-[:HAS_ENTRY]->(e:Entry {id: id})
-                SET t.entry_count = coalesce(t.entry_count, 0) - 1
+                MATCH (e:Entry {id: id})
                 DETACH DELETE e
                 """,
                 ids=ids,
@@ -101,7 +133,7 @@ class Neo4jGraphDB:
     def ensure_indexes(self) -> None:
         with self._session() as session:
             session.run(
-                "CREATE INDEX topic_name IF NOT EXISTS FOR (t:Topic) ON (t.name)"
+                "CREATE INDEX topic_path IF NOT EXISTS FOR (t:Topic) ON (t.path)"
             )
             session.run(
                 "CREATE INDEX entry_id IF NOT EXISTS FOR (e:Entry) ON (e.id)"
