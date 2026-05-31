@@ -70,6 +70,79 @@ def least_topic():
         graph_db.close()
 
 
+@cli.command(name="topic-stats")
+@click.option("--topic", required=True, help="Topic path to analyze.")
+@click.option(
+    "--fields",
+    default=None,
+    help="Comma-separated metadata fields to group by. Default: all metadata fields.",
+)
+def topic_stats(topic: str, fields: str | None):
+    """Show entry counts grouped by metadata field combinations for a topic.
+
+    Groups entries by their metadata values and shows counts per combination,
+    helping identify underrepresented combinations.
+    """
+    from collections import Counter
+
+    graph_db = connect_graph_db()
+    try:
+        entries = graph_db.get_entries_for_topic(topic)
+        if not entries:
+            err(
+                "no_entries_in_topic",
+                detail=f"Topic '{topic}' has no entries",
+                exit_code=EXIT_NOT_FOUND,
+            )
+
+        # Determine which fields to group by
+        if fields:
+            group_fields = [f.strip() for f in fields.split(",")]
+            # Validate fields exist in at least one entry
+            all_keys = set()
+            for e in entries:
+                all_keys.update(e.properties.keys())
+            missing = set(group_fields) - all_keys
+            if missing:
+                err(
+                    "unknown_fields",
+                    detail=f"Fields not found in entries: {missing}",
+                    suggestion=f"Available fields: {sorted(all_keys)}",
+                    exit_code=EXIT_USAGE,
+                )
+        else:
+            # Use all metadata fields (intersection across entries for consistency)
+            all_keys = set()
+            for e in entries:
+                all_keys.update(e.properties.keys())
+            group_fields = sorted(all_keys)
+
+        # Group and count
+        counter: Counter = Counter()
+        for e in entries:
+            key = tuple(
+                (f, e.properties.get(f)) for f in group_fields
+            )
+            counter[key] += 1
+
+        # Format output
+        groups = []
+        for combo, count in counter.most_common():
+            groups.append({
+                "fields": dict(combo),
+                "count": count,
+            })
+
+        output({
+            "topic": topic,
+            "total_entries": len(entries),
+            "group_by": group_fields,
+            "groups": groups,
+        })
+    finally:
+        graph_db.close()
+
+
 @cli.command()
 @click.option("--topic", required=True, help="Topic to restrict similarity search to.")
 @click.option(

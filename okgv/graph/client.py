@@ -81,6 +81,26 @@ class Neo4jGraphDB:
             )
             return [r["id"] for r in result]
 
+    def get_entries_for_topic(self, topic: str) -> list:
+        """Return all entries (with properties) recursively for a topic."""
+        from okgv.protocols import GraphRecord
+
+        with self._session() as session:
+            result = session.run(
+                """
+                MATCH (t:Topic {path: $path})-[:HAS_SUBTOPIC*0..]->(desc:Topic)-[:HAS_ENTRY]->(e:Entry)
+                RETURN DISTINCT e AS node, desc.path AS topic
+                """,
+                path=topic,
+            )
+            records = []
+            for row in result:
+                node = row["node"]
+                props = dict(node)
+                eid = props.pop("id", None)
+                records.append(GraphRecord(id=eid, topic=row["topic"], properties=props))
+            return records
+
     def upload_entry(
         self, topic: str, entry_id: str, properties: dict
     ) -> None:
