@@ -147,6 +147,55 @@ def _get_embedder():
 
 # ── Core logic ────────────────────────────────────────────────────────────
 
+_schema_validated = False
+
+
+def _validate_schema(meta: dict, graph_props: dict, vector_props: dict) -> None:
+    """Check for key collisions and missing vector property definitions."""
+    global _schema_validated
+    if _schema_validated:
+        return
+
+    # (1) Key collision between metadata and per-DB properties
+    graph_overlap = set(meta) & set(graph_props)
+    if graph_overlap:
+        _err(
+            "schema_key_collision",
+            detail=f"metadata() and graph_properties() share keys: {graph_overlap}",
+            suggestion="Remove duplicates from one of the methods",
+            exit_code=EXIT_USAGE,
+        )
+    vector_overlap = set(meta) & set(vector_props)
+    if vector_overlap:
+        _err(
+            "schema_key_collision",
+            detail=f"metadata() and vector_properties() share keys: {vector_overlap}",
+            suggestion="Remove duplicates from one of the methods",
+            exit_code=EXIT_USAGE,
+        )
+
+    # (2) vector_property_definitions must cover all vector DB keys
+    defined_names = {pd.name for pd in SCHEMA.vector_property_definitions()}
+    actual_keys = set(meta) | set(vector_props)
+    missing = actual_keys - defined_names
+    if missing:
+        _err(
+            "schema_missing_definitions",
+            detail=f"vector_property_definitions() missing keys: {missing}",
+            suggestion="Add PropertyDefinition entries for these keys",
+            exit_code=EXIT_USAGE,
+        )
+    extra = defined_names - actual_keys
+    if extra:
+        _err(
+            "schema_extra_definitions",
+            detail=f"vector_property_definitions() defines unused keys: {extra}",
+            suggestion="Remove these PropertyDefinition entries or add them to metadata()/vector_properties()",
+            exit_code=EXIT_USAGE,
+        )
+
+    _schema_validated = True
+
 
 def upsert_entry(
     graph_db: GraphDB,
@@ -158,17 +207,21 @@ def upsert_entry(
     eid = entry_id(raw)
     entry = _build_entry(raw)
     meta = SCHEMA.metadata(entry)
+    graph_props = SCHEMA.graph_properties(entry)
+    vector_props = SCHEMA.vector_properties(entry)
+
+    _validate_schema(meta, graph_props, vector_props)
 
     graph_db.upload_entry(
         topic=topic,
         entry_id=eid,
-        properties={**meta, **SCHEMA.graph_properties(entry)},
+        properties={**meta, **graph_props},
     )
 
     vector = embedder([SCHEMA.embedding_text(entry)])[0]
     vector_db.upload_entry(
         entry_id=eid,
-        properties={**meta, **SCHEMA.vector_properties(entry)},
+        properties={**meta, **vector_props},
         vector=vector,
     )
 
