@@ -1,0 +1,46 @@
+"""Entry schema for this project.
+
+Define your entry class and schema class here.
+Set OKGV_SCHEMA=schema:MyEntrySchema in .env.
+"""
+
+from okgv.protocols import PropertyDefinition
+
+
+class MyEntry:
+    """Your entry class. Accepts raw dict, exposes fields and computed properties."""
+
+    def __init__(self, raw: dict):
+        self.text = raw["text"]  # replace with your fields
+
+
+class MyEntrySchema:
+    entry_class = MyEntry
+
+    @staticmethod
+    def metadata(entry: MyEntry) -> dict:
+        """Stored in both graph and vector DBs."""
+        return {"length": len(entry.text)}
+
+    @staticmethod
+    def graph_properties(entry: MyEntry) -> dict:
+        """Additional properties for graph DB only."""
+        return {"text": entry.text}
+
+    @staticmethod
+    def vector_properties(entry: MyEntry) -> dict:
+        """Additional properties for vector DB only."""
+        return {"text": entry.text}
+
+    @staticmethod
+    def embedding_text(entry: MyEntry) -> str:
+        """Text to embed for similarity search."""
+        return entry.text
+
+    @staticmethod
+    def vector_property_definitions() -> list[PropertyDefinition]:
+        """Schema for vector DB collection. Must cover metadata + vector_properties keys."""
+        return [
+            PropertyDefinition(name="length", data_type="int"),
+            PropertyDefinition(name="text", data_type="text"),
+        ]

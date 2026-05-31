@@ -29,6 +29,35 @@ def cli():
     pass
 
 
+@cli.command()
+def init():
+    """Initialize current directory with okgv scaffold files."""
+    from importlib.resources import files
+    from pathlib import Path
+
+    templates = files("okgv.templates")
+    cwd = Path.cwd()
+    created = []
+
+    scaffold = [
+        ("env.txt", ".env"),
+        ("schema.py.txt", "schema.py"),
+        ("topics.json", "topics.json"),
+    ]
+
+    for template_name, target_name in scaffold:
+        target = cwd / target_name
+        if not target.exists():
+            content = templates.joinpath(template_name).read_text()
+            target.write_text(content)
+            created.append(target_name)
+
+    if created:
+        output({"initialized": True, "created": created})
+    else:
+        output({"initialized": False, "message": "All files already exist", "created": []})
+
+
 @cli.command(name="create-topic")
 @click.option("--name", required=True, help="Topic path to create (e.g. 'algebra/linear_algebra').")
 @click.option("--parents", is_flag=True, default=False, help="Create missing parent topics.")
