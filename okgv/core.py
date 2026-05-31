@@ -68,7 +68,13 @@ def upsert_entry(
     raw: dict,
     embedder: Callable[[list[str]], list[list[float]]],
     overwrite: bool = False,
+    vector: list[float] | None = None,
 ) -> str:
+    """Upsert entry into both DBs.
+
+    If vector is provided, uses it directly instead of calling embedder.
+    This allows batch callers to pre-compute all embeddings in one call.
+    """
     eid = entry_id(raw)
     entry = build_entry(schema, raw)
     meta = schema.metadata(entry)
@@ -84,7 +90,8 @@ def upsert_entry(
         overwrite=overwrite,
     )
 
-    vector = embedder([schema.embedding_text(entry)])[0]
+    if vector is None:
+        vector = embedder([schema.embedding_text(entry)])[0]
     try:
         vector_db.upload_entry(
             entry_id=eid,

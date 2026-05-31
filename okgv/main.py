@@ -314,13 +314,13 @@ def similar_batch(session: Session, topic: str, entries: str, top_k: int):
             suggestion="Check topic name or run least-topic to list topics",
             exit_code=EXIT_NOT_FOUND,
         )
-    log(f"Loading embedding model (once for {len(rows)} candidates)...")
-    embedder = session.embedder
+    log(f"Loading embedding model and embedding {len(rows)} candidates...")
+    entry_objs = [build_entry(schema, raw) for raw in rows]
+    texts = [schema.embedding_text(e) for e in entry_objs]
+    vectors = session.embedder(texts)
 
     results_all = []
-    for i, raw in enumerate(rows):
-        entry_obj = build_entry(schema, raw)
-        vector = embedder([schema.embedding_text(entry_obj)])[0]
+    for i, (raw, vector) in enumerate(zip(rows, vectors)):
         log(f"[{i + 1}/{len(rows)}] Searching top-{top_k} similar for candidate...")
         matches = vector_db.get_top_n(vector, n=top_k, filter_ids=topic_ids)
         match_ids = [uid for uid, _ in matches]
@@ -364,15 +364,18 @@ def submit_batch(session: Session, topic: str, entries: str, overwrite: bool):
             exit_code=EXIT_USAGE,
         )
 
-    log(f"Loading embedding model (once for {len(rows)} entries)...")
-    embedder = session.embedder
+    log(f"Loading embedding model and embedding {len(rows)} entries...")
+    entry_objs = [build_entry(schema, raw) for raw in rows]
+    texts = [schema.embedding_text(e) for e in entry_objs]
+    vectors = session.embedder(texts)
+
     inserted_ids = []
     results = []
-    for i, raw in enumerate(rows):
+    for i, (raw, vec) in enumerate(zip(rows, vectors)):
         log(f"[{i + 1}/{len(rows)}] Upserting entry into topic '{topic}'...")
         eid = upsert_entry(
             schema, session.graph_db, session.vector_db, topic, raw,
-            embedder, overwrite=overwrite,
+            session.embedder, overwrite=overwrite, vector=vec,
         )
         inserted_ids.append(eid)
         results.append({"id": eid, "submitted": True})
