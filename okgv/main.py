@@ -1,13 +1,6 @@
 """
 CLI for AI agents to interact with the self-organized knowledge base.
 
-Commands:
-  least-topic    — Topic with fewest entries.
-  similar        — Top-N most similar entries to a candidate within a topic.
-  submit         — Upsert entry into both graph and vector DBs.
-  similar-batch  — Batch version of similar: single model load for N candidates.
-  submit-batch   — Batch version of submit: single model load for N entries.
-
 Schema discovery (see config.py):
   1. OKGV_SCHEMA env var →  "module:ClassName"
   2. Built-in QAEntrySchema fallback
@@ -16,228 +9,17 @@ Exit codes:  0=ok  1=failure  2=usage  3=not_found  4=connection
 """
 
 import json
-import os
 import sys
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Callable, NoReturn
 
 import click
 
 from okgv.config import load_schema
-from okgv.embedding import make_embedder
-from okgv.graph.client import Neo4jGraphDB
-from okgv.protocols import GraphDB, VectorDB, entry_id
-from okgv.vector.client import WeaviateVectorDB
+from okgv.connections import connect_graph_db, connect_vector_db, get_embedder
+from okgv.core import build_entry, log_session, upsert_entry
+from okgv.helpers import err, log, output, parse_raw, read_raw, EXIT_NOT_FOUND, EXIT_USAGE
+from okgv.protocols import entry_id
 
-LOG_FILE = Path.cwd() / "log.json"
-
-EXIT_OK = 0
-EXIT_FAILURE = 1
-EXIT_USAGE = 2
-EXIT_NOT_FOUND = 3
-EXIT_CONNECTION = 4
-
-# Loaded once at startup via schema discovery.
 SCHEMA = load_schema()
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────
-
-
-def _env(key: str, default: str) -> str:
-    return os.getenv(key, default)
-
-
-def _env_int(key: str, default: int) -> int:
-    return int(os.getenv(key, str(default)))
-
-
-def _output(data: dict | list) -> None:
-    json.dump(data, sys.stdout, indent=2)
-    sys.stdout.write("\n")
-
-
-def _err(
-    error: str, detail: str = "", suggestion: str = "", exit_code: int = EXIT_FAILURE
-) -> NoReturn:
-    msg: dict = {"error": error}
-    if detail:
-        msg["detail"] = detail
-    if suggestion:
-        msg["suggestion"] = suggestion
-    json.dump(msg, sys.stderr, indent=2)
-    sys.stderr.write("\n")
-    sys.exit(exit_code)
-
-
-def _parse_raw(raw_str: str) -> dict:
-    """Parse JSON string into dict."""
-    try:
-        return json.loads(raw_str)
-    except json.JSONDecodeError as e:
-        _err("invalid_json", detail=str(e), exit_code=EXIT_USAGE)
-
-
-def _build_entry(raw: dict):
-    """Build entry object from raw dict using schema's entry_class."""
-    try:
-        return SCHEMA.entry_class(raw)
-    except KeyError as e:
-        _err(
-            "missing_field",
-            detail=f"Entry JSON missing required key: {e}",
-            exit_code=EXIT_USAGE,
-        )
-
-
-def _read_raw(entry_str: str) -> dict:
-    """Read raw dict from argument or stdin (if '-')."""
-    if entry_str == "-":
-        return _parse_raw(sys.stdin.read())
-    return _parse_raw(entry_str)
-
-
-def _log(msg: str) -> None:
-    click.echo(msg, err=True)
-
-
-# ── DB connections ────────────────────────────────────────────────────────
-
-
-def connect_graph_db() -> GraphDB:
-    try:
-        return Neo4jGraphDB(
-            uri=_env("NEO4J_URI", "bolt://localhost:7687"),
-            user=_env("NEO4J_USER", "neo4j"),
-            password=_env("NEO4J_PASSWORD", "password"),
-            database=_env("NEO4J_DATABASE", "neo4j"),
-        )
-    except Exception as e:
-        _err(
-            "graph_db_connection_failed",
-            detail=str(e),
-            suggestion="Check NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, NEO4J_DATABASE env vars",
-            exit_code=EXIT_CONNECTION,
-        )
-
-
-def connect_vector_db() -> VectorDB:
-    try:
-        return WeaviateVectorDB(
-            host=_env("WEAVIATE_HOST", "localhost"),
-            http_port=_env_int("WEAVIATE_PORT", 8080),
-            grpc_port=_env_int("WEAVIATE_GRPC_PORT", 50051),
-            collection_name=_env("WEAVIATE_COLLECTION", "knowledge_base"),
-            property_definitions=SCHEMA.vector_property_definitions(),
-            api_key=os.getenv("WEAVIATE_API_KEY"),
-        )
-    except Exception as e:
-        _err(
-            "vector_db_connection_failed",
-            detail=str(e),
-            suggestion="Check WEAVIATE_HOST, WEAVIATE_PORT, WEAVIATE_COLLECTION env vars",
-            exit_code=EXIT_CONNECTION,
-        )
-
-
-def _get_embedder():
-    return make_embedder(_env("EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2"))
-
-
-# ── Core logic ────────────────────────────────────────────────────────────
-
-_schema_validated = False
-
-
-def _validate_schema(meta: dict, graph_props: dict, vector_props: dict) -> None:
-    """Check for key collisions and missing vector property definitions."""
-    global _schema_validated
-    if _schema_validated:
-        return
-
-    # (1) Key collision between metadata and per-DB properties
-    graph_overlap = set(meta) & set(graph_props)
-    if graph_overlap:
-        _err(
-            "schema_key_collision",
-            detail=f"metadata() and graph_properties() share keys: {graph_overlap}",
-            suggestion="Remove duplicates from one of the methods",
-            exit_code=EXIT_USAGE,
-        )
-    vector_overlap = set(meta) & set(vector_props)
-    if vector_overlap:
-        _err(
-            "schema_key_collision",
-            detail=f"metadata() and vector_properties() share keys: {vector_overlap}",
-            suggestion="Remove duplicates from one of the methods",
-            exit_code=EXIT_USAGE,
-        )
-
-    # (2) vector_property_definitions must cover all vector DB keys
-    defined_names = {pd.name for pd in SCHEMA.vector_property_definitions()}
-    actual_keys = set(meta) | set(vector_props)
-    missing = actual_keys - defined_names
-    if missing:
-        _err(
-            "schema_missing_definitions",
-            detail=f"vector_property_definitions() missing keys: {missing}",
-            suggestion="Add PropertyDefinition entries for these keys",
-            exit_code=EXIT_USAGE,
-        )
-    extra = defined_names - actual_keys
-    if extra:
-        _err(
-            "schema_extra_definitions",
-            detail=f"vector_property_definitions() defines unused keys: {extra}",
-            suggestion="Remove these PropertyDefinition entries or add them to metadata()/vector_properties()",
-            exit_code=EXIT_USAGE,
-        )
-
-    _schema_validated = True
-
-
-def upsert_entry(
-    graph_db: GraphDB,
-    vector_db: VectorDB,
-    topic: str,
-    raw: dict,
-    embedder: Callable[[list[str]], list[list[float]]],
-) -> str:
-    eid = entry_id(raw)
-    entry = _build_entry(raw)
-    meta = SCHEMA.metadata(entry)
-    graph_props = SCHEMA.graph_properties(entry)
-    vector_props = SCHEMA.vector_properties(entry)
-
-    _validate_schema(meta, graph_props, vector_props)
-
-    graph_db.upload_entry(
-        topic=topic,
-        entry_id=eid,
-        properties={**meta, **graph_props},
-    )
-
-    vector = embedder([SCHEMA.embedding_text(entry)])[0]
-    vector_db.upload_entry(
-        entry_id=eid,
-        properties={**meta, **vector_props},
-        vector=vector,
-    )
-
-    return eid
-
-
-def log_session(topic: str, inserted_ids: list[str]) -> None:
-    log = {}
-    if LOG_FILE.exists():
-        log = json.loads(LOG_FILE.read_text())
-    timestamp = datetime.now(timezone.utc).isoformat()
-    log[timestamp] = {topic: inserted_ids}
-    LOG_FILE.write_text(json.dumps(log, indent=2))
-
-
-# ── CLI ───────────────────────────────────────────────────────────────────
 
 
 @click.group(
@@ -254,9 +36,9 @@ def least_topic():
     try:
         counts = graph_db.get_topic_entry_counts()
         if not counts:
-            _err("no_topics", detail="No topics found in graph", exit_code=EXIT_NOT_FOUND)
+            err("no_topics", detail="No topics found in graph", exit_code=EXIT_NOT_FOUND)
         topic = min(counts, key=lambda t: counts[t])
-        _output({"topic": topic, "count": counts[topic]})
+        output({"topic": topic, "count": counts[topic]})
     finally:
         graph_db.close()
 
@@ -267,25 +49,25 @@ def least_topic():
 @click.option("--top-k", default=5, show_default=True, help="Number of similar entries to return.")
 def similar(topic: str, entry: str, top_k: int):
     """Get top-N most similar entries within a topic, with full content."""
-    raw = _read_raw(entry)
-    entry_obj = _build_entry(raw)
+    raw = read_raw(entry)
+    entry_obj = build_entry(SCHEMA, raw)
 
     graph_db = connect_graph_db()
-    vector_db = connect_vector_db()
+    vector_db = connect_vector_db(SCHEMA)
     try:
-        _log(f"Fetching entry IDs for topic '{topic}'...")
+        log(f"Fetching entry IDs for topic '{topic}'...")
         topic_ids = graph_db.get_entry_ids_for_topic(topic)
         if not topic_ids:
-            _err(
+            err(
                 "no_entries_in_topic",
                 detail=f"Topic '{topic}' has no entries",
                 suggestion="Check topic name or run least-topic to list topics",
                 exit_code=EXIT_NOT_FOUND,
             )
-        _log("Loading embedding model...")
-        embedder = _get_embedder()
+        log("Loading embedding model...")
+        embedder = get_embedder()
         vector = embedder([SCHEMA.embedding_text(entry_obj)])[0]
-        _log(f"Searching top-{top_k} similar entries in topic '{topic}'...")
+        log(f"Searching top-{top_k} similar entries in topic '{topic}'...")
         matches = vector_db.get_top_n(vector, n=top_k, filter_ids=topic_ids)
 
         results = []
@@ -296,7 +78,7 @@ def similar(topic: str, entry: str, top_k: int):
                 item["properties"] = matched.properties
             results.append(item)
 
-        _output({"candidate_id": entry_id(raw), "similar": results})
+        output({"candidate_id": entry_id(raw), "similar": results})
     finally:
         vector_db.close()
         graph_db.close()
@@ -307,17 +89,17 @@ def similar(topic: str, entry: str, top_k: int):
 @click.option("--entry", required=True, help='Entry JSON string, or "-" to read from stdin.')
 def submit(topic: str, entry: str):
     """Upsert entry into both graph and vector DBs."""
-    raw = _read_raw(entry)
+    raw = read_raw(entry)
 
     graph_db = connect_graph_db()
-    vector_db = connect_vector_db()
+    vector_db = connect_vector_db(SCHEMA)
     try:
-        _log("Loading embedding model...")
-        embedder = _get_embedder()
-        _log(f"Upserting entry into topic '{topic}'...")
-        eid = upsert_entry(graph_db, vector_db, topic, raw, embedder)
+        log("Loading embedding model...")
+        embedder = get_embedder()
+        log(f"Upserting entry into topic '{topic}'...")
+        eid = upsert_entry(SCHEMA, graph_db, vector_db, topic, raw, embedder)
         log_session(topic, [eid])
-        _output({"id": eid, "submitted": True})
+        output({"id": eid, "submitted": True})
     finally:
         vector_db.close()
         graph_db.close()
@@ -336,30 +118,30 @@ def similar_batch(topic: str, entries: str, top_k: int):
     try:
         rows = json.loads(raw_str)
     except json.JSONDecodeError as e:
-        _err("invalid_json", detail=str(e), exit_code=EXIT_USAGE)
+        err("invalid_json", detail=str(e), exit_code=EXIT_USAGE)
     if not isinstance(rows, list):
-        _err("invalid_input", detail="Expected a JSON array of entries", exit_code=EXIT_USAGE)
+        err("invalid_input", detail="Expected a JSON array of entries", exit_code=EXIT_USAGE)
 
     graph_db = connect_graph_db()
-    vector_db = connect_vector_db()
+    vector_db = connect_vector_db(SCHEMA)
     try:
-        _log(f"Fetching entry IDs for topic '{topic}'...")
+        log(f"Fetching entry IDs for topic '{topic}'...")
         topic_ids = graph_db.get_entry_ids_for_topic(topic)
         if not topic_ids:
-            _err(
+            err(
                 "no_entries_in_topic",
                 detail=f"Topic '{topic}' has no entries",
                 suggestion="Check topic name or run least-topic to list topics",
                 exit_code=EXIT_NOT_FOUND,
             )
-        _log(f"Loading embedding model (once for {len(rows)} candidates)...")
-        embedder = _get_embedder()
+        log(f"Loading embedding model (once for {len(rows)} candidates)...")
+        embedder = get_embedder()
 
-        output = []
+        results_all = []
         for i, raw in enumerate(rows):
-            entry_obj = _build_entry(raw)
+            entry_obj = build_entry(SCHEMA, raw)
             vector = embedder([SCHEMA.embedding_text(entry_obj)])[0]
-            _log(f"[{i+1}/{len(rows)}] Searching top-{top_k} similar for candidate...")
+            log(f"[{i+1}/{len(rows)}] Searching top-{top_k} similar for candidate...")
             matches = vector_db.get_top_n(vector, n=top_k, filter_ids=topic_ids)
             results = []
             for uid, certainty in matches:
@@ -368,9 +150,9 @@ def similar_batch(topic: str, entries: str, top_k: int):
                 if matched:
                     item["properties"] = matched.properties
                 results.append(item)
-            output.append({"candidate_id": entry_id(raw), "similar": results})
+            results_all.append({"candidate_id": entry_id(raw), "similar": results})
 
-        _output(output)
+        output(results_all)
     finally:
         vector_db.close()
         graph_db.close()
@@ -388,24 +170,24 @@ def submit_batch(topic: str, entries: str):
     try:
         rows = json.loads(raw_str)
     except json.JSONDecodeError as e:
-        _err("invalid_json", detail=str(e), exit_code=EXIT_USAGE)
+        err("invalid_json", detail=str(e), exit_code=EXIT_USAGE)
     if not isinstance(rows, list):
-        _err("invalid_input", detail="Expected a JSON array of entries", exit_code=EXIT_USAGE)
+        err("invalid_input", detail="Expected a JSON array of entries", exit_code=EXIT_USAGE)
 
     graph_db = connect_graph_db()
-    vector_db = connect_vector_db()
+    vector_db = connect_vector_db(SCHEMA)
     try:
-        _log(f"Loading embedding model (once for {len(rows)} entries)...")
-        embedder = _get_embedder()
+        log(f"Loading embedding model (once for {len(rows)} entries)...")
+        embedder = get_embedder()
         inserted_ids = []
-        output = []
+        results = []
         for i, raw in enumerate(rows):
-            _log(f"[{i+1}/{len(rows)}] Upserting entry into topic '{topic}'...")
-            eid = upsert_entry(graph_db, vector_db, topic, raw, embedder)
+            log(f"[{i+1}/{len(rows)}] Upserting entry into topic '{topic}'...")
+            eid = upsert_entry(SCHEMA, graph_db, vector_db, topic, raw, embedder)
             inserted_ids.append(eid)
-            output.append({"id": eid, "submitted": True})
+            results.append({"id": eid, "submitted": True})
         log_session(topic, inserted_ids)
-        _output(output)
+        output(results)
     finally:
         vector_db.close()
         graph_db.close()
@@ -417,18 +199,18 @@ def submit_batch(topic: str, entries: str):
 def get_by_topic(topic: str, limit: int):
     """Fetch sample entries for a topic from vector DB."""
     graph_db = connect_graph_db()
-    vector_db = connect_vector_db()
+    vector_db = connect_vector_db(SCHEMA)
     try:
         topic_ids = graph_db.get_entry_ids_for_topic(topic)
         if not topic_ids:
-            _err(
+            err(
                 "no_entries_in_topic",
                 detail=f"Topic '{topic}' has no entries",
                 suggestion="Check topic name or run least-topic to list topics",
                 exit_code=EXIT_NOT_FOUND,
             )
         entries = vector_db.get_by_ids(topic_ids[:limit])
-        _output([{"id": e.id, **e.properties} for e in entries])
+        output([{"id": e.id, **e.properties} for e in entries])
     finally:
         vector_db.close()
         graph_db.close()
@@ -438,12 +220,12 @@ def get_by_topic(topic: str, limit: int):
 @click.option("--id", "entry_id", required=True, help="Entry UUID to fetch.")
 def get_vector(entry_id: str):
     """Fetch entry from vector DB by ID."""
-    vector_db = connect_vector_db()
+    vector_db = connect_vector_db(SCHEMA)
     try:
         matched = vector_db.get_by_id(entry_id)
         if matched is None:
-            _err("not_found", detail=f"No entry with id '{entry_id}' in vector DB", exit_code=EXIT_NOT_FOUND)
-        _output({"id": matched.id, **matched.properties})
+            err("not_found", detail=f"No entry with id '{entry_id}' in vector DB", exit_code=EXIT_NOT_FOUND)
+        output({"id": matched.id, **matched.properties})
     finally:
         vector_db.close()
 
@@ -456,8 +238,8 @@ def get_graph(entry_id: str):
     try:
         matched = graph_db.get_by_id(entry_id)
         if matched is None:
-            _err("not_found", detail=f"No entry with id '{entry_id}' in graph DB", exit_code=EXIT_NOT_FOUND)
-        _output({"id": matched.id, "topic": matched.topic, **matched.properties})
+            err("not_found", detail=f"No entry with id '{entry_id}' in graph DB", exit_code=EXIT_NOT_FOUND)
+        output({"id": matched.id, "topic": matched.topic, **matched.properties})
     finally:
         graph_db.close()
 
@@ -466,22 +248,25 @@ def get_graph(entry_id: str):
 @click.argument("timestamp")
 def undo(timestamp: str):
     """Delete all entries submitted after TIMESTAMP from both DBs and log.json."""
+    from datetime import datetime, timezone
+    from okgv.core import LOG_FILE
+
     try:
         cutoff = datetime.fromisoformat(timestamp)
     except ValueError as e:
-        _err("invalid_timestamp", detail=str(e), suggestion="Use ISO 8601 format", exit_code=EXIT_USAGE)
+        err("invalid_timestamp", detail=str(e), suggestion="Use ISO 8601 format", exit_code=EXIT_USAGE)
 
     if cutoff.tzinfo is None:
         cutoff = cutoff.replace(tzinfo=timezone.utc)
 
     if not LOG_FILE.exists():
-        _err("no_log", detail="log.json not found", exit_code=EXIT_NOT_FOUND)
+        err("no_log", detail="log.json not found", exit_code=EXIT_NOT_FOUND)
 
-    log = json.loads(LOG_FILE.read_text())
+    log_data = json.loads(LOG_FILE.read_text())
 
     ids_to_delete: list[str] = []
     keys_to_remove: list[str] = []
-    for key, topic_dict in log.items():
+    for key, topic_dict in log_data.items():
         try:
             ts = datetime.fromisoformat(key)
         except ValueError:
@@ -494,24 +279,24 @@ def undo(timestamp: str):
             keys_to_remove.append(key)
 
     if not ids_to_delete:
-        _output({"deleted": [], "count": 0})
+        output({"deleted": [], "count": 0})
         return
 
     graph_db = connect_graph_db()
-    vector_db = connect_vector_db()
+    vector_db = connect_vector_db(SCHEMA)
     try:
-        _log(f"Deleting {len(ids_to_delete)} entries from graph DB...")
+        log(f"Deleting {len(ids_to_delete)} entries from graph DB...")
         graph_db.delete_entries(ids_to_delete)
 
-        _log(f"Deleting {len(ids_to_delete)} entries from vector DB...")
+        log(f"Deleting {len(ids_to_delete)} entries from vector DB...")
         for uid in ids_to_delete:
             vector_db.delete_by_id(uid)
 
         for key in keys_to_remove:
-            del log[key]
-        LOG_FILE.write_text(json.dumps(log, indent=2))
+            del log_data[key]
+        LOG_FILE.write_text(json.dumps(log_data, indent=2))
 
-        _output({"deleted": ids_to_delete, "count": len(ids_to_delete)})
+        output({"deleted": ids_to_delete, "count": len(ids_to_delete)})
     finally:
         vector_db.close()
         graph_db.close()
