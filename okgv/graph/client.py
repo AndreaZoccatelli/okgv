@@ -25,6 +25,14 @@ class Neo4jGraphDB:
     def _session(self):
         return self._driver.session(database=self._database)
 
+    def topic_exists(self, path: str) -> bool:
+        with self._session() as session:
+            result = session.run(
+                "MATCH (t:Topic {path: $path}) RETURN t LIMIT 1",
+                path=path,
+            )
+            return result.single() is not None
+
     def create_topic(self, name: str) -> None:
         with self._session() as session:
             session.run(

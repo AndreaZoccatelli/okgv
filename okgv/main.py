@@ -30,26 +30,46 @@ def cli():
 
 
 @cli.command(name="create-topic")
-@click.option("--name", required=True, help="Topic name to create.")
-def create_topic(name: str):
-    """Create a topic node in the graph DB. Idempotent."""
+@click.option("--name", required=True, help="Topic path to create (e.g. 'algebra/linear_algebra').")
+@click.option("--parents", is_flag=True, default=False, help="Create missing parent topics.")
+def create_topic(name: str, parents: bool):
+    """Create a topic node in the graph DB. Accepts paths.
+
+    Without --parents: errors if parent topics don't exist.
+    With --parents: creates all missing intermediate levels (like mkdir -p).
+    """
     graph_db = connect_graph_db()
     try:
-        graph_db.create_topic(name)
+        segments = name.split("/")
+
+        if len(segments) == 1:
+            graph_db.create_topic(name)
+        else:
+            # Check/create each level
+            for i, segment in enumerate(segments):
+                if i == 0:
+                    if not graph_db.topic_exists(segment):
+                        if not parents:
+                            err(
+                                "parent_not_found",
+                                detail=f"Root topic '{segment}' does not exist",
+                                suggestion="Use --parents to create missing levels",
+                                exit_code=EXIT_NOT_FOUND,
+                            )
+                        graph_db.create_topic(segment)
+                else:
+                    parent_path = "/".join(segments[:i])
+                    if not graph_db.topic_exists(parent_path):
+                        if not parents:
+                            err(
+                                "parent_not_found",
+                                detail=f"Parent topic '{parent_path}' does not exist",
+                                suggestion="Use --parents to create missing levels",
+                                exit_code=EXIT_NOT_FOUND,
+                            )
+                    graph_db.create_subtopic(parent_path, segment)
+
         output({"topic": name, "created": True})
-    finally:
-        graph_db.close()
-
-
-@cli.command(name="create-subtopic")
-@click.option("--parent", required=True, help="Parent topic name.")
-@click.option("--name", required=True, help="Sub-topic name to create.")
-def create_subtopic(parent: str, name: str):
-    """Create a sub-topic under an existing topic. Idempotent."""
-    graph_db = connect_graph_db()
-    try:
-        graph_db.create_subtopic(parent, name)
-        output({"parent": parent, "subtopic": name, "created": True})
     finally:
         graph_db.close()
 
