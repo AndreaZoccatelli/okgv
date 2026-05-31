@@ -29,6 +29,15 @@ def cli():
     pass
 
 
+@cli.command(name="master-prompt")
+def master_prompt():
+    """Print agent instructions for using the CLI."""
+    from importlib.resources import files
+
+    templates = files("okgv.templates")
+    click.echo(templates.joinpath("prompt.md").read_text())
+
+
 @cli.command()
 def init():
     """Initialize current directory with okgv scaffold files."""
