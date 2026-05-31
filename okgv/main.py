@@ -593,15 +593,15 @@ def undo(session: Session, timestamp: str, dry_run: bool):
             break
         deleted.append(uid)
 
-        # Progressive log update: remove this ID from log_data
-        for key in list(log_data.keys()):
-            if key in keys_to_remove:
-                for _topic, ids in log_data[key].items():
-                    if uid in ids:
-                        ids.remove(uid)
-                if all(len(ids) == 0 for ids in log_data[key].values()):
-                    del log_data[key]
-        log_file.write_text(json.dumps(log_data, indent=2))
+    # Update log once after all deletions (or after failure)
+    deleted_set = set(deleted)
+    for key in keys_to_remove:
+        if key in log_data:
+            for _topic, ids in log_data[key].items():
+                ids[:] = [uid for uid in ids if uid not in deleted_set]
+            if all(len(ids) == 0 for ids in log_data[key].values()):
+                del log_data[key]
+    log_file.write_text(json.dumps(log_data, indent=2))
 
     if failed_at:
         err(
