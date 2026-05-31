@@ -248,12 +248,15 @@ def similar(topic: str, entry: str, top_k: int):
     log(f"Searching top-{top_k} similar entries in topic '{topic}'...")
     matches = vector_db.get_top_n(vector, n=top_k, filter_ids=topic_ids)
 
+    match_ids = [uid for uid, _ in matches]
+    certainties = {uid: cert for uid, cert in matches}
+    fetched = {r.id: r for r in vector_db.get_by_ids(match_ids)} if match_ids else {}
+
     results = []
-    for uid, certainty in matches:
-        matched = vector_db.get_by_id(uid)
-        item: dict = {"id": uid, "certainty": certainty}
-        if matched:
-            item["properties"] = matched.properties
+    for uid in match_ids:
+        item: dict = {"id": uid, "certainty": certainties[uid]}
+        if uid in fetched:
+            item["properties"] = fetched[uid].properties
         results.append(item)
 
     output({"candidate_id": entry_id(raw), "similar": results})
@@ -331,12 +334,14 @@ def similar_batch(topic: str, entries: str, top_k: int):
         vector = embedder([schema.embedding_text(entry_obj)])[0]
         log(f"[{i + 1}/{len(rows)}] Searching top-{top_k} similar for candidate...")
         matches = vector_db.get_top_n(vector, n=top_k, filter_ids=topic_ids)
+        match_ids = [uid for uid, _ in matches]
+        certainties = {uid: cert for uid, cert in matches}
+        fetched = {r.id: r for r in vector_db.get_by_ids(match_ids)} if match_ids else {}
         results = []
-        for uid, certainty in matches:
-            matched = vector_db.get_by_id(uid)
-            item: dict = {"id": uid, "certainty": certainty}
-            if matched:
-                item["properties"] = matched.properties
+        for uid in match_ids:
+            item: dict = {"id": uid, "certainty": certainties[uid]}
+            if uid in fetched:
+                item["properties"] = fetched[uid].properties
             results.append(item)
         results_all.append({"candidate_id": entry_id(raw), "similar": results})
 
