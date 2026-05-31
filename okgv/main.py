@@ -16,7 +16,7 @@ import click
 from okgv.config import load_schema
 from okgv.connections import connect_graph_db, connect_vector_db, get_embedder
 from okgv.core import build_entry, log_session, upsert_entry
-from okgv.helpers import err, log, output, parse_raw, read_raw, EXIT_NOT_FOUND, EXIT_USAGE
+from okgv.helpers import EXIT_NOT_FOUND, EXIT_USAGE, err, log, output, read_raw
 from okgv.protocols import entry_id
 
 SCHEMA = load_schema()
@@ -61,7 +61,9 @@ def least_topic():
     try:
         counts = graph_db.get_topic_entry_counts()
         if not counts:
-            err("no_topics", detail="No topics found in graph", exit_code=EXIT_NOT_FOUND)
+            err(
+                "no_topics", detail="No topics found in graph", exit_code=EXIT_NOT_FOUND
+            )
         topic = min(counts, key=lambda t: counts[t])
         output({"topic": topic, "count": counts[topic]})
     finally:
@@ -70,8 +72,12 @@ def least_topic():
 
 @cli.command()
 @click.option("--topic", required=True, help="Topic to restrict similarity search to.")
-@click.option("--entry", required=True, help='Entry JSON string, or "-" to read from stdin.')
-@click.option("--top-k", default=5, show_default=True, help="Number of similar entries to return.")
+@click.option(
+    "--entry", required=True, help='Entry JSON string, or "-" to read from stdin.'
+)
+@click.option(
+    "--top-k", default=5, show_default=True, help="Number of similar entries to return."
+)
 def similar(topic: str, entry: str, top_k: int):
     """Get top-N most similar entries within a topic, with full content."""
     raw = read_raw(entry)
@@ -111,7 +117,9 @@ def similar(topic: str, entry: str, top_k: int):
 
 @cli.command()
 @click.option("--topic", required=True, help="Target topic name.")
-@click.option("--entry", required=True, help='Entry JSON string, or "-" to read from stdin.')
+@click.option(
+    "--entry", required=True, help='Entry JSON string, or "-" to read from stdin.'
+)
 def submit(topic: str, entry: str):
     """Upsert entry into both graph and vector DBs."""
     raw = read_raw(entry)
@@ -132,8 +140,17 @@ def submit(topic: str, entry: str):
 
 @cli.command(name="similar-batch")
 @click.option("--topic", required=True, help="Topic to restrict similarity search to.")
-@click.option("--entries", required=True, help='JSON array of entry objects, or "-" to read from stdin.')
-@click.option("--top-k", default=5, show_default=True, help="Number of similar entries per candidate.")
+@click.option(
+    "--entries",
+    required=True,
+    help='JSON array of entry objects, or "-" to read from stdin.',
+)
+@click.option(
+    "--top-k",
+    default=5,
+    show_default=True,
+    help="Number of similar entries per candidate.",
+)
 def similar_batch(topic: str, entries: str, top_k: int):
     """Get top-N similar entries for each candidate in a batch. Single model load."""
     if entries == "-":
@@ -145,7 +162,11 @@ def similar_batch(topic: str, entries: str, top_k: int):
     except json.JSONDecodeError as e:
         err("invalid_json", detail=str(e), exit_code=EXIT_USAGE)
     if not isinstance(rows, list):
-        err("invalid_input", detail="Expected a JSON array of entries", exit_code=EXIT_USAGE)
+        err(
+            "invalid_input",
+            detail="Expected a JSON array of entries",
+            exit_code=EXIT_USAGE,
+        )
 
     graph_db = connect_graph_db()
     vector_db = connect_vector_db(SCHEMA)
@@ -166,7 +187,7 @@ def similar_batch(topic: str, entries: str, top_k: int):
         for i, raw in enumerate(rows):
             entry_obj = build_entry(SCHEMA, raw)
             vector = embedder([SCHEMA.embedding_text(entry_obj)])[0]
-            log(f"[{i+1}/{len(rows)}] Searching top-{top_k} similar for candidate...")
+            log(f"[{i + 1}/{len(rows)}] Searching top-{top_k} similar for candidate...")
             matches = vector_db.get_top_n(vector, n=top_k, filter_ids=topic_ids)
             results = []
             for uid, certainty in matches:
@@ -185,7 +206,11 @@ def similar_batch(topic: str, entries: str, top_k: int):
 
 @cli.command(name="submit-batch")
 @click.option("--topic", required=True, help="Target topic name.")
-@click.option("--entries", required=True, help='JSON array of entry objects, or "-" to read from stdin.')
+@click.option(
+    "--entries",
+    required=True,
+    help='JSON array of entry objects, or "-" to read from stdin.',
+)
 def submit_batch(topic: str, entries: str):
     """Upsert multiple entries into graph and vector DBs. Single model load."""
     if entries == "-":
@@ -197,7 +222,11 @@ def submit_batch(topic: str, entries: str):
     except json.JSONDecodeError as e:
         err("invalid_json", detail=str(e), exit_code=EXIT_USAGE)
     if not isinstance(rows, list):
-        err("invalid_input", detail="Expected a JSON array of entries", exit_code=EXIT_USAGE)
+        err(
+            "invalid_input",
+            detail="Expected a JSON array of entries",
+            exit_code=EXIT_USAGE,
+        )
 
     graph_db = connect_graph_db()
     vector_db = connect_vector_db(SCHEMA)
@@ -207,7 +236,7 @@ def submit_batch(topic: str, entries: str):
         inserted_ids = []
         results = []
         for i, raw in enumerate(rows):
-            log(f"[{i+1}/{len(rows)}] Upserting entry into topic '{topic}'...")
+            log(f"[{i + 1}/{len(rows)}] Upserting entry into topic '{topic}'...")
             eid = upsert_entry(SCHEMA, graph_db, vector_db, topic, raw, embedder)
             inserted_ids.append(eid)
             results.append({"id": eid, "submitted": True})
@@ -219,7 +248,12 @@ def submit_batch(topic: str, entries: str):
 
 
 @cli.command(name="create-structure")
-@click.option("--file", "file_path", required=True, help='Path to JSON file defining topic hierarchy, or "-" for stdin.')
+@click.option(
+    "--file",
+    "file_path",
+    required=True,
+    help='Path to JSON file defining topic hierarchy, or "-" for stdin.',
+)
 def create_structure(file_path: str):
     """Create topic/subtopic tree from a JSON file.
 
@@ -230,9 +264,14 @@ def create_structure(file_path: str):
         raw_str = sys.stdin.read()
     else:
         from pathlib import Path
+
         p = Path(file_path)
         if not p.exists():
-            err("file_not_found", detail=f"File '{file_path}' not found", exit_code=EXIT_USAGE)
+            err(
+                "file_not_found",
+                detail=f"File '{file_path}' not found",
+                exit_code=EXIT_USAGE,
+            )
         raw_str = p.read_text()
 
     try:
@@ -240,7 +279,11 @@ def create_structure(file_path: str):
     except json.JSONDecodeError as e:
         err("invalid_json", detail=str(e), exit_code=EXIT_USAGE)
     if not isinstance(structure, dict):
-        err("invalid_input", detail="Expected a JSON object (nested dict)", exit_code=EXIT_USAGE)
+        err(
+            "invalid_input",
+            detail="Expected a JSON object (nested dict)",
+            exit_code=EXIT_USAGE,
+        )
 
     graph_db = connect_graph_db()
     try:
@@ -326,7 +369,11 @@ def get_vector(entry_id: str):
     try:
         matched = vector_db.get_by_id(entry_id)
         if matched is None:
-            err("not_found", detail=f"No entry with id '{entry_id}' in vector DB", exit_code=EXIT_NOT_FOUND)
+            err(
+                "not_found",
+                detail=f"No entry with id '{entry_id}' in vector DB",
+                exit_code=EXIT_NOT_FOUND,
+            )
         output({"id": matched.id, **matched.properties})
     finally:
         vector_db.close()
@@ -340,7 +387,11 @@ def get_graph(entry_id: str):
     try:
         matched = graph_db.get_by_id(entry_id)
         if matched is None:
-            err("not_found", detail=f"No entry with id '{entry_id}' in graph DB", exit_code=EXIT_NOT_FOUND)
+            err(
+                "not_found",
+                detail=f"No entry with id '{entry_id}' in graph DB",
+                exit_code=EXIT_NOT_FOUND,
+            )
         output({"id": matched.id, "topic": matched.topic, **matched.properties})
     finally:
         graph_db.close()
@@ -351,12 +402,18 @@ def get_graph(entry_id: str):
 def undo(timestamp: str):
     """Delete all entries submitted after TIMESTAMP from both DBs and log.json."""
     from datetime import datetime, timezone
+
     from okgv.core import LOG_FILE
 
     try:
         cutoff = datetime.fromisoformat(timestamp)
     except ValueError as e:
-        err("invalid_timestamp", detail=str(e), suggestion="Use ISO 8601 format", exit_code=EXIT_USAGE)
+        err(
+            "invalid_timestamp",
+            detail=str(e),
+            suggestion="Use ISO 8601 format",
+            exit_code=EXIT_USAGE,
+        )
 
     if cutoff.tzinfo is None:
         cutoff = cutoff.replace(tzinfo=timezone.utc)
@@ -387,18 +444,42 @@ def undo(timestamp: str):
     graph_db = connect_graph_db()
     vector_db = connect_vector_db(SCHEMA)
     try:
-        log(f"Deleting {len(ids_to_delete)} entries from graph DB...")
-        graph_db.delete_entries(ids_to_delete)
+        deleted = []
+        failed_at = None
+        for i, uid in enumerate(ids_to_delete):
+            log(f"[{i + 1}/{len(ids_to_delete)}] Deleting {uid}...")
+            graph_db.delete_entries([uid])
+            try:
+                vector_db.delete_by_id(uid)
+            except Exception as e:
+                # Graph already deleted this entry but vector failed.
+                # Don't update log — ID stays so user can retry.
+                failed_at = {"id": uid, "error": str(e), "deleted_so_far": deleted}
+                log(f"Vector DB delete failed for {uid}: {e}")
+                break
+            deleted.append(uid)
 
-        log(f"Deleting {len(ids_to_delete)} entries from vector DB...")
-        for uid in ids_to_delete:
-            vector_db.delete_by_id(uid)
+            # Progressive log update: remove this ID from log_data
+            for key in list(log_data.keys()):
+                if key in keys_to_remove:
+                    for _topic, ids in log_data[key].items():
+                        if uid in ids:
+                            ids.remove(uid)
+                    if all(len(ids) == 0 for ids in log_data[key].values()):
+                        del log_data[key]
+            LOG_FILE.write_text(json.dumps(log_data, indent=2))
 
-        for key in keys_to_remove:
-            del log_data[key]
-        LOG_FILE.write_text(json.dumps(log_data, indent=2))
+        if failed_at:
+            err(
+                "undo_partial_failure",
+                detail=f"Vector DB failed on entry '{failed_at['id']}': {failed_at['error']}. "
+                f"Entry was deleted from graph but remains in vector DB. "
+                f"{len(deleted)} entries fully deleted before failure.",
+                suggestion="Re-run undo to retry. The failed entry's graph node is already gone.",
+                exit_code=1,
+            )
 
-        output({"deleted": ids_to_delete, "count": len(ids_to_delete)})
+        output({"deleted": deleted, "count": len(deleted)})
     finally:
         vector_db.close()
         graph_db.close()

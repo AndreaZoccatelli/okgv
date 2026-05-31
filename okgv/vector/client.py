@@ -103,10 +103,15 @@ class WeaviateVectorDB:
             )
 
     def delete_by_id(self, entry_id: str) -> None:
+        """Delete entry. No-op if not found. Raises on connection/server errors."""
+        from weaviate.exceptions import UnexpectedStatusCodeError
+
         try:
             self._collection.data.delete_by_id(entry_id)
-        except Exception:
-            pass
+        except UnexpectedStatusCodeError as e:
+            if e.status_code == 404:
+                return
+            raise
 
     def ensure_collection(self) -> None:
         if not self._client.collections.exists(self._collection_name):
