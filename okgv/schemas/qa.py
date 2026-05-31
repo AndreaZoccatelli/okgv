@@ -4,7 +4,8 @@ Example EntrySchema: multiple-choice QA entries.
 Raw input format:
   {"question": "...", "answer": "...", "dictionary": {"A": "...", "B": "..."}}
 
-Graph properties: question, answer, options (list of keys), num_options
+Metadata (both DBs): num_options
+Graph properties: question, answer, options (list of keys)
 Vector properties: question, options (JSON string), answer
 Embedding text: question + answer concatenated
 """
@@ -33,16 +34,19 @@ class QAEntrySchema:
     entry_class = QAEntry
 
     @staticmethod
-    def to_graph_properties(entry: QAEntry) -> dict:
+    def metadata(entry: QAEntry) -> dict:
+        return {"num_options": entry.num_options()}
+
+    @staticmethod
+    def graph_properties(entry: QAEntry) -> dict:
         return {
             "question": entry.question,
             "answer": entry.answer,
             "options": entry.options(),
-            "num_options": entry.num_options(),
         }
 
     @staticmethod
-    def to_vector_properties(entry: QAEntry) -> dict:
+    def vector_properties(entry: QAEntry) -> dict:
         return {
             "question": entry.question,
             "options": json.dumps(entry.dictionary),
@@ -56,6 +60,7 @@ class QAEntrySchema:
     @staticmethod
     def vector_property_definitions() -> list[PropertyDefinition]:
         return [
+            PropertyDefinition(name="num_options", data_type="int"),
             PropertyDefinition(name="question", data_type="text"),
             PropertyDefinition(name="options", data_type="text"),
             PropertyDefinition(name="answer", data_type="text"),

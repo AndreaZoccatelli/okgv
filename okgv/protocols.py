@@ -71,13 +71,18 @@ class EntrySchema(Protocol):
     entry_class: type
 
     @staticmethod
-    def to_graph_properties(entry: Any) -> dict:
-        """Extract properties to store in graph DB."""
+    def metadata(entry: Any) -> dict:
+        """Computed metadata — stored in both DBs."""
         ...
 
     @staticmethod
-    def to_vector_properties(entry: Any) -> dict:
-        """Extract properties to store in vector DB."""
+    def graph_properties(entry: Any) -> dict:
+        """Additional properties for graph DB only."""
+        ...
+
+    @staticmethod
+    def vector_properties(entry: Any) -> dict:
+        """Additional properties for vector DB only."""
         ...
 
     @staticmethod
@@ -87,7 +92,10 @@ class EntrySchema(Protocol):
 
     @staticmethod
     def vector_property_definitions() -> list[PropertyDefinition]:
-        """Schema for vector DB collection properties."""
+        """Schema for vector DB collection properties.
+
+        Must cover properties from both metadata() and vector_properties().
+        """
         ...
 
 

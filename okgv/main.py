@@ -157,17 +157,18 @@ def upsert_entry(
 ) -> str:
     eid = entry_id(raw)
     entry = _build_entry(raw)
+    meta = SCHEMA.metadata(entry)
 
     graph_db.upload_entry(
         topic=topic,
         entry_id=eid,
-        properties=SCHEMA.to_graph_properties(entry),
+        properties={**meta, **SCHEMA.graph_properties(entry)},
     )
 
     vector = embedder([SCHEMA.embedding_text(entry)])[0]
     vector_db.upload_entry(
         entry_id=eid,
-        properties=SCHEMA.to_vector_properties(entry),
+        properties={**meta, **SCHEMA.vector_properties(entry)},
         vector=vector,
     )
 

@@ -127,17 +127,21 @@ class MySchema:
     entry_class = MyEntry
 
     @staticmethod
-    def to_graph_properties(entry: MyEntry) -> dict:
-        """Properties stored in the graph DB."""
+    def metadata(entry: MyEntry) -> dict:
+        """Computed metadata — stored in both DBs."""
         return {
-            "label": entry.label,
             "num_vowels": entry.num_vowels(),
             "text_length": entry.text_length(),
         }
 
     @staticmethod
-    def to_vector_properties(entry: MyEntry) -> dict:
-        """Properties stored in the vector DB (can differ from graph)."""
+    def graph_properties(entry: MyEntry) -> dict:
+        """Additional properties for graph DB only."""
+        return {"label": entry.label}
+
+    @staticmethod
+    def vector_properties(entry: MyEntry) -> dict:
+        """Additional properties for vector DB only."""
         return {"text": entry.text}
 
     @staticmethod
@@ -147,8 +151,12 @@ class MySchema:
 
     @staticmethod
     def vector_property_definitions() -> list[PropertyDefinition]:
-        """Collection schema for the vector DB."""
+        """Collection schema for the vector DB.
+        Must cover properties from both metadata() and vector_properties().
+        """
         return [
+            PropertyDefinition(name="num_vowels", data_type="int"),
+            PropertyDefinition(name="text_length", data_type="int"),
             PropertyDefinition(name="text", data_type="text"),
         ]
 ```
