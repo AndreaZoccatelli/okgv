@@ -218,6 +218,36 @@ def submit_batch(topic: str, entries: str):
         graph_db.close()
 
 
+@cli.command(name="move-topic")
+@click.option("--source", required=True, help="Path of topic/subtopic to move.")
+@click.option("--destination", required=True, help="Path of new parent topic.")
+def move_topic(source: str, destination: str):
+    """Move a topic/subtopic under a different parent. Blocked if name conflict."""
+    graph_db = connect_graph_db()
+    try:
+        graph_db.move_topic(source, destination)
+        name = source.rsplit("/", 1)[-1]
+        new_path = f"{destination}/{name}"
+        output({"moved": source, "new_path": new_path})
+    except ValueError as e:
+        err("name_conflict", detail=str(e), exit_code=EXIT_USAGE)
+    finally:
+        graph_db.close()
+
+
+@cli.command(name="move-entry")
+@click.option("--id", "entry_id", required=True, help="Entry UUID to move.")
+@click.option("--destination", required=True, help="Path of target topic.")
+def move_entry(entry_id: str, destination: str):
+    """Move an entry to a different topic."""
+    graph_db = connect_graph_db()
+    try:
+        graph_db.move_entry(entry_id, destination)
+        output({"id": entry_id, "moved_to": destination})
+    finally:
+        graph_db.close()
+
+
 @cli.command(name="get-by-topic")
 @click.option("--topic", required=True, help="Topic name to fetch entries from.")
 @click.option("--limit", default=3, show_default=True, help="Max entries to return.")

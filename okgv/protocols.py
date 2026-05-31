@@ -122,6 +122,18 @@ class GraphDB(Protocol):
 
     def delete_entries(self, ids: list[str]) -> None: ...
 
+    def move_topic(self, source: str, destination: str) -> None:
+        """Move a topic/subtopic under a new parent topic.
+
+        Raises ValueError if destination already has a child with same name.
+        Updates paths of source and all its descendants.
+        """
+        ...
+
+    def move_entry(self, entry_id: str, new_topic: str) -> None:
+        """Move an entry to a different topic."""
+        ...
+
     def close(self) -> None: ...
 
 

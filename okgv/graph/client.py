@@ -130,6 +130,72 @@ class Neo4jGraphDB:
                 ids=ids,
             )
 
+    def move_topic(self, source: str, destination: str) -> None:
+        """Move topic at `source` path under `destination` topic."""
+        name = source.rsplit("/", 1)[-1]
+        new_path = f"{destination}/{name}"
+
+        with self._session() as session:
+            # Check destination doesn't already have child with same name
+            conflict = session.run(
+                "MATCH (d:Topic {path: $dest})-[:HAS_SUBTOPIC]->(c:Topic) "
+                "WHERE c.name = $name RETURN c.path AS path",
+                dest=destination,
+                name=name,
+            ).single()
+            if conflict:
+                raise ValueError(
+                    f"Destination '{destination}' already has subtopic '{name}'"
+                )
+
+            # Detach source from old parent
+            session.run(
+                "MATCH (p:Topic)-[r:HAS_SUBTOPIC]->(s:Topic {path: $source}) DELETE r",
+                source=source,
+            )
+
+            # Attach to new parent
+            session.run(
+                """
+                MATCH (d:Topic {path: $dest})
+                MATCH (s:Topic {path: $source})
+                MERGE (d)-[:HAS_SUBTOPIC]->(s)
+                """,
+                dest=destination,
+                source=source,
+            )
+
+            # Update paths: source and all descendants
+            session.run(
+                """
+                MATCH (s:Topic {path: $source})-[:HAS_SUBTOPIC*0..]->(desc:Topic)
+                WITH desc, desc.path AS old_path
+                SET desc.path = $new_path + substring(old_path, size($source))
+                """,
+                source=source,
+                new_path=new_path,
+            )
+
+    def move_entry(self, entry_id: str, new_topic: str) -> None:
+        """Move entry to a different topic."""
+        with self._session() as session:
+            session.run(
+                """
+                MATCH (t:Topic)-[r:HAS_ENTRY]->(e:Entry {id: $id})
+                DELETE r
+                """,
+                id=entry_id,
+            )
+            session.run(
+                """
+                MATCH (d:Topic {path: $dest})
+                MATCH (e:Entry {id: $id})
+                MERGE (d)-[:HAS_ENTRY]->(e)
+                """,
+                dest=new_topic,
+                id=entry_id,
+            )
+
     def ensure_indexes(self) -> None:
         with self._session() as session:
             session.run(
