@@ -1,12 +1,12 @@
 """Tests for CLI commands via Click test runner."""
 
 import json
-from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
 
 from okgv.main import cli
+from okgv.session import Session
 from tests.conftest import MockGraphDB, MockVectorDB, SimpleSchema, fake_embedder
 
 
@@ -27,57 +27,47 @@ def parse_json_output(output: str):
 
 
 @pytest.fixture
-def mock_dbs(tmp_path):
-    graph = MockGraphDB()
-    vector = MockVectorDB()
-    schema = SimpleSchema()
-    log_file = tmp_path / "log.json"
-
-    with (
-        patch("okgv.main.connect_graph_db", return_value=graph),
-        patch("okgv.main.connect_vector_db", return_value=vector),
-        patch("okgv.main.get_embedder", return_value=fake_embedder),
-        patch("okgv.main.get_schema", return_value=schema),
-        patch("okgv.core.get_log_file", return_value=log_file),
-    ):
-        yield graph, vector, schema
+def mock_session(tmp_path):
+    return Session(
+        graph_db=MockGraphDB(),
+        vector_db=MockVectorDB(),
+        embedder=fake_embedder,
+        schema=SimpleSchema(),
+        log_file=tmp_path / "log.json",
+    )
 
 
 class TestSubmit:
-    def test_submit_success(self, runner, mock_dbs):
-        graph, vector, _ = mock_dbs
+    def test_submit_success(self, runner, mock_session):
         raw = json.dumps({"text": "hello"})
-        result = runner.invoke(cli, ["submit", "--topic", "t", "--entry", raw])
+        result = runner.invoke(cli, ["submit", "--topic", "t", "--entry", raw], obj=mock_session)
         assert result.exit_code == 0
         data = parse_json_output(result.output)
         assert data["submitted"] is True
-        assert len(graph.entries) == 1
-        assert len(vector.entries) == 1
+        assert len(mock_session.graph_db.entries) == 1
+        assert len(mock_session.vector_db.entries) == 1
 
-    def test_submit_duplicate_fails(self, runner, mock_dbs):
-        graph, vector, _ = mock_dbs
+    def test_submit_duplicate_fails(self, runner, mock_session):
         raw = json.dumps({"text": "hello"})
-        runner.invoke(cli, ["submit", "--topic", "t", "--entry", raw])
-        result = runner.invoke(cli, ["submit", "--topic", "t", "--entry", raw])
+        runner.invoke(cli, ["submit", "--topic", "t", "--entry", raw], obj=mock_session)
+        result = runner.invoke(cli, ["submit", "--topic", "t", "--entry", raw], obj=mock_session)
         assert result.exit_code != 0
 
-    def test_submit_duplicate_with_overwrite(self, runner, mock_dbs):
-        graph, vector, _ = mock_dbs
+    def test_submit_duplicate_with_overwrite(self, runner, mock_session):
         raw = json.dumps({"text": "hello"})
-        runner.invoke(cli, ["submit", "--topic", "t", "--entry", raw])
-        result = runner.invoke(cli, ["submit", "--topic", "t", "--entry", raw, "--overwrite"])
+        runner.invoke(cli, ["submit", "--topic", "t", "--entry", raw], obj=mock_session)
+        result = runner.invoke(cli, ["submit", "--topic", "t", "--entry", raw, "--overwrite"], obj=mock_session)
         assert result.exit_code == 0
 
-    def test_submit_invalid_json(self, runner, mock_dbs):
-        result = runner.invoke(cli, ["submit", "--topic", "t", "--entry", "not json"])
+    def test_submit_invalid_json(self, runner, mock_session):
+        result = runner.invoke(cli, ["submit", "--topic", "t", "--entry", "not json"], obj=mock_session)
         assert result.exit_code == 2
 
 
 class TestSubmitBatch:
-    def test_batch_submit(self, runner, mock_dbs):
-        graph, vector, _ = mock_dbs
+    def test_batch_submit(self, runner, mock_session):
         entries = json.dumps([{"text": "a"}, {"text": "b"}])
-        result = runner.invoke(cli, ["submit-batch", "--topic", "t", "--entries", entries])
+        result = runner.invoke(cli, ["submit-batch", "--topic", "t", "--entries", entries], obj=mock_session)
         assert result.exit_code == 0
         data = parse_json_output(result.output)
         assert len(data) == 2
@@ -85,45 +75,44 @@ class TestSubmitBatch:
 
 
 class TestMoveTopic:
-    def test_dry_run(self, runner, mock_dbs):
-        result = runner.invoke(cli, ["move-topic", "--source", "a/b", "--destination", "c", "--dry-run"])
+    def test_dry_run(self, runner, mock_session):
+        result = runner.invoke(cli, ["move-topic", "--source", "a/b", "--destination", "c", "--dry-run"], obj=mock_session)
         assert result.exit_code == 0
         data = parse_json_output(result.output)
         assert data["dry_run"] is True
         assert data["new_path"] == "c/b"
 
-    def test_move_topic(self, runner, mock_dbs):
-        graph, _, _ = mock_dbs
+    def test_move_topic(self, runner, mock_session):
+        graph = mock_session.graph_db
         graph.create_topic("root")
         graph.create_subtopic("root", "child")
         graph.create_topic("other")
-        result = runner.invoke(cli, ["move-topic", "--source", "root/child", "--destination", "other"])
+        result = runner.invoke(cli, ["move-topic", "--source", "root/child", "--destination", "other"], obj=mock_session)
         assert result.exit_code == 0
 
 
 class TestMoveEntry:
-    def test_dry_run(self, runner, mock_dbs):
-        result = runner.invoke(cli, ["move-entry", "--id", "abc", "--destination", "t", "--dry-run"])
+    def test_dry_run(self, runner, mock_session):
+        result = runner.invoke(cli, ["move-entry", "--id", "abc", "--destination", "t", "--dry-run"], obj=mock_session)
         assert result.exit_code == 0
         data = parse_json_output(result.output)
         assert data["dry_run"] is True
 
 
 class TestUndo:
-    def test_dry_run(self, runner, mock_dbs, tmp_path):
-        log_file = tmp_path / "undo_log.json"
-        log_file.write_text(json.dumps({
+    def test_dry_run(self, runner, mock_session):
+        mock_session.log_file.write_text(json.dumps({
             "2026-06-01T00:00:00+00:00": {"t": ["id1", "id2"]},
         }))
-        with patch("okgv.core.get_log_file", return_value=log_file):
-            result = runner.invoke(cli, ["undo", "2026-05-30T00:00:00", "--dry-run"])
+        result = runner.invoke(cli, ["undo", "2026-05-30T00:00:00", "--dry-run"], obj=mock_session)
         assert result.exit_code == 0
         data = parse_json_output(result.output)
         assert data["dry_run"] is True
         assert data["count"] == 2
 
-    def test_undo_deletes_entries(self, runner, mock_dbs, tmp_path):
-        graph, vector, schema = mock_dbs
+    def test_undo_deletes_entries(self, runner, mock_session):
+        graph = mock_session.graph_db
+        vector = mock_session.vector_db
         graph.entries["id1"] = {"text": "a"}
         graph.entry_topics["id1"] = "t"
         vector.entries["id1"] = {"text": "a"}
@@ -131,38 +120,34 @@ class TestUndo:
         graph.entry_topics["id2"] = "t"
         vector.entries["id2"] = {"text": "b"}
 
-        log_file = tmp_path / "undo_log.json"
-        log_file.write_text(json.dumps({
+        mock_session.log_file.write_text(json.dumps({
             "2026-06-01T00:00:00+00:00": {"t": ["id1", "id2"]},
         }))
-        with patch("okgv.core.get_log_file", return_value=log_file):
-            result = runner.invoke(cli, ["undo", "2026-05-30T00:00:00"])
+        result = runner.invoke(cli, ["undo", "2026-05-30T00:00:00"], obj=mock_session)
         assert result.exit_code == 0
         data = parse_json_output(result.output)
         assert data["count"] == 2
         assert len(graph.entries) == 0
         assert len(vector.entries) == 0
 
-    def test_undo_nothing_to_delete(self, runner, mock_dbs, tmp_path):
-        log_file = tmp_path / "undo_log.json"
-        log_file.write_text(json.dumps({
+    def test_undo_nothing_to_delete(self, runner, mock_session):
+        mock_session.log_file.write_text(json.dumps({
             "2026-01-01T00:00:00+00:00": {"t": ["id1"]},
         }))
-        with patch("okgv.core.get_log_file", return_value=log_file):
-            result = runner.invoke(cli, ["undo", "2026-12-31T00:00:00"])
+        result = runner.invoke(cli, ["undo", "2026-12-31T00:00:00"], obj=mock_session)
         assert result.exit_code == 0
         data = parse_json_output(result.output)
         assert data["count"] == 0
 
 
 class TestLeastTopic:
-    def test_least_topic(self, runner, mock_dbs):
-        graph, _, _ = mock_dbs
+    def test_least_topic(self, runner, mock_session):
+        graph = mock_session.graph_db
         graph.create_topic("a")
         graph.create_topic("b")
         graph.entries["e1"] = {}
         graph.entry_topics["e1"] = "a"
-        result = runner.invoke(cli, ["least-topic"])
+        result = runner.invoke(cli, ["least-topic"], obj=mock_session)
         assert result.exit_code == 0
         data = parse_json_output(result.output)
         assert data["topic"] == "b"

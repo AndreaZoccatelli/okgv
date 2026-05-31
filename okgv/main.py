@@ -8,36 +8,25 @@ Schema discovery (see config.py):
 Exit codes:  0=ok  1=failure  2=usage  3=not_found  4=connection
 """
 
-import atexit
 import json
 import sys
 
 import click
 
-from okgv.connections import close_all, connect_graph_db, connect_vector_db, get_embedder
 from okgv.core import build_entry, log_session, upsert_entry
 from okgv.helpers import EXIT_NOT_FOUND, EXIT_USAGE, err, log, output, read_raw
 from okgv.protocols import entry_id
-
-_schema = None
-
-
-def get_schema():
-    global _schema
-    if _schema is None:
-        from okgv.config import load_schema
-        _schema = load_schema()
-    return _schema
-
-
-atexit.register(close_all)
+from okgv.session import Session
 
 
 @click.group(
     help="Knowledge base CLI for AI agents. All output is JSON to stdout, logs to stderr."
 )
-def cli():
-    pass
+@click.pass_context
+def cli(ctx):
+    if ctx.obj is None:
+        ctx.obj = Session()
+    ctx.call_on_close(ctx.obj.close)
 
 
 @cli.command(name="master-prompt")
@@ -81,19 +70,19 @@ def init():
 @cli.command(name="create-topic")
 @click.option("--name", required=True, help="Topic path to create (e.g. 'algebra/linear_algebra').")
 @click.option("--parents", is_flag=True, default=False, help="Create missing parent topics.")
-def create_topic(name: str, parents: bool):
+@click.pass_obj
+def create_topic(session: Session, name: str, parents: bool):
     """Create a topic node in the graph DB. Accepts paths.
 
     Without --parents: errors if parent topics don't exist.
     With --parents: creates all missing intermediate levels (like mkdir -p).
     """
-    graph_db = connect_graph_db()
+    graph_db = session.graph_db
     segments = name.split("/")
 
     if len(segments) == 1:
         graph_db.create_topic(name)
     else:
-        # Check/create each level
         for i, segment in enumerate(segments):
             if i == 0:
                 if not graph_db.topic_exists(segment):
@@ -126,9 +115,10 @@ def create_topic(name: str, parents: bool):
     default=None,
     help="Parent topic path. Compares its direct children. Default: root topics.",
 )
-def least_topic(topic: str | None):
+@click.pass_obj
+def least_topic(session: Session, topic: str | None):
     """Return the child topic with the fewest entries."""
-    graph_db = connect_graph_db()
+    graph_db = session.graph_db
     counts = graph_db.get_topic_entry_counts(parent=topic)
     if not counts:
         if topic:
@@ -154,7 +144,8 @@ def least_topic(topic: str | None):
     default=None,
     help="Comma-separated metadata fields to group by. Default: all metadata fields.",
 )
-def topic_stats(topic: str, fields: str | None):
+@click.pass_obj
+def topic_stats(session: Session, topic: str, fields: str | None):
     """Show entry counts grouped by metadata field combinations for a topic.
 
     Groups entries by their metadata values and shows counts per combination,
@@ -162,7 +153,7 @@ def topic_stats(topic: str, fields: str | None):
     """
     from collections import Counter
 
-    graph_db = connect_graph_db()
+    graph_db = session.graph_db
     entries = graph_db.get_entries_for_topic(topic)
     if not entries:
         err(
@@ -171,10 +162,8 @@ def topic_stats(topic: str, fields: str | None):
             exit_code=EXIT_NOT_FOUND,
         )
 
-    # Determine which fields to group by
     if fields:
         group_fields = [f.strip() for f in fields.split(",")]
-        # Validate fields exist in at least one entry
         all_keys = set()
         for e in entries:
             all_keys.update(e.properties.keys())
@@ -187,13 +176,11 @@ def topic_stats(topic: str, fields: str | None):
                 exit_code=EXIT_USAGE,
             )
     else:
-        # Use all metadata fields (intersection across entries for consistency)
         all_keys = set()
         for e in entries:
             all_keys.update(e.properties.keys())
         group_fields = sorted(all_keys)
 
-    # Group and count
     counter: Counter = Counter()
     for e in entries:
         key = tuple(
@@ -201,7 +188,6 @@ def topic_stats(topic: str, fields: str | None):
         )
         counter[key] += 1
 
-    # Format output
     groups = []
     for combo, count in counter.most_common():
         groups.append({
@@ -225,14 +211,15 @@ def topic_stats(topic: str, fields: str | None):
 @click.option(
     "--top-k", default=5, show_default=True, help="Number of similar entries to return."
 )
-def similar(topic: str, entry: str, top_k: int):
+@click.pass_obj
+def similar(session: Session, topic: str, entry: str, top_k: int):
     """Get top-N most similar entries within a topic, with full content."""
     raw = read_raw(entry)
-    schema = get_schema()
+    schema = session.schema
     entry_obj = build_entry(schema, raw)
 
-    graph_db = connect_graph_db()
-    vector_db = connect_vector_db(schema)
+    graph_db = session.graph_db
+    vector_db = session.vector_db
     log(f"Fetching entry IDs for topic '{topic}'...")
     topic_ids = graph_db.get_entry_ids_for_topic(topic)
     if not topic_ids:
@@ -243,7 +230,7 @@ def similar(topic: str, entry: str, top_k: int):
             exit_code=EXIT_NOT_FOUND,
         )
     log("Loading embedding model...")
-    embedder = get_embedder()
+    embedder = session.embedder
     vector = embedder([schema.embedding_text(entry_obj)])[0]
     log(f"Searching top-{top_k} similar entries in topic '{topic}'...")
     matches = vector_db.get_top_n(vector, n=top_k, filter_ids=topic_ids)
@@ -268,18 +255,19 @@ def similar(topic: str, entry: str, top_k: int):
     "--entry", required=True, help='Entry JSON string, or "-" to read from stdin.'
 )
 @click.option("--overwrite", is_flag=True, default=False, help="Overwrite if entry already exists in vector DB.")
-def submit(topic: str, entry: str, overwrite: bool):
+@click.pass_obj
+def submit(session: Session, topic: str, entry: str, overwrite: bool):
     """Upsert entry into both graph and vector DBs."""
-    schema = get_schema()
+    schema = session.schema
     raw = read_raw(entry)
 
-    graph_db = connect_graph_db()
-    vector_db = connect_vector_db(schema)
     log("Loading embedding model...")
-    embedder = get_embedder()
     log(f"Upserting entry into topic '{topic}'...")
-    eid = upsert_entry(schema, graph_db, vector_db, topic, raw, embedder, overwrite=overwrite)
-    log_session(topic, [eid])
+    eid = upsert_entry(
+        schema, session.graph_db, session.vector_db, topic, raw,
+        session.embedder, overwrite=overwrite,
+    )
+    log_session(session.log_file, topic, [eid])
     output({"id": eid, "submitted": True})
 
 
@@ -296,9 +284,10 @@ def submit(topic: str, entry: str, overwrite: bool):
     show_default=True,
     help="Number of similar entries per candidate.",
 )
-def similar_batch(topic: str, entries: str, top_k: int):
+@click.pass_obj
+def similar_batch(session: Session, topic: str, entries: str, top_k: int):
     """Get top-N similar entries for each candidate in a batch. Single model load."""
-    schema = get_schema()
+    schema = session.schema
     if entries == "-":
         raw_str = sys.stdin.read()
     else:
@@ -314,8 +303,8 @@ def similar_batch(topic: str, entries: str, top_k: int):
             exit_code=EXIT_USAGE,
         )
 
-    graph_db = connect_graph_db()
-    vector_db = connect_vector_db(schema)
+    graph_db = session.graph_db
+    vector_db = session.vector_db
     log(f"Fetching entry IDs for topic '{topic}'...")
     topic_ids = graph_db.get_entry_ids_for_topic(topic)
     if not topic_ids:
@@ -326,7 +315,7 @@ def similar_batch(topic: str, entries: str, top_k: int):
             exit_code=EXIT_NOT_FOUND,
         )
     log(f"Loading embedding model (once for {len(rows)} candidates)...")
-    embedder = get_embedder()
+    embedder = session.embedder
 
     results_all = []
     for i, raw in enumerate(rows):
@@ -356,9 +345,10 @@ def similar_batch(topic: str, entries: str, top_k: int):
     help='JSON array of entry objects, or "-" to read from stdin.',
 )
 @click.option("--overwrite", is_flag=True, default=False, help="Overwrite if entries already exist in vector DB.")
-def submit_batch(topic: str, entries: str, overwrite: bool):
+@click.pass_obj
+def submit_batch(session: Session, topic: str, entries: str, overwrite: bool):
     """Upsert multiple entries into graph and vector DBs. Single model load."""
-    schema = get_schema()
+    schema = session.schema
     if entries == "-":
         raw_str = sys.stdin.read()
     else:
@@ -374,18 +364,19 @@ def submit_batch(topic: str, entries: str, overwrite: bool):
             exit_code=EXIT_USAGE,
         )
 
-    graph_db = connect_graph_db()
-    vector_db = connect_vector_db(schema)
     log(f"Loading embedding model (once for {len(rows)} entries)...")
-    embedder = get_embedder()
+    embedder = session.embedder
     inserted_ids = []
     results = []
     for i, raw in enumerate(rows):
         log(f"[{i + 1}/{len(rows)}] Upserting entry into topic '{topic}'...")
-        eid = upsert_entry(schema, graph_db, vector_db, topic, raw, embedder, overwrite=overwrite)
+        eid = upsert_entry(
+            schema, session.graph_db, session.vector_db, topic, raw,
+            embedder, overwrite=overwrite,
+        )
         inserted_ids.append(eid)
         results.append({"id": eid, "submitted": True})
-    log_session(topic, inserted_ids)
+    log_session(session.log_file, topic, inserted_ids)
     output(results)
 
 
@@ -396,7 +387,8 @@ def submit_batch(topic: str, entries: str, overwrite: bool):
     required=True,
     help='Path to JSON file defining topic hierarchy, or "-" for stdin.',
 )
-def create_structure(file_path: str):
+@click.pass_obj
+def create_structure(session: Session, file_path: str):
     """Create topic/subtopic tree from a JSON file.
 
     Expected format: nested dict where keys are topic names, values are dicts of subtopics.
@@ -427,7 +419,7 @@ def create_structure(file_path: str):
             exit_code=EXIT_USAGE,
         )
 
-    graph_db = connect_graph_db()
+    graph_db = session.graph_db
     created = []
     stack: list[tuple[dict, str | None]] = [(structure, None)]
 
@@ -451,14 +443,15 @@ def create_structure(file_path: str):
 @click.option("--source", required=True, help="Path of topic/subtopic to move.")
 @click.option("--destination", required=True, help="Path of new parent topic.")
 @click.option("--dry-run", is_flag=True, default=False, help="Preview without applying changes.")
-def move_topic(source: str, destination: str, dry_run: bool):
+@click.pass_obj
+def move_topic(session: Session, source: str, destination: str, dry_run: bool):
     """Move a topic/subtopic under a different parent. Blocked if name conflict."""
     name = source.rsplit("/", 1)[-1]
     new_path = f"{destination}/{name}"
     if dry_run:
         output({"dry_run": True, "would_move": source, "new_path": new_path})
         return
-    graph_db = connect_graph_db()
+    graph_db = session.graph_db
     try:
         graph_db.move_topic(source, destination)
     except ValueError as e:
@@ -470,12 +463,13 @@ def move_topic(source: str, destination: str, dry_run: bool):
 @click.option("--id", "entry_id", required=True, help="Entry UUID to move.")
 @click.option("--destination", required=True, help="Path of target topic.")
 @click.option("--dry-run", is_flag=True, default=False, help="Preview without applying changes.")
-def move_entry(entry_id: str, destination: str, dry_run: bool):
+@click.pass_obj
+def move_entry(session: Session, entry_id: str, destination: str, dry_run: bool):
     """Move an entry to a different topic."""
     if dry_run:
         output({"dry_run": True, "would_move": entry_id, "destination": destination})
         return
-    graph_db = connect_graph_db()
+    graph_db = session.graph_db
     graph_db.move_entry(entry_id, destination)
     output({"id": entry_id, "moved_to": destination})
 
@@ -483,11 +477,11 @@ def move_entry(entry_id: str, destination: str, dry_run: bool):
 @cli.command(name="get-by-topic")
 @click.option("--topic", required=True, help="Topic name to fetch entries from.")
 @click.option("--limit", default=3, show_default=True, help="Max entries to return.")
-def get_by_topic(topic: str, limit: int):
+@click.pass_obj
+def get_by_topic(session: Session, topic: str, limit: int):
     """Fetch sample entries for a topic from vector DB."""
-    schema = get_schema()
-    graph_db = connect_graph_db()
-    vector_db = connect_vector_db(schema)
+    graph_db = session.graph_db
+    vector_db = session.vector_db
     topic_ids = graph_db.get_entry_ids_for_topic(topic)
     if not topic_ids:
         err(
@@ -502,10 +496,10 @@ def get_by_topic(topic: str, limit: int):
 
 @cli.command(name="get-vector")
 @click.option("--id", "entry_id", required=True, help="Entry UUID to fetch.")
-def get_vector(entry_id: str):
+@click.pass_obj
+def get_vector(session: Session, entry_id: str):
     """Fetch entry from vector DB by ID."""
-    schema = get_schema()
-    vector_db = connect_vector_db(schema)
+    vector_db = session.vector_db
     matched = vector_db.get_by_id(entry_id)
     if matched is None:
         err(
@@ -518,9 +512,10 @@ def get_vector(entry_id: str):
 
 @cli.command(name="get-graph")
 @click.option("--id", "entry_id", required=True, help="Entry UUID to fetch.")
-def get_graph(entry_id: str):
+@click.pass_obj
+def get_graph(session: Session, entry_id: str):
     """Fetch entry from graph DB by ID."""
-    graph_db = connect_graph_db()
+    graph_db = session.graph_db
     matched = graph_db.get_by_id(entry_id)
     if matched is None:
         err(
@@ -534,13 +529,12 @@ def get_graph(entry_id: str):
 @cli.command()
 @click.argument("timestamp")
 @click.option("--dry-run", is_flag=True, default=False, help="Preview entries that would be deleted.")
-def undo(timestamp: str, dry_run: bool):
+@click.pass_obj
+def undo(session: Session, timestamp: str, dry_run: bool):
     """Delete all entries submitted after TIMESTAMP from both DBs and log.json."""
     from datetime import datetime, timezone
 
-    from okgv.core import get_log_file
-
-    log_file = get_log_file()
+    log_file = session.log_file
     try:
         cutoff = datetime.fromisoformat(timestamp)
     except ValueError as e:
@@ -581,9 +575,8 @@ def undo(timestamp: str, dry_run: bool):
         output({"dry_run": True, "would_delete": ids_to_delete, "count": len(ids_to_delete)})
         return
 
-    schema = get_schema()
-    graph_db = connect_graph_db()
-    vector_db = connect_vector_db(schema)
+    graph_db = session.graph_db
+    vector_db = session.vector_db
     deleted = []
     failed_at = None
     for i, uid in enumerate(ids_to_delete):
@@ -592,8 +585,6 @@ def undo(timestamp: str, dry_run: bool):
         try:
             vector_db.delete_by_id(uid)
         except Exception as e:
-            # Graph already deleted this entry but vector failed.
-            # Don't update log — ID stays so user can retry.
             failed_at = {"id": uid, "error": str(e), "deleted_so_far": deleted}
             log(f"Vector DB delete failed for {uid}: {e}")
             break

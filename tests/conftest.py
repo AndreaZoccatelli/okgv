@@ -174,3 +174,16 @@ def vector_db():
 @pytest.fixture
 def schema():
     return SimpleSchema()
+
+
+@pytest.fixture
+def session(graph_db, vector_db, schema, tmp_path):
+    from okgv.session import Session
+
+    return Session(
+        graph_db=graph_db,
+        vector_db=vector_db,
+        embedder=fake_embedder,
+        schema=schema,
+        log_file=tmp_path / "log.json",
+    )

@@ -44,7 +44,6 @@ class TestUpsertEntry:
     def test_upsert_duplicate_with_overwrite(self, graph_db, vector_db, schema):
         raw = {"text": "hello"}
         core.upsert_entry(schema, graph_db, vector_db, "t", raw, fake_embedder)
-        # Should not raise
         eid = core.upsert_entry(schema, graph_db, vector_db, "t", raw, fake_embedder, overwrite=True)
         assert eid in graph_db.entries
 
@@ -86,9 +85,6 @@ class TestGraphVectorConsistency:
 
 
 class TestValidateSchema:
-    def setup_method(self):
-        core._schema_validated = False
-
     def test_valid_schema_passes(self, schema):
         meta = {"text_length": 5}
         graph_props = {"text": "hi"}
@@ -110,21 +106,17 @@ class TestValidateSchema:
             core.validate_schema(schema, meta, graph_props, vector_props)
 
     def test_missing_vector_property_definition_exits(self):
-        core._schema_validated = False
-
         class BadSchema:
             entry_class = None
 
             @staticmethod
             def vector_property_definitions():
-                return []  # missing definitions
+                return []
 
         with pytest.raises(SystemExit):
             core.validate_schema(BadSchema(), {"foo": 1}, {}, {})
 
     def test_extra_vector_property_definition_exits(self):
-        core._schema_validated = False
-
         class ExtraSchema:
             entry_class = None
 
@@ -138,17 +130,6 @@ class TestValidateSchema:
         with pytest.raises(SystemExit):
             core.validate_schema(ExtraSchema(), {"foo": 1}, {}, {})
 
-    def test_validation_cached_after_first_pass(self, schema):
-        core._schema_validated = False
-        meta = {"text_length": 5}
-        graph_props = {"text": "hi"}
-        vector_props = {"text": "hi"}
-        core.validate_schema(schema, meta, graph_props, vector_props)
-        assert core._schema_validated is True
-
-        # Second call with bad data should pass (cached)
-        core.validate_schema(schema, {"collision": 1}, {"collision": 1}, {})
-
 
 class TestBuildEntry:
     def test_build_entry_success(self, schema):
@@ -161,11 +142,9 @@ class TestBuildEntry:
 
 
 class TestLogSession:
-    def test_log_creates_file(self, tmp_path, monkeypatch):
+    def test_log_creates_file(self, tmp_path):
         log_file = tmp_path / "log.json"
-        monkeypatch.setattr(core, "get_log_file", lambda: log_file)
-
-        core.log_session("topic_a", ["id1", "id2"])
+        core.log_session(log_file, "topic_a", ["id1", "id2"])
 
         import json
         data = json.loads(log_file.read_text())
@@ -173,39 +152,14 @@ class TestLogSession:
         ts = list(data.keys())[0]
         assert data[ts] == {"topic_a": ["id1", "id2"]}
 
-    def test_log_appends_to_existing(self, tmp_path, monkeypatch):
+    def test_log_appends_to_existing(self, tmp_path):
         import json
 
         log_file = tmp_path / "log.json"
         log_file.write_text(json.dumps({"2026-01-01T00:00:00+00:00": {"old": ["x"]}}))
-        monkeypatch.setattr(core, "get_log_file", lambda: log_file)
 
-        core.log_session("new_topic", ["id1"])
+        core.log_session(log_file, "new_topic", ["id1"])
 
         data = json.loads(log_file.read_text())
         assert len(data) == 2
         assert "2026-01-01T00:00:00+00:00" in data
-
-
-class TestGetLogFile:
-    def test_default_is_cwd(self, monkeypatch):
-        monkeypatch.delenv("OKGV_LOG", raising=False)
-        from pathlib import Path
-        result = core.get_log_file()
-        assert result == Path.cwd() / "log.json"
-
-    def test_custom_file_path(self, monkeypatch):
-        monkeypatch.setenv("OKGV_LOG", "/tmp/custom.json")
-        from pathlib import Path
-        result = core.get_log_file()
-        assert result == Path("/tmp/custom.json")
-
-    def test_custom_dir_path(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("OKGV_LOG", str(tmp_path) + "/")
-        result = core.get_log_file()
-        assert result == tmp_path / "log.json"
-
-    def test_custom_existing_dir(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("OKGV_LOG", str(tmp_path))
-        result = core.get_log_file()
-        assert result == tmp_path / "log.json"

@@ -1,7 +1,6 @@
 """Core logic: upsert, logging, schema validation."""
 
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -9,25 +8,9 @@ from typing import Callable
 from okgv.helpers import err, EXIT_USAGE
 from okgv.protocols import GraphDB, VectorDB, entry_id
 
-def get_log_file() -> Path:
-    custom = os.getenv("OKGV_LOG")
-    if custom:
-        p = Path(custom)
-        if p.is_dir() or custom.endswith("/"):
-            return p / "log.json"
-        return p
-    return Path.cwd() / "log.json"
-
-_schema_validated = False
-
 
 def validate_schema(schema, meta: dict, graph_props: dict, vector_props: dict) -> None:
     """Check for key collisions and missing vector property definitions."""
-    global _schema_validated
-    if _schema_validated:
-        return
-
-    # Key collision between metadata and per-DB properties
     graph_overlap = set(meta) & set(graph_props)
     if graph_overlap:
         err(
@@ -45,7 +28,6 @@ def validate_schema(schema, meta: dict, graph_props: dict, vector_props: dict) -
             exit_code=EXIT_USAGE,
         )
 
-    # vector_property_definitions must cover all vector DB keys
     defined_names = {pd.name for pd in schema.vector_property_definitions()}
     actual_keys = set(meta) | set(vector_props)
     missing = actual_keys - defined_names
@@ -64,8 +46,6 @@ def validate_schema(schema, meta: dict, graph_props: dict, vector_props: dict) -
             suggestion="Remove these PropertyDefinition entries or add them to metadata()/vector_properties()",
             exit_code=EXIT_USAGE,
         )
-
-    _schema_validated = True
 
 
 def build_entry(schema, raw: dict):
@@ -119,8 +99,7 @@ def upsert_entry(
     return eid
 
 
-def log_session(topic: str, inserted_ids: list[str]) -> None:
-    log_file = get_log_file()
+def log_session(log_file: Path, topic: str, inserted_ids: list[str]) -> None:
     log = {}
     if log_file.exists():
         log = json.loads(log_file.read_text())
