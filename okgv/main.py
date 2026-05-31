@@ -563,8 +563,9 @@ def undo(timestamp: str):
     """Delete all entries submitted after TIMESTAMP from both DBs and log.json."""
     from datetime import datetime, timezone
 
-    from okgv.core import LOG_FILE
+    from okgv.core import get_log_file
 
+    log_file = get_log_file()
     try:
         cutoff = datetime.fromisoformat(timestamp)
     except ValueError as e:
@@ -578,10 +579,10 @@ def undo(timestamp: str):
     if cutoff.tzinfo is None:
         cutoff = cutoff.replace(tzinfo=timezone.utc)
 
-    if not LOG_FILE.exists():
+    if not log_file.exists():
         err("no_log", detail="log.json not found", exit_code=EXIT_NOT_FOUND)
 
-    log_data = json.loads(LOG_FILE.read_text())
+    log_data = json.loads(log_file.read_text())
 
     ids_to_delete: list[str] = []
     keys_to_remove: list[str] = []
@@ -628,7 +629,7 @@ def undo(timestamp: str):
                             ids.remove(uid)
                     if all(len(ids) == 0 for ids in log_data[key].values()):
                         del log_data[key]
-            LOG_FILE.write_text(json.dumps(log_data, indent=2))
+            log_file.write_text(json.dumps(log_data, indent=2))
 
         if failed_at:
             err(

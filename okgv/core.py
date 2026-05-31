@@ -1,6 +1,7 @@
 """Core logic: upsert, logging, schema validation."""
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -8,7 +9,14 @@ from typing import Callable
 from okgv.helpers import err, EXIT_USAGE
 from okgv.protocols import GraphDB, VectorDB, entry_id
 
-LOG_FILE = Path.cwd() / "log.json"
+def get_log_file() -> Path:
+    custom = os.getenv("OKGV_LOG")
+    if custom:
+        p = Path(custom)
+        if p.is_dir() or custom.endswith("/"):
+            return p / "log.json"
+        return p
+    return Path.cwd() / "log.json"
 
 _schema_validated = False
 
@@ -112,9 +120,10 @@ def upsert_entry(
 
 
 def log_session(topic: str, inserted_ids: list[str]) -> None:
+    log_file = get_log_file()
     log = {}
-    if LOG_FILE.exists():
-        log = json.loads(LOG_FILE.read_text())
+    if log_file.exists():
+        log = json.loads(log_file.read_text())
     timestamp = datetime.now(timezone.utc).isoformat()
     log[timestamp] = {topic: inserted_ids}
-    LOG_FILE.write_text(json.dumps(log, indent=2))
+    log_file.write_text(json.dumps(log, indent=2))
