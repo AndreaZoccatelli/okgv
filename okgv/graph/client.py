@@ -18,6 +18,13 @@ class Neo4jGraphDB:
     def _session(self):
         return self._driver.session(database=self._database)
 
+    def create_topic(self, name: str) -> None:
+        with self._session() as session:
+            session.run(
+                "MERGE (t:Topic {name: $name}) ON CREATE SET t.entry_count = 0",
+                name=name,
+            )
+
     def get_topic_entry_counts(self) -> dict[str, int]:
         with self._session() as session:
             result = session.run(

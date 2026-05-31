@@ -29,6 +29,18 @@ def cli():
     pass
 
 
+@cli.command(name="create-topic")
+@click.option("--name", required=True, help="Topic name to create.")
+def create_topic(name: str):
+    """Create a topic node in the graph DB. Idempotent."""
+    graph_db = connect_graph_db()
+    try:
+        graph_db.create_topic(name)
+        output({"topic": name, "created": True})
+    finally:
+        graph_db.close()
+
+
 @cli.command(name="least-topic")
 def least_topic():
     """Return the topic with the fewest entries."""
