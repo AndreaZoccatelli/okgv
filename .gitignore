@@ -1,4 +1,8 @@
 *.pyc
+.venv
+.pytest_cache
 .DS_Store
 __pycache__
 log.json
+okgv.egg-info
+uv.lock
