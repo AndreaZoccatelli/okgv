@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
-import json
-
 import weaviate
 import weaviate.classes as wvc
 
-from protocols import VectorEntry
+from okgv.protocols import PropertyDefinition, VectorRecord
+
+_WEAVIATE_TYPE_MAP = {
+    "text": wvc.config.DataType.TEXT,
+    "int": wvc.config.DataType.INT,
+    "float": wvc.config.DataType.NUMBER,
+    "bool": wvc.config.DataType.BOOL,
+    "text[]": wvc.config.DataType.TEXT_ARRAY,
+}
 
 
 class WeaviateVectorDB:
@@ -17,6 +23,7 @@ class WeaviateVectorDB:
         http_port: int,
         grpc_port: int,
         collection_name: str,
+        property_definitions: list[PropertyDefinition],
         secure: bool = False,
         api_key: str | None = None,
     ) -> None:
@@ -31,6 +38,7 @@ class WeaviateVectorDB:
             auth_credentials=auth,
         )
         self._collection_name = collection_name
+        self._property_definitions = property_definitions
 
     @property
     def _collection(self):
@@ -55,29 +63,22 @@ class WeaviateVectorDB:
         )
         return [(str(obj.uuid), obj.metadata.certainty) for obj in response.objects]
 
-    def get_by_id(self, entry_id: str) -> VectorEntry | None:
+    def get_by_id(self, entry_id: str) -> VectorRecord | None:
         obj = self._collection.query.fetch_object_by_id(entry_id)
         if obj is None:
             return None
-        return VectorEntry(
+        return VectorRecord(
             id=str(obj.uuid),
-            question=obj.properties["question"],
-            options=json.loads(obj.properties["options"]),
-            answer=obj.properties["answer"],
+            properties=dict(obj.properties),
         )
 
-    def get_by_ids(self, entry_ids: list[str]) -> list[VectorEntry]:
+    def get_by_ids(self, entry_ids: list[str]) -> list[VectorRecord]:
         response = self._collection.query.fetch_objects(
             filters=wvc.query.Filter.by_id().contains_any(entry_ids),
             limit=len(entry_ids),
         )
         return [
-            VectorEntry(
-                id=str(obj.uuid),
-                question=obj.properties["question"],
-                options=json.loads(obj.properties["options"]),
-                answer=obj.properties["answer"],
-            )
+            VectorRecord(id=str(obj.uuid), properties=dict(obj.properties))
             for obj in response.objects
         ]
 
@@ -92,18 +93,13 @@ class WeaviateVectorDB:
         exists = self._collection.query.fetch_object_by_id(entry_id) is not None
         if exists and not overwrite:
             return
-        props = {
-            "question": properties["question"],
-            "options": json.dumps(properties["options"]),
-            "answer": properties["answer"],
-        }
         if exists:
             self._collection.data.replace(
-                uuid=entry_id, properties=props, vector=vector
+                uuid=entry_id, properties=properties, vector=vector
             )
         else:
             self._collection.data.insert(
-                uuid=entry_id, properties=props, vector=vector
+                uuid=entry_id, properties=properties, vector=vector
             )
 
     def delete_by_id(self, entry_id: str) -> None:
@@ -114,20 +110,21 @@ class WeaviateVectorDB:
 
     def ensure_collection(self) -> None:
         if not self._client.collections.exists(self._collection_name):
+            weaviate_props = []
+            for pd in self._property_definitions:
+                wv_type = _WEAVIATE_TYPE_MAP.get(pd.data_type)
+                if wv_type is None:
+                    raise ValueError(
+                        f"Unknown data_type '{pd.data_type}' for property '{pd.name}'. "
+                        f"Supported: {list(_WEAVIATE_TYPE_MAP)}"
+                    )
+                weaviate_props.append(
+                    wvc.config.Property(name=pd.name, data_type=wv_type)
+                )
             self._client.collections.create(
                 name=self._collection_name,
                 vector_config=wvc.config.Configure.Vectors.self_provided(),
-                properties=[
-                    wvc.config.Property(
-                        name="question", data_type=wvc.config.DataType.TEXT
-                    ),
-                    wvc.config.Property(
-                        name="options", data_type=wvc.config.DataType.TEXT
-                    ),
-                    wvc.config.Property(
-                        name="answer", data_type=wvc.config.DataType.TEXT
-                    ),
-                ],
+                properties=weaviate_props,
             )
 
     def close(self) -> None:

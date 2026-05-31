@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from neo4j import GraphDatabase
 
-from protocols import GraphEntry
+from okgv.protocols import GraphRecord
 
 
 class Neo4jGraphDB:
@@ -36,12 +36,7 @@ class Neo4jGraphDB:
             return [r["id"] for r in result]
 
     def upload_entry(
-        self,
-        topic: str,
-        entry_id: str,
-        question: str,
-        answer: str,
-        options: list[str],
+        self, topic: str, entry_id: str, properties: dict
     ) -> None:
         with self._session() as session:
             session.run(
@@ -52,47 +47,36 @@ class Neo4jGraphDB:
                 """
                 MATCH (t:Topic {name: $topic})
                 MERGE (e:Entry {id: $id})
-                  ON CREATE SET
-                    e.question    = $question,
-                    e.answer      = $answer,
-                    e.options     = $options,
-                    e.num_options = $num_options
-                  ON MATCH SET
-                    e.question    = $question,
-                    e.answer      = $answer,
-                    e.options     = $options,
-                    e.num_options = $num_options
+                  ON CREATE SET e += $props
+                  ON MATCH SET e += $props
                 WITH t, e
                 MERGE (t)-[r:HAS_ENTRY]->(e)
                   ON CREATE SET t.entry_count = coalesce(t.entry_count, 0) + 1
                 """,
                 topic=topic,
                 id=entry_id,
-                question=question,
-                answer=answer,
-                options=options,
-                num_options=len(options),
+                props=properties,
             )
 
-    def get_by_id(self, entry_id: str) -> GraphEntry | None:
+    def get_by_id(self, entry_id: str) -> GraphRecord | None:
         with self._session() as session:
             result = session.run(
                 """
                 MATCH (t:Topic)-[:HAS_ENTRY]->(e:Entry {id: $id})
-                RETURN e.id AS id, t.name AS topic, e.question AS question,
-                       e.answer AS answer, e.options AS options
+                RETURN e AS node, t.name AS topic
                 """,
                 id=entry_id,
             )
             row = result.single()
             if row is None:
                 return None
-            return GraphEntry(
-                id=row["id"],
+            node = row["node"]
+            props = dict(node)
+            props.pop("id", None)
+            return GraphRecord(
+                id=entry_id,
                 topic=row["topic"],
-                question=row["question"],
-                answer=row["answer"],
-                options=row["options"],
+                properties=props,
             )
 
     def delete_entries(self, ids: list[str]) -> None:

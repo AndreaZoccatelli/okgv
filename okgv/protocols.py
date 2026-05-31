@@ -1,32 +1,97 @@
 """
-Abstract protocols for graph and vector database backends.
+Abstract protocols for the knowledge base.
 
-Implementations must satisfy these interfaces. Current backends:
-  - Neo4j   → graph.neo4j.Neo4jGraphDB
-  - Weaviate → vector.weaviate.WeaviateVectorDB
+EntrySchema  — user implements to define project-specific entry structure.
+GraphDB      — graph database backend (relationships, topics, entries).
+VectorDB     — vector database backend (embeddings, similarity search).
+
+Records returned by DB backends carry raw dicts, not typed fields,
+so they stay generic regardless of user-defined entry shape.
 """
 
 from __future__ import annotations
 
+import json
+import uuid
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
+
+
+def entry_id(raw: dict) -> str:
+    """Deterministic UUID5 from canonical JSON serialization of raw input."""
+    canonical = json.dumps(raw, sort_keys=True)
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, canonical))
+
+
+# ── Generic records returned by DB backends ───────────────────────────────
 
 
 @dataclass
-class GraphEntry:
+class GraphRecord:
     id: str
     topic: str
-    question: str
-    answer: str
-    options: list[str]
+    properties: dict
 
 
 @dataclass
-class VectorEntry:
+class VectorRecord:
     id: str
-    question: str
-    options: dict[str, str]
-    answer: str
+    properties: dict
+
+
+# ── Property definition for vector DB collection schema ───────────────────
+
+
+@dataclass
+class PropertyDefinition:
+    """Describes a single property in the vector DB collection.
+
+    data_type uses generic names mapped by each backend:
+      "text", "int", "float", "bool", "text[]"
+    """
+
+    name: str
+    data_type: str
+
+
+# ── Entry schema protocol ────────────────────────────────────────────────
+
+
+@runtime_checkable
+class EntrySchema(Protocol):
+    """User implements this to define their entry structure.
+
+    entry_class: a class whose __init__ accepts a raw dict.
+        Construction is wrapped in try/except KeyError for validation.
+
+    Methods receive an instance of entry_class (not raw dict),
+    so computed properties are available as methods/attributes.
+    """
+
+    entry_class: type
+
+    @staticmethod
+    def to_graph_properties(entry: Any) -> dict:
+        """Extract properties to store in graph DB."""
+        ...
+
+    @staticmethod
+    def to_vector_properties(entry: Any) -> dict:
+        """Extract properties to store in vector DB."""
+        ...
+
+    @staticmethod
+    def embedding_text(entry: Any) -> str:
+        """Produce text to embed for vector similarity search."""
+        ...
+
+    @staticmethod
+    def vector_property_definitions() -> list[PropertyDefinition]:
+        """Schema for vector DB collection properties."""
+        ...
+
+
+# ── Database protocols ────────────────────────────────────────────────────
 
 
 @runtime_checkable
@@ -36,15 +101,10 @@ class GraphDB(Protocol):
     def get_entry_ids_for_topic(self, topic: str) -> list[str]: ...
 
     def upload_entry(
-        self,
-        topic: str,
-        entry_id: str,
-        question: str,
-        answer: str,
-        options: list[str],
+        self, topic: str, entry_id: str, properties: dict
     ) -> None: ...
 
-    def get_by_id(self, entry_id: str) -> GraphEntry | None: ...
+    def get_by_id(self, entry_id: str) -> GraphRecord | None: ...
 
     def delete_entries(self, ids: list[str]) -> None: ...
 
@@ -60,9 +120,9 @@ class VectorDB(Protocol):
         filter_ids: list[str] | None = None,
     ) -> list[tuple[str, float]]: ...
 
-    def get_by_id(self, entry_id: str) -> VectorEntry | None: ...
+    def get_by_id(self, entry_id: str) -> VectorRecord | None: ...
 
-    def get_by_ids(self, entry_ids: list[str]) -> list[VectorEntry]: ...
+    def get_by_ids(self, entry_ids: list[str]) -> list[VectorRecord]: ...
 
     def upload_entry(
         self,

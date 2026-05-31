@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "okgv"
+version = "0.1.0"
+description = "Organizing knowledge: graphs and vectors"
+requires-python = ">=3.11"
+dependencies = [
+    "click",
+    "neo4j",
+    "weaviate-client",
+    "sentence-transformers",
+]
+
+[project.scripts]
+okgv = "okgv.main:cli"
+
+[tool.setuptools.packages.find]
+include = ["okgv*"]

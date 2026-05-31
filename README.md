@@ -92,11 +92,84 @@ WEAVIATE_COLLECTION=your_collection_name
 
 `WEAVIATE_COLLECTION` is the name of the Weaviate collection that stores entry vectors. Collections can be inspected via the Weaviate console at `http://localhost:8080/v1/schema`.
 
+### Entry Schema
+
+okgv does not assume a fixed entry structure. You define your own by writing two classes:
+
+1. **Entry class** — owns field extraction from raw JSON and computed properties.
+2. **Schema class** — owns DB mapping (what goes in graph vs vector DB, what text to embed).
+
+Each entry is identified by a deterministic UUID5 computed from its canonical JSON serialization. This is handled automatically.
+
+Create a file (e.g. `schema.py`) in your project:
+
+```python
+from okgv.protocols import PropertyDefinition
+
+
+# Entry class: extracts fields from raw JSON, defines computed properties.
+# __init__ receives the raw dict — any missing key raises KeyError,
+# which okgv catches and reports as a validation error.
+class MyEntry:
+    def __init__(self, raw: dict):
+        self.text = raw["text"]
+        self.label = raw["label"]
+
+    def num_vowels(self) -> int:
+        return sum(1 for c in self.text if c in "aeiouAEIOU")
+
+    def text_length(self) -> int:
+        return len(self.text)
+
+
+# Schema class: maps entry to DB properties.
+class MySchema:
+    entry_class = MyEntry
+
+    @staticmethod
+    def to_graph_properties(entry: MyEntry) -> dict:
+        """Properties stored in the graph DB."""
+        return {
+            "label": entry.label,
+            "num_vowels": entry.num_vowels(),
+            "text_length": entry.text_length(),
+        }
+
+    @staticmethod
+    def to_vector_properties(entry: MyEntry) -> dict:
+        """Properties stored in the vector DB (can differ from graph)."""
+        return {"text": entry.text}
+
+    @staticmethod
+    def embedding_text(entry: MyEntry) -> str:
+        """Text used for vector embedding."""
+        return entry.text
+
+    @staticmethod
+    def vector_property_definitions() -> list[PropertyDefinition]:
+        """Collection schema for the vector DB."""
+        return [
+            PropertyDefinition(name="text", data_type="text"),
+        ]
+```
+
+Then set the environment variable:
+```
+OKGV_SCHEMA=schema:MySchema
+```
+
+Format is `module:ClassName` — `module` is the Python module name (resolved relative to the current working directory), `ClassName` is the class inside it.
+
+If `OKGV_SCHEMA` is not set, okgv falls back to a built-in QA schema (see `okgv/schemas/qa.py`).
+
 ### Example `.env`
 
 Copy and fill in values:
 
 ```env
+# Schema
+OKGV_SCHEMA=schema:MySchema
+
 # Neo4j
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
