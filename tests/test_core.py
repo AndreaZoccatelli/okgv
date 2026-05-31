@@ -142,24 +142,57 @@ class TestBuildEntry:
 
 
 class TestLogSession:
-    def test_log_creates_file(self, tmp_path):
-        log_file = tmp_path / "log.json"
-        core.log_session(log_file, "topic_a", ["id1", "id2"])
+    def test_log_creates_db_and_inserts(self, tmp_path):
+        log_db = tmp_path / "log.db"
+        core.log_session(log_db, "topic_a", ["id1", "id2"])
 
-        import json
-        data = json.loads(log_file.read_text())
-        assert len(data) == 1
-        ts = list(data.keys())[0]
-        assert data[ts] == {"topic_a": ["id1", "id2"]}
+        import sqlite3
+        conn = sqlite3.connect(str(log_db))
+        rows = conn.execute("SELECT topic, entry_id FROM log ORDER BY id").fetchall()
+        conn.close()
+        assert len(rows) == 2
+        assert rows[0] == ("topic_a", "id1")
+        assert rows[1] == ("topic_a", "id2")
 
     def test_log_appends_to_existing(self, tmp_path):
-        import json
+        log_db = tmp_path / "log.db"
+        core.log_session(log_db, "old_topic", ["x"])
+        core.log_session(log_db, "new_topic", ["id1"])
 
-        log_file = tmp_path / "log.json"
-        log_file.write_text(json.dumps({"2026-01-01T00:00:00+00:00": {"old": ["x"]}}))
+        import sqlite3
+        conn = sqlite3.connect(str(log_db))
+        rows = conn.execute("SELECT topic, entry_id FROM log ORDER BY id").fetchall()
+        conn.close()
+        assert len(rows) == 2
+        assert rows[0] == ("old_topic", "x")
+        assert rows[1] == ("new_topic", "id1")
 
-        core.log_session(log_file, "new_topic", ["id1"])
+    def test_get_entries_after(self, tmp_path):
+        from datetime import datetime, timezone
 
-        data = json.loads(log_file.read_text())
-        assert len(data) == 2
-        assert "2026-01-01T00:00:00+00:00" in data
+        log_db = tmp_path / "log.db"
+        core.log_session(log_db, "t", ["early"])
+        # Insert a row with a known future timestamp
+        import sqlite3
+        conn = sqlite3.connect(str(log_db))
+        conn.execute(
+            "INSERT INTO log (timestamp, topic, entry_id) VALUES (?, ?, ?)",
+            ("2099-01-01T00:00:00+00:00", "t", "future"),
+        )
+        conn.commit()
+        conn.close()
+
+        cutoff = datetime(2098, 1, 1, tzinfo=timezone.utc)
+        result = core.log_get_entries_after(log_db, cutoff)
+        assert result == ["future"]
+
+    def test_remove_entries(self, tmp_path):
+        log_db = tmp_path / "log.db"
+        core.log_session(log_db, "t", ["id1", "id2", "id3"])
+        core.log_remove_entries(log_db, ["id1", "id3"])
+
+        import sqlite3
+        conn = sqlite3.connect(str(log_db))
+        rows = conn.execute("SELECT entry_id FROM log").fetchall()
+        conn.close()
+        assert [r[0] for r in rows] == ["id2"]

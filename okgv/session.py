@@ -20,13 +20,13 @@ class Session:
         vector_db=None,
         embedder: Callable | None = None,
         schema=None,
-        log_file: Path | None = None,
+        log_db: Path | None = None,
     ):
         self._graph_db = graph_db
         self._vector_db = vector_db
         self._embedder = embedder
         self._schema = schema
-        self._log_file = log_file
+        self._log_db = log_db
         self._owns_connections = graph_db is None and vector_db is None
 
     @property
@@ -62,18 +62,18 @@ class Session:
         return self._embedder
 
     @property
-    def log_file(self) -> Path:
-        if self._log_file is None:
+    def log_db(self) -> Path:
+        if self._log_db is None:
             custom = os.getenv("OKGV_LOG")
             if custom:
                 p = Path(custom)
                 if p.is_dir() or custom.endswith("/"):
-                    self._log_file = p / "log.json"
+                    self._log_db = p / "log.db"
                 else:
-                    self._log_file = p
+                    self._log_db = p
             else:
-                self._log_file = Path.cwd() / "log.json"
-        return self._log_file
+                self._log_db = Path.cwd() / "log.db"
+        return self._log_db
 
     def close(self) -> None:
         if not self._owns_connections:

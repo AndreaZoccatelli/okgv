@@ -60,6 +60,9 @@ class MockGraphDB:
             return None
         return GraphRecord(id=entry_id, topic=self.entry_topics[entry_id], properties=self.entries[entry_id])
 
+    def get_all_entry_ids(self) -> list[str]:
+        return list(self.entries.keys())
+
     def delete_entries(self, ids: list[str]) -> None:
         for eid in ids:
             self.entries.pop(eid, None)
@@ -111,6 +114,9 @@ class MockVectorDB:
             raise ValueError(f"Entry '{entry_id}' already exists in vector DB. Pass overwrite=True to replace.")
         self.entries[entry_id] = properties
         self.vectors[entry_id] = vector
+
+    def get_all_entry_ids(self) -> list[str]:
+        return list(self.entries.keys())
 
     def delete_by_id(self, entry_id: str) -> None:
         if self.fail_on_delete_id and entry_id == self.fail_on_delete_id:
@@ -185,5 +191,5 @@ def session(graph_db, vector_db, schema, tmp_path):
         vector_db=vector_db,
         embedder=fake_embedder,
         schema=schema,
-        log_file=tmp_path / "log.json",
+        log_db=tmp_path / "log.db",
     )

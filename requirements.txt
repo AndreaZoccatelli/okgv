@@ -1,4 +1,0 @@
-click
-neo4j
-weaviate
-sentence-transformers

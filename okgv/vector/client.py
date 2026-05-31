@@ -109,6 +109,12 @@ class WeaviateVectorDB:
                 uuid=entry_id, properties=properties, vector=vector
             )
 
+    def get_all_entry_ids(self) -> list[str]:
+        results = []
+        for obj in self._collection.iterator():
+            results.append(str(obj.uuid))
+        return results
+
     def delete_by_id(self, entry_id: str) -> None:
         """Delete entry. No-op if not found. Raises on connection/server errors."""
         from weaviate.exceptions import UnexpectedStatusCodeError

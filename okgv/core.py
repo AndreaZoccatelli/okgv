@@ -1,12 +1,28 @@
 """Core logic: upsert, logging, schema validation."""
 
-import json
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
 from okgv.helpers import err, EXIT_USAGE
 from okgv.protocols import GraphDB, VectorDB, entry_id
+
+_LOG_SCHEMA = """
+CREATE TABLE IF NOT EXISTS log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    topic TEXT NOT NULL,
+    entry_id TEXT NOT NULL
+);
+"""
+
+
+def _log_connect(log_db: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(str(log_db))
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute(_LOG_SCHEMA)
+    return conn
 
 
 def validate_schema(schema, meta: dict, graph_props: dict, vector_props: dict) -> None:
@@ -106,10 +122,41 @@ def upsert_entry(
     return eid
 
 
-def log_session(log_file: Path, topic: str, inserted_ids: list[str]) -> None:
-    log = {}
-    if log_file.exists():
-        log = json.loads(log_file.read_text())
+def log_session(log_db: Path, topic: str, inserted_ids: list[str]) -> None:
+    """Log submitted entry IDs to SQLite."""
     timestamp = datetime.now(timezone.utc).isoformat()
-    log[timestamp] = {topic: inserted_ids}
-    log_file.write_text(json.dumps(log, indent=2))
+    conn = _log_connect(log_db)
+    try:
+        conn.executemany(
+            "INSERT INTO log (timestamp, topic, entry_id) VALUES (?, ?, ?)",
+            [(timestamp, topic, eid) for eid in inserted_ids],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def log_get_entries_after(log_db: Path, cutoff: datetime) -> list[str]:
+    """Return entry IDs logged after cutoff timestamp."""
+    conn = _log_connect(log_db)
+    try:
+        rows = conn.execute(
+            "SELECT entry_id FROM log WHERE timestamp > ? ORDER BY id",
+            (cutoff.isoformat(),),
+        ).fetchall()
+        return [r[0] for r in rows]
+    finally:
+        conn.close()
+
+
+def log_remove_entries(log_db: Path, entry_ids: list[str]) -> None:
+    """Remove entries from log by ID."""
+    conn = _log_connect(log_db)
+    try:
+        conn.executemany(
+            "DELETE FROM log WHERE entry_id = ?",
+            [(eid,) for eid in entry_ids],
+        )
+        conn.commit()
+    finally:
+        conn.close()

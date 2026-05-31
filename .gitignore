@@ -3,6 +3,5 @@
 .pytest_cache
 .DS_Store
 __pycache__
-log.json
+log.db
 okgv.egg-info
-uv.lock

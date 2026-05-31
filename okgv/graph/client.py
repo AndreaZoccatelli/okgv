@@ -177,6 +177,11 @@ class Neo4jGraphDB:
                 properties=props,
             )
 
+    def get_all_entry_ids(self) -> list[str]:
+        with self._session() as session:
+            result = session.run("MATCH (e:Entry) RETURN e.id AS id")
+            return [r["id"] for r in result]
+
     def delete_entries(self, ids: list[str]) -> None:
         with self._session() as session:
             session.run(

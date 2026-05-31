@@ -13,7 +13,7 @@ import sys
 
 import click
 
-from okgv.core import build_entry, log_session, upsert_entry
+from okgv.core import build_entry, log_get_entries_after, log_remove_entries, log_session, upsert_entry
 from okgv.helpers import EXIT_NOT_FOUND, EXIT_USAGE, err, log, output, read_raw
 from okgv.protocols import entry_id
 from okgv.session import Session
@@ -267,7 +267,7 @@ def submit(session: Session, topic: str, entry: str, overwrite: bool):
         schema, session.graph_db, session.vector_db, topic, raw,
         session.embedder, overwrite=overwrite,
     )
-    log_session(session.log_file, topic, [eid])
+    log_session(session.log_db, topic, [eid])
     output({"id": eid, "submitted": True})
 
 
@@ -379,7 +379,7 @@ def submit_batch(session: Session, topic: str, entries: str, overwrite: bool):
         )
         inserted_ids.append(eid)
         results.append({"id": eid, "submitted": True})
-    log_session(session.log_file, topic, inserted_ids)
+    log_session(session.log_db, topic, inserted_ids)
     output(results)
 
 
@@ -534,10 +534,10 @@ def get_graph(session: Session, entry_id: str):
 @click.option("--dry-run", is_flag=True, default=False, help="Preview entries that would be deleted.")
 @click.pass_obj
 def undo(session: Session, timestamp: str, dry_run: bool):
-    """Delete all entries submitted after TIMESTAMP from both DBs and log.json."""
+    """Delete all entries submitted after TIMESTAMP from both DBs and log."""
     from datetime import datetime, timezone
 
-    log_file = session.log_file
+    log_db = session.log_db
     try:
         cutoff = datetime.fromisoformat(timestamp)
     except ValueError as e:
@@ -551,24 +551,10 @@ def undo(session: Session, timestamp: str, dry_run: bool):
     if cutoff.tzinfo is None:
         cutoff = cutoff.replace(tzinfo=timezone.utc)
 
-    if not log_file.exists():
-        err("no_log", detail="log.json not found", exit_code=EXIT_NOT_FOUND)
+    if not log_db.exists():
+        err("no_log", detail="log.db not found", exit_code=EXIT_NOT_FOUND)
 
-    log_data = json.loads(log_file.read_text())
-
-    ids_to_delete: list[str] = []
-    keys_to_remove: list[str] = []
-    for key, topic_dict in log_data.items():
-        try:
-            ts = datetime.fromisoformat(key)
-        except ValueError:
-            continue
-        if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
-        if ts > cutoff:
-            for ids in topic_dict.values():
-                ids_to_delete.extend(ids)
-            keys_to_remove.append(key)
+    ids_to_delete = log_get_entries_after(log_db, cutoff)
 
     if not ids_to_delete:
         output({"deleted": [], "count": 0})
@@ -593,15 +579,9 @@ def undo(session: Session, timestamp: str, dry_run: bool):
             break
         deleted.append(uid)
 
-    # Update log once after all deletions (or after failure)
-    deleted_set = set(deleted)
-    for key in keys_to_remove:
-        if key in log_data:
-            for _topic, ids in log_data[key].items():
-                ids[:] = [uid for uid in ids if uid not in deleted_set]
-            if all(len(ids) == 0 for ids in log_data[key].values()):
-                del log_data[key]
-    log_file.write_text(json.dumps(log_data, indent=2))
+    # Remove successfully deleted entries from log
+    if deleted:
+        log_remove_entries(log_db, deleted)
 
     if failed_at:
         err(
@@ -614,6 +594,51 @@ def undo(session: Session, timestamp: str, dry_run: bool):
         )
 
     output({"deleted": deleted, "count": len(deleted)})
+
+
+@cli.command()
+@click.option("--dry-run", is_flag=True, default=False, help="Preview without deleting orphans.")
+@click.pass_obj
+def reconcile(session: Session, dry_run: bool):
+    """Find and fix entries that exist in one DB but not the other."""
+    graph_db = session.graph_db
+    vector_db = session.vector_db
+
+    log("Fetching all entry IDs from graph DB...")
+    graph_ids = set(graph_db.get_all_entry_ids())
+    log("Fetching all entry IDs from vector DB...")
+    vector_ids = set(vector_db.get_all_entry_ids())
+
+    graph_only = graph_ids - vector_ids
+    vector_only = vector_ids - graph_ids
+
+    if not graph_only and not vector_only:
+        output({"consistent": True, "orphans": 0})
+        return
+
+    if dry_run:
+        output({
+            "dry_run": True,
+            "graph_only": sorted(graph_only),
+            "vector_only": sorted(vector_only),
+            "orphans": len(graph_only) + len(vector_only),
+        })
+        return
+
+    if graph_only:
+        log(f"Deleting {len(graph_only)} orphan(s) from graph DB...")
+        graph_db.delete_entries(list(graph_only))
+    if vector_only:
+        log(f"Deleting {len(vector_only)} orphan(s) from vector DB...")
+        for uid in vector_only:
+            vector_db.delete_by_id(uid)
+
+    output({
+        "consistent": True,
+        "deleted_from_graph": sorted(graph_only),
+        "deleted_from_vector": sorted(vector_only),
+        "orphans": len(graph_only) + len(vector_only),
+    })
 
 
 if __name__ == "__main__":
