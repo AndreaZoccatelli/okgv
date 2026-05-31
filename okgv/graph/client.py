@@ -21,6 +21,7 @@ class Neo4jGraphDB:
         self._driver = GraphDatabase.driver(uri, auth=(user, password))
         self._database = database
         self._driver.verify_connectivity()
+        self.ensure_indexes()
 
     def _session(self):
         return self._driver.session(database=self._database)
