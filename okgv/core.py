@@ -79,6 +79,7 @@ def upsert_entry(
     topic: str,
     raw: dict,
     embedder: Callable[[list[str]], list[list[float]]],
+    overwrite: bool = False,
 ) -> str:
     eid = entry_id(raw)
     entry = build_entry(schema, raw)
@@ -92,6 +93,7 @@ def upsert_entry(
         topic=topic,
         entry_id=eid,
         properties={**meta, **graph_props},
+        overwrite=overwrite,
     )
 
     vector = embedder([schema.embedding_text(entry)])[0]
@@ -99,6 +101,7 @@ def upsert_entry(
         entry_id=eid,
         properties={**meta, **vector_props},
         vector=vector,
+        overwrite=overwrite,
     )
 
     return eid

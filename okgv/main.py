@@ -265,7 +265,8 @@ def similar(topic: str, entry: str, top_k: int):
 @click.option(
     "--entry", required=True, help='Entry JSON string, or "-" to read from stdin.'
 )
-def submit(topic: str, entry: str):
+@click.option("--overwrite", is_flag=True, default=False, help="Overwrite if entry already exists in vector DB.")
+def submit(topic: str, entry: str, overwrite: bool):
     """Upsert entry into both graph and vector DBs."""
     raw = read_raw(entry)
 
@@ -275,7 +276,7 @@ def submit(topic: str, entry: str):
         log("Loading embedding model...")
         embedder = get_embedder()
         log(f"Upserting entry into topic '{topic}'...")
-        eid = upsert_entry(SCHEMA, graph_db, vector_db, topic, raw, embedder)
+        eid = upsert_entry(SCHEMA, graph_db, vector_db, topic, raw, embedder, overwrite=overwrite)
         log_session(topic, [eid])
         output({"id": eid, "submitted": True})
     finally:
@@ -356,7 +357,8 @@ def similar_batch(topic: str, entries: str, top_k: int):
     required=True,
     help='JSON array of entry objects, or "-" to read from stdin.',
 )
-def submit_batch(topic: str, entries: str):
+@click.option("--overwrite", is_flag=True, default=False, help="Overwrite if entries already exist in vector DB.")
+def submit_batch(topic: str, entries: str, overwrite: bool):
     """Upsert multiple entries into graph and vector DBs. Single model load."""
     if entries == "-":
         raw_str = sys.stdin.read()
@@ -382,7 +384,7 @@ def submit_batch(topic: str, entries: str):
         results = []
         for i, raw in enumerate(rows):
             log(f"[{i + 1}/{len(rows)}] Upserting entry into topic '{topic}'...")
-            eid = upsert_entry(SCHEMA, graph_db, vector_db, topic, raw, embedder)
+            eid = upsert_entry(SCHEMA, graph_db, vector_db, topic, raw, embedder, overwrite=overwrite)
             inserted_ids.append(eid)
             results.append({"id": eid, "submitted": True})
         log_session(topic, inserted_ids)

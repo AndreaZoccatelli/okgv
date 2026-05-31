@@ -126,9 +126,19 @@ class Neo4jGraphDB:
             return records
 
     def upload_entry(
-        self, topic: str, entry_id: str, properties: dict
+        self, topic: str, entry_id: str, properties: dict, overwrite: bool = False
     ) -> None:
         with self._session() as session:
+            if not overwrite:
+                exists = session.run(
+                    "MATCH (e:Entry {id: $id}) RETURN e LIMIT 1",
+                    id=entry_id,
+                ).single()
+                if exists is not None:
+                    raise ValueError(
+                        f"Entry '{entry_id}' already exists in graph DB. "
+                        f"Pass overwrite=True to replace."
+                    )
             session.run(
                 """
                 MERGE (t:Topic {path: $path})

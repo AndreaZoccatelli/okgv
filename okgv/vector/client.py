@@ -92,7 +92,10 @@ class WeaviateVectorDB:
         self.ensure_collection()
         exists = self._collection.query.fetch_object_by_id(entry_id) is not None
         if exists and not overwrite:
-            return
+            raise ValueError(
+                f"Entry '{entry_id}' already exists in vector DB. "
+                f"Pass overwrite=True to replace."
+            )
         if exists:
             self._collection.data.replace(
                 uuid=entry_id, properties=properties, vector=vector
