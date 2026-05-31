@@ -13,13 +13,20 @@ import sys
 
 import click
 
-from okgv.config import load_schema
 from okgv.connections import connect_graph_db, connect_vector_db, get_embedder
 from okgv.core import build_entry, log_session, upsert_entry
 from okgv.helpers import EXIT_NOT_FOUND, EXIT_USAGE, err, log, output, read_raw
 from okgv.protocols import entry_id
 
-SCHEMA = load_schema()
+_schema = None
+
+
+def get_schema():
+    global _schema
+    if _schema is None:
+        from okgv.config import load_schema
+        _schema = load_schema()
+    return _schema
 
 
 @click.group(
@@ -226,10 +233,11 @@ def topic_stats(topic: str, fields: str | None):
 def similar(topic: str, entry: str, top_k: int):
     """Get top-N most similar entries within a topic, with full content."""
     raw = read_raw(entry)
-    entry_obj = build_entry(SCHEMA, raw)
+    schema = get_schema()
+    entry_obj = build_entry(schema, raw)
 
     graph_db = connect_graph_db()
-    vector_db = connect_vector_db(SCHEMA)
+    vector_db = connect_vector_db(schema)
     try:
         log(f"Fetching entry IDs for topic '{topic}'...")
         topic_ids = graph_db.get_entry_ids_for_topic(topic)
@@ -242,7 +250,7 @@ def similar(topic: str, entry: str, top_k: int):
             )
         log("Loading embedding model...")
         embedder = get_embedder()
-        vector = embedder([SCHEMA.embedding_text(entry_obj)])[0]
+        vector = embedder([schema.embedding_text(entry_obj)])[0]
         log(f"Searching top-{top_k} similar entries in topic '{topic}'...")
         matches = vector_db.get_top_n(vector, n=top_k, filter_ids=topic_ids)
 
@@ -268,15 +276,16 @@ def similar(topic: str, entry: str, top_k: int):
 @click.option("--overwrite", is_flag=True, default=False, help="Overwrite if entry already exists in vector DB.")
 def submit(topic: str, entry: str, overwrite: bool):
     """Upsert entry into both graph and vector DBs."""
+    schema = get_schema()
     raw = read_raw(entry)
 
     graph_db = connect_graph_db()
-    vector_db = connect_vector_db(SCHEMA)
+    vector_db = connect_vector_db(schema)
     try:
         log("Loading embedding model...")
         embedder = get_embedder()
         log(f"Upserting entry into topic '{topic}'...")
-        eid = upsert_entry(SCHEMA, graph_db, vector_db, topic, raw, embedder, overwrite=overwrite)
+        eid = upsert_entry(schema, graph_db, vector_db, topic, raw, embedder, overwrite=overwrite)
         log_session(topic, [eid])
         output({"id": eid, "submitted": True})
     finally:
@@ -299,6 +308,7 @@ def submit(topic: str, entry: str, overwrite: bool):
 )
 def similar_batch(topic: str, entries: str, top_k: int):
     """Get top-N similar entries for each candidate in a batch. Single model load."""
+    schema = get_schema()
     if entries == "-":
         raw_str = sys.stdin.read()
     else:
@@ -315,7 +325,7 @@ def similar_batch(topic: str, entries: str, top_k: int):
         )
 
     graph_db = connect_graph_db()
-    vector_db = connect_vector_db(SCHEMA)
+    vector_db = connect_vector_db(schema)
     try:
         log(f"Fetching entry IDs for topic '{topic}'...")
         topic_ids = graph_db.get_entry_ids_for_topic(topic)
@@ -331,8 +341,8 @@ def similar_batch(topic: str, entries: str, top_k: int):
 
         results_all = []
         for i, raw in enumerate(rows):
-            entry_obj = build_entry(SCHEMA, raw)
-            vector = embedder([SCHEMA.embedding_text(entry_obj)])[0]
+            entry_obj = build_entry(schema, raw)
+            vector = embedder([schema.embedding_text(entry_obj)])[0]
             log(f"[{i + 1}/{len(rows)}] Searching top-{top_k} similar for candidate...")
             matches = vector_db.get_top_n(vector, n=top_k, filter_ids=topic_ids)
             results = []
@@ -360,6 +370,7 @@ def similar_batch(topic: str, entries: str, top_k: int):
 @click.option("--overwrite", is_flag=True, default=False, help="Overwrite if entries already exist in vector DB.")
 def submit_batch(topic: str, entries: str, overwrite: bool):
     """Upsert multiple entries into graph and vector DBs. Single model load."""
+    schema = get_schema()
     if entries == "-":
         raw_str = sys.stdin.read()
     else:
@@ -376,7 +387,7 @@ def submit_batch(topic: str, entries: str, overwrite: bool):
         )
 
     graph_db = connect_graph_db()
-    vector_db = connect_vector_db(SCHEMA)
+    vector_db = connect_vector_db(schema)
     try:
         log(f"Loading embedding model (once for {len(rows)} entries)...")
         embedder = get_embedder()
@@ -384,7 +395,7 @@ def submit_batch(topic: str, entries: str, overwrite: bool):
         results = []
         for i, raw in enumerate(rows):
             log(f"[{i + 1}/{len(rows)}] Upserting entry into topic '{topic}'...")
-            eid = upsert_entry(SCHEMA, graph_db, vector_db, topic, raw, embedder, overwrite=overwrite)
+            eid = upsert_entry(schema, graph_db, vector_db, topic, raw, embedder, overwrite=overwrite)
             inserted_ids.append(eid)
             results.append({"id": eid, "submitted": True})
         log_session(topic, inserted_ids)
@@ -490,8 +501,9 @@ def move_entry(entry_id: str, destination: str):
 @click.option("--limit", default=3, show_default=True, help="Max entries to return.")
 def get_by_topic(topic: str, limit: int):
     """Fetch sample entries for a topic from vector DB."""
+    schema = get_schema()
     graph_db = connect_graph_db()
-    vector_db = connect_vector_db(SCHEMA)
+    vector_db = connect_vector_db(schema)
     try:
         topic_ids = graph_db.get_entry_ids_for_topic(topic)
         if not topic_ids:
@@ -512,7 +524,8 @@ def get_by_topic(topic: str, limit: int):
 @click.option("--id", "entry_id", required=True, help="Entry UUID to fetch.")
 def get_vector(entry_id: str):
     """Fetch entry from vector DB by ID."""
-    vector_db = connect_vector_db(SCHEMA)
+    schema = get_schema()
+    vector_db = connect_vector_db(schema)
     try:
         matched = vector_db.get_by_id(entry_id)
         if matched is None:
@@ -588,8 +601,9 @@ def undo(timestamp: str):
         output({"deleted": [], "count": 0})
         return
 
+    schema = get_schema()
     graph_db = connect_graph_db()
-    vector_db = connect_vector_db(SCHEMA)
+    vector_db = connect_vector_db(schema)
     try:
         deleted = []
         failed_at = None
