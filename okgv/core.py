@@ -97,12 +97,16 @@ def upsert_entry(
     )
 
     vector = embedder([schema.embedding_text(entry)])[0]
-    vector_db.upload_entry(
-        entry_id=eid,
-        properties={**meta, **vector_props},
-        vector=vector,
-        overwrite=overwrite,
-    )
+    try:
+        vector_db.upload_entry(
+            entry_id=eid,
+            properties={**meta, **vector_props},
+            vector=vector,
+            overwrite=overwrite,
+        )
+    except Exception:
+        graph_db.delete_entries([eid])
+        raise
 
     return eid
 
