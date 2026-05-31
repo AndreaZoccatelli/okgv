@@ -55,17 +55,31 @@ def create_subtopic(parent: str, name: str):
 
 
 @cli.command(name="least-topic")
-def least_topic():
-    """Return the topic with the fewest entries."""
+@click.option(
+    "--topic",
+    default=None,
+    help="Parent topic path. Compares its direct children. Default: root topics.",
+)
+def least_topic(topic: str | None):
+    """Return the child topic with the fewest entries."""
     graph_db = connect_graph_db()
     try:
-        counts = graph_db.get_topic_entry_counts()
+        counts = graph_db.get_topic_entry_counts(parent=topic)
         if not counts:
-            err(
-                "no_topics", detail="No topics found in graph", exit_code=EXIT_NOT_FOUND
-            )
-        topic = min(counts, key=lambda t: counts[t])
-        output({"topic": topic, "count": counts[topic]})
+            if topic:
+                err(
+                    "no_subtopics",
+                    detail=f"Topic '{topic}' has no subtopics",
+                    exit_code=EXIT_NOT_FOUND,
+                )
+            else:
+                err(
+                    "no_topics",
+                    detail="No topics found in graph",
+                    exit_code=EXIT_NOT_FOUND,
+                )
+        least = min(counts, key=lambda t: counts[t])
+        output({"topic": least, "count": counts[least], "all_counts": counts})
     finally:
         graph_db.close()
 

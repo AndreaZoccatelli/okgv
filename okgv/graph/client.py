@@ -57,16 +57,32 @@ class Neo4jGraphDB:
             )
             return [r["path"] for r in result]
 
-    def get_topic_entry_counts(self) -> dict[str, int]:
-        """Return entry counts for all topics (recursive — includes sub-topic entries)."""
+    def get_topic_entry_counts(self, parent: str | None = None) -> dict[str, int]:
+        """Return entry counts for direct children of parent (recursive per child).
+
+        If parent is None, returns counts for root topics.
+        Each child's count includes entries in all its descendants.
+        """
         with self._session() as session:
-            result = session.run(
-                """
-                MATCH (t:Topic)
-                OPTIONAL MATCH (t)-[:HAS_SUBTOPIC*0..]->(desc:Topic)-[:HAS_ENTRY]->(e:Entry)
-                RETURN t.path AS topic, count(DISTINCT e) AS count
-                """
-            )
+            if parent is None:
+                # Root topics: those with no incoming HAS_SUBTOPIC
+                result = session.run(
+                    """
+                    MATCH (t:Topic)
+                    WHERE NOT ()-[:HAS_SUBTOPIC]->(t)
+                    OPTIONAL MATCH (t)-[:HAS_SUBTOPIC*0..]->(desc:Topic)-[:HAS_ENTRY]->(e:Entry)
+                    RETURN t.path AS topic, count(DISTINCT e) AS count
+                    """
+                )
+            else:
+                result = session.run(
+                    """
+                    MATCH (p:Topic {path: $parent})-[:HAS_SUBTOPIC]->(t:Topic)
+                    OPTIONAL MATCH (t)-[:HAS_SUBTOPIC*0..]->(desc:Topic)-[:HAS_ENTRY]->(e:Entry)
+                    RETURN t.path AS topic, count(DISTINCT e) AS count
+                    """,
+                    parent=parent,
+                )
             return {r["topic"]: r["count"] for r in result}
 
     def get_entry_ids_for_topic(self, topic: str) -> list[str]:
