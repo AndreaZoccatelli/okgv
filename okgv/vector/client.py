@@ -89,19 +89,23 @@ class WeaviateVectorDB:
         vector: list[float],
         overwrite: bool = False,
     ) -> None:
+        from weaviate.exceptions import UnexpectedStatusCodeError
+
         self.ensure_collection()
-        exists = self._collection.query.fetch_object_by_id(entry_id) is not None
-        if exists and not overwrite:
-            raise ValueError(
-                f"Entry '{entry_id}' already exists in vector DB. "
-                f"Pass overwrite=True to replace."
-            )
-        if exists:
-            self._collection.data.replace(
+        try:
+            self._collection.data.insert(
                 uuid=entry_id, properties=properties, vector=vector
             )
-        else:
-            self._collection.data.insert(
+        except UnexpectedStatusCodeError as e:
+            if e.status_code != 422:
+                raise
+            # 422 = already exists
+            if not overwrite:
+                raise ValueError(
+                    f"Entry '{entry_id}' already exists in vector DB. "
+                    f"Pass overwrite=True to replace."
+                ) from e
+            self._collection.data.replace(
                 uuid=entry_id, properties=properties, vector=vector
             )
 
