@@ -218,6 +218,53 @@ def submit_batch(topic: str, entries: str):
         graph_db.close()
 
 
+@cli.command(name="create-structure")
+@click.option("--file", "file_path", required=True, help='Path to JSON file defining topic hierarchy, or "-" for stdin.')
+def create_structure(file_path: str):
+    """Create topic/subtopic tree from a JSON file.
+
+    Expected format: nested dict where keys are topic names, values are dicts of subtopics.
+    Example: {"algebra": {"linear_algebra": {"basics": {}, "advanced": {}}, "abstract_algebra": {}}}
+    """
+    if file_path == "-":
+        raw_str = sys.stdin.read()
+    else:
+        from pathlib import Path
+        p = Path(file_path)
+        if not p.exists():
+            err("file_not_found", detail=f"File '{file_path}' not found", exit_code=EXIT_USAGE)
+        raw_str = p.read_text()
+
+    try:
+        structure = json.loads(raw_str)
+    except json.JSONDecodeError as e:
+        err("invalid_json", detail=str(e), exit_code=EXIT_USAGE)
+    if not isinstance(structure, dict):
+        err("invalid_input", detail="Expected a JSON object (nested dict)", exit_code=EXIT_USAGE)
+
+    graph_db = connect_graph_db()
+    try:
+        created = []
+        stack: list[tuple[dict, str | None]] = [(structure, None)]
+
+        while stack:
+            tree, parent = stack.pop()
+            for name, children in tree.items():
+                if parent is None:
+                    graph_db.create_topic(name)
+                    path = name
+                else:
+                    graph_db.create_subtopic(parent, name)
+                    path = f"{parent}/{name}"
+                created.append(path)
+                if isinstance(children, dict) and children:
+                    stack.append((children, path))
+
+        output({"created_topics": created, "count": len(created)})
+    finally:
+        graph_db.close()
+
+
 @cli.command(name="move-topic")
 @click.option("--source", required=True, help="Path of topic/subtopic to move.")
 @click.option("--destination", required=True, help="Path of new parent topic.")
