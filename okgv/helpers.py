@@ -14,10 +14,6 @@ EXIT_NOT_FOUND = 3
 EXIT_CONNECTION = 4
 
 
-def env(key: str, default: str) -> str:
-    return os.getenv(key, default)
-
-
 def env_int(key: str, default: int) -> int:
     return int(os.getenv(key, str(default)))
 
