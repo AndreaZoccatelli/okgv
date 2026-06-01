@@ -100,6 +100,7 @@ class Neo4jGraphDB:
 
         If parent is None, returns counts for root topics.
         Each child's count includes entries in all its descendants.
+        Uses STARTS WITH on indexed path property instead of variable-depth traversal.
         """
         def _op():
             with self._session() as session:
@@ -108,7 +109,8 @@ class Neo4jGraphDB:
                         """
                         MATCH (t:Topic)
                         WHERE NOT ()-[:HAS_SUBTOPIC]->(t)
-                        OPTIONAL MATCH (t)-[:HAS_SUBTOPIC*0..]->(desc:Topic)-[:HAS_ENTRY]->(e:Entry)
+                        OPTIONAL MATCH (desc:Topic)-[:HAS_ENTRY]->(e:Entry)
+                        WHERE desc.path = t.path OR desc.path STARTS WITH t.path + '/'
                         RETURN t.path AS topic, count(DISTINCT e) AS count
                         """
                     )
@@ -116,7 +118,8 @@ class Neo4jGraphDB:
                     result = session.run(
                         """
                         MATCH (p:Topic {path: $parent})-[:HAS_SUBTOPIC]->(t:Topic)
-                        OPTIONAL MATCH (t)-[:HAS_SUBTOPIC*0..]->(desc:Topic)-[:HAS_ENTRY]->(e:Entry)
+                        OPTIONAL MATCH (desc:Topic)-[:HAS_ENTRY]->(e:Entry)
+                        WHERE desc.path = t.path OR desc.path STARTS WITH t.path + '/'
                         RETURN t.path AS topic, count(DISTINCT e) AS count
                         """,
                         parent=parent,
@@ -130,7 +133,8 @@ class Neo4jGraphDB:
             with self._session() as session:
                 result = session.run(
                     """
-                    MATCH (t:Topic {path: $path})-[:HAS_SUBTOPIC*0..]->(desc:Topic)-[:HAS_ENTRY]->(e:Entry)
+                    MATCH (t:Topic)-[:HAS_ENTRY]->(e:Entry)
+                    WHERE t.path = $path OR t.path STARTS WITH ($path + '/')
                     RETURN DISTINCT e.id AS id
                     """,
                     path=topic,
@@ -146,8 +150,9 @@ class Neo4jGraphDB:
             with self._session() as session:
                 result = session.run(
                     """
-                    MATCH (t:Topic {path: $path})-[:HAS_SUBTOPIC*0..]->(desc:Topic)-[:HAS_ENTRY]->(e:Entry)
-                    RETURN DISTINCT e AS node, desc.path AS topic
+                    MATCH (t:Topic)-[:HAS_ENTRY]->(e:Entry)
+                    WHERE t.path = $path OR t.path STARTS WITH ($path + '/')
+                    RETURN DISTINCT e AS node, t.path AS topic
                     """,
                     path=topic,
                 )
