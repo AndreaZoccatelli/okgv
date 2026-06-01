@@ -12,6 +12,7 @@ dependencies = [
     "neo4j",
     "weaviate-client",
     "sentence-transformers",
+    "python-dotenv",
 ]
 
 [project.optional-dependencies]
