@@ -219,7 +219,7 @@ def similar(session: Session, topic: str, entry: str, top_k: int):
     try:
         entry_obj = build_entry(schema, raw)
     except EntryError as e:
-        err("missing_field", detail=str(e), exit_code=EXIT_USAGE)
+        return err("missing_field", detail=str(e), exit_code=EXIT_USAGE)
 
     vector_db = session.vector_db
     log("Loading embedding model...")
@@ -261,7 +261,7 @@ def submit(session: Session, topic: str, entry: str, overwrite: bool):
             session.embedder, overwrite=overwrite,
         )
     except EntryError as e:
-        err("missing_field", detail=str(e), exit_code=EXIT_USAGE)
+        return err("missing_field", detail=str(e), exit_code=EXIT_USAGE)
     log_session(session.log_db, topic, [eid])
     output({"id": eid, "submitted": True})
 
