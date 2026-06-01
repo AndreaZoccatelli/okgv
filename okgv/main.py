@@ -13,7 +13,13 @@ import sys
 
 import click
 
-from okgv.core import EntryError, build_entry, log_count, log_get_entries_after, log_query, log_remove_entries, log_session, upsert_entries_batch, upsert_entry
+from okgv.core import (
+    EntryError, build_entry,
+    log_count, log_get_entries_after, log_query, log_remove_entries, log_session,
+    review_add, review_clear, review_count, review_get_rejected, review_list,
+    review_purge_rejected, review_remove_entries, review_update,
+    upsert_entries_batch, upsert_entry,
+)
 from okgv.helpers import EXIT_NOT_FOUND, EXIT_USAGE, err, log, output, read_raw
 from okgv.protocols import entry_id
 from okgv.session import Session
@@ -255,8 +261,9 @@ def similar(session: Session, topic: str, entry: str, top_k: int):
     "--entry", required=True, help='Entry JSON string, or "-" to read from stdin.'
 )
 @click.option("--overwrite", is_flag=True, default=False, help="Overwrite if entry already exists in vector DB.")
+@click.option("--review/--no-review", default=None, help="Flag entry for review. Default: uses OKGV_REVIEW env var.")
 @click.pass_obj
-def submit(session: Session, topic: str, entry: str, overwrite: bool):
+def submit(session: Session, topic: str, entry: str, overwrite: bool, review: bool | None):
     """Upsert entry into both graph and vector DBs."""
     schema = session.schema
     raw = read_raw(entry)
@@ -271,7 +278,10 @@ def submit(session: Session, topic: str, entry: str, overwrite: bool):
     except EntryError as e:
         return err("missing_field", detail=str(e), exit_code=EXIT_USAGE)
     log_session(session.log_db, topic, [eid])
-    output({"id": eid, "submitted": True})
+    needs_review = review if review is not None else session.review_enabled
+    if needs_review:
+        review_add(session.review_db, topic, [eid])
+    output({"id": eid, "submitted": True, "review": needs_review})
 
 
 @cli.command(name="similar-batch")
@@ -349,8 +359,9 @@ def similar_batch(session: Session, topic: str, entries: str, top_k: int):
     help='JSON array of entry objects, or "-" to read from stdin.',
 )
 @click.option("--overwrite", is_flag=True, default=False, help="Overwrite if entries already exist in vector DB.")
+@click.option("--review/--no-review", default=None, help="Flag entries for review. Default: uses OKGV_REVIEW env var.")
 @click.pass_obj
-def submit_batch(session: Session, topic: str, entries: str, overwrite: bool):
+def submit_batch(session: Session, topic: str, entries: str, overwrite: bool, review: bool | None):
     """Upsert multiple entries into graph and vector DBs. Single model load."""
     schema = session.schema
     if entries == "-":
@@ -398,6 +409,9 @@ def submit_batch(session: Session, topic: str, entries: str, overwrite: bool):
             results.append({"id": f["id"], "submitted": False, "error": f["error"]})
         if inserted_ids:
             log_session(session.log_db, topic, inserted_ids)
+            needs_review = review if review is not None else session.review_enabled
+            if needs_review:
+                review_add(session.review_db, topic, inserted_ids)
 
     output(results)
 
@@ -546,6 +560,65 @@ def get_graph(session: Session, entry_id: str):
     output({"id": matched.id, "topic": matched.topic, **matched.properties})
 
 
+@cli.command(name="review")
+@click.option("--topic", default=None, help="Filter by topic path.")
+@click.option("--status", default="pending", show_default=True, help="Filter by status: pending, approved, rejected.")
+@click.option("--limit", default=20, show_default=True, help="Max entries to return.")
+@click.option("--offset", default=0, help="Skip first N entries.")
+@click.option("--count", is_flag=True, default=False, help="Show counts by status.")
+@click.option("--purge-rejected", is_flag=True, default=False, help="Delete rejected entries from all DBs.")
+@click.option("--dry-run", is_flag=True, default=False, help="Preview purge without deleting.")
+@click.pass_obj
+def review_cmd(session: Session, topic: str | None, status: str, limit: int, offset: int, count: bool, purge_rejected: bool, dry_run: bool):
+    """Query the review queue or purge rejected entries."""
+    review_db = session.review_db
+
+    if purge_rejected:
+        rejected_ids = review_get_rejected(review_db)
+        if not rejected_ids:
+            output({"purged": 0})
+            return
+        if dry_run:
+            output({"dry_run": True, "would_delete": rejected_ids, "count": len(rejected_ids)})
+            return
+        log(f"Deleting {len(rejected_ids)} rejected entries from vector DB...")
+        session.vector_db.delete_by_ids(rejected_ids)
+        log(f"Deleting {len(rejected_ids)} rejected entries from graph DB...")
+        session.graph_db.delete_entries(rejected_ids)
+        log_remove_entries(session.log_db, rejected_ids)
+        review_purge_rejected(review_db)
+        output({"purged": len(rejected_ids), "ids": rejected_ids})
+        return
+
+    if count:
+        output(review_count(review_db, topic=topic))
+    else:
+        entries = review_list(review_db, status=status, topic=topic, limit=limit, offset=offset)
+        output(entries)
+
+
+@cli.command()
+@click.option("--id", "entry_id", required=True, help="Entry UUID to approve.")
+@click.pass_obj
+def approve(session: Session, entry_id: str):
+    """Mark entry as approved in the review queue."""
+    updated = review_update(session.review_db, [entry_id], "approved")
+    if updated == 0:
+        err("not_found", detail=f"Entry '{entry_id}' not in review queue", exit_code=EXIT_NOT_FOUND)
+    output({"id": entry_id, "status": "approved"})
+
+
+@cli.command()
+@click.option("--id", "entry_id", required=True, help="Entry UUID to reject.")
+@click.pass_obj
+def reject(session: Session, entry_id: str):
+    """Mark entry as rejected in the review queue."""
+    updated = review_update(session.review_db, [entry_id], "rejected")
+    if updated == 0:
+        err("not_found", detail=f"Entry '{entry_id}' not in review queue", exit_code=EXIT_NOT_FOUND)
+    output({"id": entry_id, "status": "rejected"})
+
+
 @cli.command(name="log")
 @click.option("--topic", default=None, help="Filter by topic path.")
 @click.option("--after", default=None, help="Show entries after this ISO timestamp.")
@@ -644,6 +717,7 @@ def undo(session: Session, timestamp: str, dry_run: bool):
     log(f"Batch deleting {len(ids_to_delete)} entries from graph DB...")
     graph_db.delete_entries(ids_to_delete)
     log_remove_entries(log_db, ids_to_delete)
+    review_remove_entries(session.review_db, ids_to_delete)
 
     output({"deleted": ids_to_delete, "count": len(ids_to_delete)})
 
@@ -727,6 +801,7 @@ def purge(session: Session, confirm: str | None, dry_run: bool):
             "vector_db_collection": vector_db.collection_name,
             "vector_entries": vector_count,
             "log_exists": log_db.exists(),
+            "review_exists": session.review_db.exists(),
         })
         return
 
@@ -737,10 +812,14 @@ def purge(session: Session, confirm: str | None, dry_run: bool):
     log("Deleting all nodes from graph DB (entries + topics)...")
     graph_db.delete_all()
 
+    import os
     if log_db.exists():
         log("Clearing log DB...")
-        import os
         os.remove(log_db)
+
+    if session.review_db.exists():
+        log("Clearing review DB...")
+        os.remove(session.review_db)
 
     output({"purged": True})
 

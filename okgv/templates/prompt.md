@@ -25,8 +25,8 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 - `okgv similar-batch --topic <path> --entries '<json_array>' [--top-k 5]` — batch version.
 
 ### Submission
-- `okgv submit --topic <path> --entry '<json>'` — upsert single entry.
-- `okgv submit-batch --topic <path> --entries '<json_array>'` — batch upsert.
+- `okgv submit --topic <path> --entry '<json>' [--review]` — upsert single entry. `--review` flags for review.
+- `okgv submit-batch --topic <path> --entries '<json_array>' [--review]` — batch upsert.
 
 ### Topic Management
 - `okgv create-topic --name <path> [--parents]` — create topic. Use --parents for mkdir -p.
@@ -37,6 +37,13 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 ### Retrieval
 - `okgv get-vector --id <uuid>` — fetch entry from vector DB.
 - `okgv get-graph --id <uuid>` — fetch entry from graph DB.
+
+### Review
+- `okgv review [--topic <path>] [--status pending|approved|rejected] [--limit N]` — list review queue entries.
+- `okgv review --count [--topic <path>]` — counts by status.
+- `okgv approve --id <uuid>` — mark entry as approved.
+- `okgv reject --id <uuid>` — mark entry as rejected.
+- `okgv review --purge-rejected [--dry-run]` — delete rejected entries from all DBs.
 
 ### Log
 - `okgv log [--limit N] [--offset N]` — list recent submissions (default: last 20).

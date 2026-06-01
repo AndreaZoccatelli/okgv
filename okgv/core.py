@@ -1,4 +1,4 @@
-"""Core logic: upsert, logging, schema validation."""
+"""Core logic: upsert, logging, schema validation, review."""
 
 import sqlite3
 from datetime import datetime, timezone
@@ -291,6 +291,163 @@ def log_remove_entries(log_db: Path, entry_ids: list[str]) -> None:
             "DELETE FROM log WHERE entry_id = ?",
             [(eid,) for eid in entry_ids],
         )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ── Review ────────────────────────────────────────────────────────────
+
+_REVIEW_SCHEMA = """
+CREATE TABLE IF NOT EXISTS review (
+    entry_id TEXT PRIMARY KEY,
+    topic TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL,
+    reviewed_at TEXT
+);
+"""
+
+
+def _review_connect(review_db: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(str(review_db))
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute(_REVIEW_SCHEMA)
+    return conn
+
+
+def review_add(review_db: Path, topic: str, entry_ids: list[str]) -> None:
+    """Add entries to review queue as pending."""
+    timestamp = datetime.now(timezone.utc).isoformat()
+    conn = _review_connect(review_db)
+    try:
+        conn.executemany(
+            "INSERT OR IGNORE INTO review (entry_id, topic, status, created_at) VALUES (?, ?, 'pending', ?)",
+            [(eid, topic, timestamp) for eid in entry_ids],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def review_list(
+    review_db: Path,
+    status: str = "pending",
+    topic: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> list[dict]:
+    """List review entries filtered by status and optionally topic."""
+    conn = _review_connect(review_db)
+    try:
+        clauses = ["status = ?"]
+        params: list = [status]
+        if topic:
+            clauses.append("topic = ?")
+            params.append(topic)
+        where = " WHERE " + " AND ".join(clauses)
+        query = f"SELECT entry_id, topic, status, created_at, reviewed_at FROM review{where} ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        rows = conn.execute(query, params).fetchall()
+        return [
+            {"entry_id": r[0], "topic": r[1], "status": r[2], "created_at": r[3], "reviewed_at": r[4]}
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+def review_count(review_db: Path, topic: str | None = None) -> dict:
+    """Count review entries by status."""
+    conn = _review_connect(review_db)
+    try:
+        if topic:
+            rows = conn.execute(
+                "SELECT status, count(*) FROM review WHERE topic = ? GROUP BY status",
+                (topic,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT status, count(*) FROM review GROUP BY status"
+            ).fetchall()
+        counts = {r[0]: r[1] for r in rows}
+        result = {
+            "pending": counts.get("pending", 0),
+            "approved": counts.get("approved", 0),
+            "rejected": counts.get("rejected", 0),
+            "total": sum(counts.values()),
+        }
+        if topic:
+            result["topic"] = topic
+        return result
+    finally:
+        conn.close()
+
+
+def review_update(review_db: Path, entry_ids: list[str], status: str) -> int:
+    """Update review status for entries. Returns number of rows updated."""
+    timestamp = datetime.now(timezone.utc).isoformat()
+    conn = _review_connect(review_db)
+    try:
+        cursor = conn.executemany(
+            "UPDATE review SET status = ?, reviewed_at = ? WHERE entry_id = ?",
+            [(status, timestamp, eid) for eid in entry_ids],
+        )
+        conn.commit()
+        return cursor.rowcount
+    finally:
+        conn.close()
+
+
+def review_get_rejected(review_db: Path) -> list[str]:
+    """Return entry IDs with rejected status."""
+    conn = _review_connect(review_db)
+    try:
+        rows = conn.execute(
+            "SELECT entry_id FROM review WHERE status = 'rejected'"
+        ).fetchall()
+        return [r[0] for r in rows]
+    finally:
+        conn.close()
+
+
+def review_purge_rejected(review_db: Path) -> list[str]:
+    """Remove rejected entries from review DB. Returns deleted IDs."""
+    conn = _review_connect(review_db)
+    try:
+        rows = conn.execute(
+            "SELECT entry_id FROM review WHERE status = 'rejected'"
+        ).fetchall()
+        ids = [r[0] for r in rows]
+        if ids:
+            conn.executemany(
+                "DELETE FROM review WHERE entry_id = ?",
+                [(eid,) for eid in ids],
+            )
+            conn.commit()
+        return ids
+    finally:
+        conn.close()
+
+
+def review_remove_entries(review_db: Path, entry_ids: list[str]) -> None:
+    """Remove entries from review DB by ID (used by undo)."""
+    conn = _review_connect(review_db)
+    try:
+        conn.executemany(
+            "DELETE FROM review WHERE entry_id = ?",
+            [(eid,) for eid in entry_ids],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def review_clear(review_db: Path) -> None:
+    """Delete all entries from review DB (used by purge)."""
+    conn = _review_connect(review_db)
+    try:
+        conn.execute("DELETE FROM review")
         conn.commit()
     finally:
         conn.close()

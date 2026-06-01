@@ -23,12 +23,14 @@ class Session:
         embedder: Callable | None = None,
         schema: EntrySchema | None = None,
         log_db: Path | None = None,
+        review_db: Path | None = None,
     ):
         self._graph_db = graph_db
         self._vector_db = vector_db
         self._embedder = embedder
         self._schema = schema
         self._log_db = log_db
+        self._review_db = review_db
         self._owns_connections = graph_db is None and vector_db is None
 
     @property
@@ -76,6 +78,25 @@ class Session:
             else:
                 self._log_db = Path.cwd() / "log.db"
         return self._log_db
+
+    @property
+    def review_db(self) -> Path:
+        if self._review_db is None:
+            custom = os.getenv("OKGV_REVIEW_DB")
+            if custom:
+                p = Path(custom)
+                if p.is_dir() or custom.endswith("/"):
+                    self._review_db = p / "review.db"
+                else:
+                    self._review_db = p
+            else:
+                self._review_db = Path.cwd() / "review.db"
+        return self._review_db
+
+    @property
+    def review_enabled(self) -> bool:
+        """Check if review is enabled by default via OKGV_REVIEW env var."""
+        return os.getenv("OKGV_REVIEW", "none").lower() == "all"
 
     def close(self) -> None:
         if not self._owns_connections:

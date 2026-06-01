@@ -79,6 +79,9 @@ All output is JSON to stdout. Logs go to stderr.
 | `get-by-topic` | Fetch sample entries for a topic |
 | `get-vector` | Fetch entry from vector DB by ID |
 | `get-graph` | Fetch entry from graph DB by ID |
+| `review` | Query review queue. `--status`, `--topic`, `--count`, `--purge-rejected` |
+| `approve` | Mark entry as approved in review queue |
+| `reject` | Mark entry as rejected in review queue |
 | `log` | Query submission log. `--topic`, `--after`, `--before`, `--count` |
 | `undo` | Delete entries submitted after a timestamp. `--dry-run` to preview |
 | `reconcile` | Find and fix orphan entries across DBs. `--dry-run` to preview |
@@ -169,6 +172,8 @@ All via environment variables. A `.env` file in the working directory is **auto-
 | `WEAVIATE_API_KEY` | (none) | Optional API key |
 | `EMBED_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model |
 | `OKGV_LOG` | `./log.db` | Path to session log SQLite file |
+| `OKGV_REVIEW_DB` | `./review.db` | Path to review queue SQLite file |
+| `OKGV_REVIEW` | `none` | Default review mode: `none` or `all` |
 
 ## Entry Schema
 
