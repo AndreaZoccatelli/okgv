@@ -28,15 +28,16 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 ### Topic Management
 - `okgv create-topic --name <path> [--parents]` — create topic. Use --parents for mkdir -p.
 - `okgv create-structure --file <path>` — create tree from JSON file.
-- `okgv move-topic --source <path> --destination <path>` — move topic under new parent.
-- `okgv move-entry --id <uuid> --destination <path>` — move entry to different topic.
+- `okgv move-topic --source <path> --destination <path> [--dry-run]` — move topic under new parent.
+- `okgv move-entry --id <uuid> --destination <path> [--dry-run]` — move entry to different topic.
 
 ### Retrieval
 - `okgv get-vector --id <uuid>` — fetch entry from vector DB.
 - `okgv get-graph --id <uuid>` — fetch entry from graph DB.
 
-### Undo
-- `okgv undo <ISO-timestamp>` — delete all entries submitted after timestamp.
+### Undo & Maintenance
+- `okgv undo <ISO-timestamp> [--dry-run]` — delete all entries submitted after timestamp.
+- `okgv reconcile [--dry-run] [--batch-size N]` — find and fix entries that exist in one DB but not the other.
 
 ## Conventions
 
@@ -54,3 +55,5 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 - Always check `similar` before submitting — avoid redundant entries.
 - Use batch commands when processing multiple entries — single model load, much faster.
 - If a topic grows too large, suggest creating subtopics to the user.
+- Use `--dry-run` on destructive commands (`undo`, `reconcile`, `move-topic`, `move-entry`) to preview before committing.
+- Use `reconcile` periodically to detect cross-DB inconsistencies.

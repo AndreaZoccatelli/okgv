@@ -60,6 +60,7 @@ All output is JSON to stdout. Logs go to stderr.
 | Command | Purpose |
 |---------|---------|
 | `init` | Scaffold project files (.env, schema.py, topics.json) |
+| `master-prompt` | Print agent instructions for using the CLI |
 | `create-topic` | Create topic by path. `--parents` for mkdir -p behavior |
 | `create-structure` | Create topic tree from JSON file |
 | `least-topic` | Child topic with fewest entries. `--topic` scopes to parent |
@@ -68,13 +69,13 @@ All output is JSON to stdout. Logs go to stderr.
 | `similar-batch` | Batch similarity search (single model load) |
 | `submit` | Upsert entry into both DBs |
 | `submit-batch` | Batch upsert (single model load) |
-| `move-topic` | Move topic/subtopic under different parent |
-| `move-entry` | Move entry to different topic |
+| `move-topic` | Move topic/subtopic under different parent. `--dry-run` to preview |
+| `move-entry` | Move entry to different topic. `--dry-run` to preview |
 | `get-by-topic` | Fetch sample entries for a topic |
 | `get-vector` | Fetch entry from vector DB by ID |
 | `get-graph` | Fetch entry from graph DB by ID |
-| `undo` | Delete entries submitted after a timestamp |
-| `reconcile` | Find and fix orphan entries across DBs |
+| `undo` | Delete entries submitted after a timestamp. `--dry-run` to preview |
+| `reconcile` | Find and fix orphan entries across DBs. `--dry-run` to preview |
 
 ### Examples
 
@@ -108,8 +109,9 @@ okgv move-topic --source algebra/basics --destination geometry
 okgv undo 2026-05-30T12:00:00
 
 # Find and fix cross-DB inconsistencies
-okgv reconcile
 okgv reconcile --dry-run
+okgv reconcile
+okgv reconcile --batch-size 500
 ```
 
 ## Setup
@@ -144,6 +146,7 @@ All via environment variables (`.env` file or exported):
 | `WEAVIATE_COLLECTION` | `knowledge_base` | Collection name for entries |
 | `WEAVIATE_API_KEY` | (none) | Optional API key |
 | `EMBED_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model |
+| `OKGV_LOG` | `./log.db` | Path to session log SQLite file |
 
 ## Entry Schema
 
@@ -270,4 +273,4 @@ Every entry lives in both Neo4j and Weaviate. The write order ensures safe recov
 | **Single upsert** | Graph first → vector. If vector fails, graph entry is rolled back |
 | **Batch upsert** | Graph individually → vector batch. Failed vector entries rolled back from graph |
 | **Undo** | Vector deleted first → graph → log. If vector fails, nothing changed, safe to retry |
-| **Reconcile** | Detects and removes orphan entries that exist in only one DB |
+| **Reconcile** | Chunked iteration with batch existence checks. Memory-efficient at scale. `--batch-size` controls chunk size |
