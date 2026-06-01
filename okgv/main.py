@@ -24,8 +24,9 @@ from okgv.session import Session
 )
 @click.pass_context
 def cli(ctx):
+    from pathlib import Path
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(Path.cwd() / ".env")
     if ctx.obj is None:
         ctx.obj = Session()
     ctx.call_on_close(ctx.obj.close)
