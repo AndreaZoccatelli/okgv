@@ -1,6 +1,7 @@
-"""DB connection factories. No cached state — Session handles lifecycle."""
+"""DB connection factories with retry on transient failures."""
 
 import os
+import time
 
 from okgv.embedding import make_embedder
 from okgv.graph.client import Neo4jGraphDB
@@ -8,26 +9,44 @@ from okgv.helpers import EXIT_CONNECTION, env_int, err
 from okgv.protocols import GraphDB, VectorDB
 from okgv.vector.client import WeaviateVectorDB
 
+_MAX_CONNECT_RETRIES = 3
+_CONNECT_RETRY_DELAY = 2
+
+
+def _retry_connect(fn, label: str):
+    """Retry connection factory with exponential backoff."""
+    last_err = None
+    for attempt in range(_MAX_CONNECT_RETRIES):
+        try:
+            return fn()
+        except Exception as e:
+            last_err = e
+            if attempt < _MAX_CONNECT_RETRIES - 1:
+                delay = _CONNECT_RETRY_DELAY * (attempt + 1)
+                import sys
+                print(f"[okgv] {label} connection failed (attempt {attempt + 1}/{_MAX_CONNECT_RETRIES}), retrying in {delay}s...", file=sys.stderr)
+                time.sleep(delay)
+    err(
+        f"{label}_connection_failed",
+        detail=str(last_err),
+        suggestion=f"Check connection env vars. Failed after {_MAX_CONNECT_RETRIES} attempts.",
+        exit_code=EXIT_CONNECTION,
+    )
+
 
 def create_graph_db() -> GraphDB:
-    try:
+    def _connect():
         return Neo4jGraphDB(
             uri=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
             user=os.getenv("NEO4J_USER", "neo4j"),
             password=os.getenv("NEO4J_PASSWORD", "password"),
             database=os.getenv("NEO4J_DATABASE", "neo4j"),
         )
-    except Exception as e:
-        err(
-            "graph_db_connection_failed",
-            detail=str(e),
-            suggestion="Check NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, NEO4J_DATABASE env vars",
-            exit_code=EXIT_CONNECTION,
-        )
+    return _retry_connect(_connect, "graph_db")
 
 
 def create_vector_db(schema) -> VectorDB:
-    try:
+    def _connect():
         return WeaviateVectorDB(
             host=os.getenv("WEAVIATE_HOST", "localhost"),
             http_port=env_int("WEAVIATE_PORT", 8080),
@@ -36,13 +55,7 @@ def create_vector_db(schema) -> VectorDB:
             property_definitions=schema.vector_property_definitions(),
             api_key=os.getenv("WEAVIATE_API_KEY"),
         )
-    except Exception as e:
-        err(
-            "vector_db_connection_failed",
-            detail=str(e),
-            suggestion="Check WEAVIATE_HOST, WEAVIATE_PORT, WEAVIATE_COLLECTION env vars",
-            exit_code=EXIT_CONNECTION,
-        )
+    return _retry_connect(_connect, "vector_db")
 
 
 def create_embedder():

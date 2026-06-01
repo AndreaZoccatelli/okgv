@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import time
+from typing import Callable, TypeVar
+
 import weaviate
 import weaviate.classes as wvc
 
 from okgv.protocols import PropertyDefinition, VectorRecord
+
+_T = TypeVar("_T")
+_MAX_RETRIES = 2
+_RETRY_DELAY = 1
 
 _WEAVIATE_TYPE_MAP = {
     "text": wvc.config.DataType.TEXT,
@@ -54,52 +61,70 @@ class WeaviateVectorDB:
     def _collection(self):
         return self._client.collections.get(self._collection_name)
 
+    def _with_retry(self, fn: Callable[[], _T]) -> _T:
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                return fn()
+            except (ConnectionError, OSError, TimeoutError):
+                if attempt == _MAX_RETRIES:
+                    raise
+                time.sleep(_RETRY_DELAY * (attempt + 1))
+        raise RuntimeError("unreachable")
+
     def get_top_n(
         self,
         vector: list[float],
         n: int,
         filter_topic: str | None = None,
     ) -> list[tuple[str, float]]:
-        filters = _topic_filter(filter_topic) if filter_topic else None
-        response = self._collection.query.near_vector(
-            near_vector=vector,
-            limit=n,
-            filters=filters,
-            return_metadata=wvc.query.MetadataQuery(certainty=True),
-        )
-        return [(str(obj.uuid), obj.metadata.certainty) for obj in response.objects]
+        def _op():
+            filters = _topic_filter(filter_topic) if filter_topic else None
+            response = self._collection.query.near_vector(
+                near_vector=vector,
+                limit=n,
+                filters=filters,
+                return_metadata=wvc.query.MetadataQuery(certainty=True),
+            )
+            return [(str(obj.uuid), obj.metadata.certainty) for obj in response.objects]
+        return self._with_retry(_op)
 
     def get_by_id(self, entry_id: str) -> VectorRecord | None:
-        obj = self._collection.query.fetch_object_by_id(entry_id)
-        if obj is None:
-            return None
-        props = dict(obj.properties)
-        props.pop(TOPIC_PROPERTY, None)
-        return VectorRecord(id=str(obj.uuid), properties=props)
+        def _op():
+            obj = self._collection.query.fetch_object_by_id(entry_id)
+            if obj is None:
+                return None
+            props = dict(obj.properties)
+            props.pop(TOPIC_PROPERTY, None)
+            return VectorRecord(id=str(obj.uuid), properties=props)
+        return self._with_retry(_op)
 
     def get_by_ids(self, entry_ids: list[str]) -> list[VectorRecord]:
-        response = self._collection.query.fetch_objects(
-            filters=wvc.query.Filter.by_id().contains_any(entry_ids),
-            limit=len(entry_ids),
-        )
-        results = []
-        for obj in response.objects:
-            props = dict(obj.properties)
-            props.pop(TOPIC_PROPERTY, None)
-            results.append(VectorRecord(id=str(obj.uuid), properties=props))
-        return results
+        def _op():
+            response = self._collection.query.fetch_objects(
+                filters=wvc.query.Filter.by_id().contains_any(entry_ids),
+                limit=len(entry_ids),
+            )
+            results = []
+            for obj in response.objects:
+                props = dict(obj.properties)
+                props.pop(TOPIC_PROPERTY, None)
+                results.append(VectorRecord(id=str(obj.uuid), properties=props))
+            return results
+        return self._with_retry(_op)
 
     def get_by_topic(self, topic: str, limit: int) -> list[VectorRecord]:
-        response = self._collection.query.fetch_objects(
-            filters=_topic_filter(topic),
-            limit=limit,
-        )
-        results = []
-        for obj in response.objects:
-            props = dict(obj.properties)
-            props.pop(TOPIC_PROPERTY, None)
-            results.append(VectorRecord(id=str(obj.uuid), properties=props))
-        return results
+        def _op():
+            response = self._collection.query.fetch_objects(
+                filters=_topic_filter(topic),
+                limit=limit,
+            )
+            results = []
+            for obj in response.objects:
+                props = dict(obj.properties)
+                props.pop(TOPIC_PROPERTY, None)
+                results.append(VectorRecord(id=str(obj.uuid), properties=props))
+            return results
+        return self._with_retry(_op)
 
     def upload_entry(
         self,
@@ -157,9 +182,11 @@ class WeaviateVectorDB:
         """Batch delete using Weaviate delete_many."""
         if not entry_ids:
             return
-        self._collection.data.delete_many(
-            where=wvc.query.Filter.by_id().contains_any(entry_ids)
-        )
+        def _op():
+            self._collection.data.delete_many(
+                where=wvc.query.Filter.by_id().contains_any(entry_ids)
+            )
+        self._with_retry(_op)
 
     def update_entry_topic(self, entry_id: str, new_topic: str) -> None:
         self._collection.data.update(
@@ -188,21 +215,25 @@ class WeaviateVectorDB:
                 )
 
     def get_all_entry_ids(self) -> list[str]:
-        results = []
-        for obj in self._collection.iterator():
-            results.append(str(obj.uuid))
-        return results
+        def _op():
+            results = []
+            for obj in self._collection.iterator():
+                results.append(str(obj.uuid))
+            return results
+        return self._with_retry(_op)
 
     def delete_by_id(self, entry_id: str) -> None:
         """Delete entry. No-op if not found. Raises on connection/server errors."""
         from weaviate.exceptions import UnexpectedStatusCodeError
 
-        try:
-            self._collection.data.delete_by_id(entry_id)
-        except UnexpectedStatusCodeError as e:
-            if e.status_code == 404:
-                return
-            raise
+        def _op():
+            try:
+                self._collection.data.delete_by_id(entry_id)
+            except UnexpectedStatusCodeError as e:
+                if e.status_code == 404:
+                    return
+                raise
+        self._with_retry(_op)
 
     def ensure_collection(self) -> None:
         if not self._client.collections.exists(self._collection_name):

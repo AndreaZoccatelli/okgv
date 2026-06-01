@@ -9,9 +9,18 @@ Root topics have path == name.
 
 from __future__ import annotations
 
+import time
+from typing import Callable, TypeVar
+
 from neo4j import GraphDatabase
+from neo4j.exceptions import ServiceUnavailable, SessionExpired
 
 from okgv.protocols import GraphRecord
+
+_T = TypeVar("_T")
+_TRANSIENT = (ServiceUnavailable, SessionExpired, ConnectionError, OSError)
+_MAX_RETRIES = 2
+_RETRY_DELAY = 1
 
 
 class Neo4jGraphDB:
@@ -26,46 +35,65 @@ class Neo4jGraphDB:
     def _session(self):
         return self._driver.session(database=self._database)
 
+    def _with_retry(self, fn: Callable[[], _T]) -> _T:
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                return fn()
+            except _TRANSIENT:
+                if attempt == _MAX_RETRIES:
+                    raise
+                time.sleep(_RETRY_DELAY * (attempt + 1))
+                self._driver.verify_connectivity()
+        raise RuntimeError("unreachable")
+
     def topic_exists(self, path: str) -> bool:
-        with self._session() as session:
-            result = session.run(
-                "MATCH (t:Topic {path: $path}) RETURN t LIMIT 1",
-                path=path,
-            )
-            return result.single() is not None
+        def _op():
+            with self._session() as session:
+                result = session.run(
+                    "MATCH (t:Topic {path: $path}) RETURN t LIMIT 1",
+                    path=path,
+                )
+                return result.single() is not None
+        return self._with_retry(_op)
 
     def create_topic(self, name: str) -> None:
         """Idempotent — safe to call if topic already exists (uses MERGE)."""
-        with self._session() as session:
-            session.run(
-                "MERGE (t:Topic {path: $path}) ON CREATE SET t.name = $name",
-                path=name,
-                name=name,
-            )
+        def _op():
+            with self._session() as session:
+                session.run(
+                    "MERGE (t:Topic {path: $path}) ON CREATE SET t.name = $name",
+                    path=name,
+                    name=name,
+                )
+        self._with_retry(_op)
 
     def create_subtopic(self, parent: str, name: str) -> None:
         path = f"{parent}/{name}"
-        with self._session() as session:
-            session.run(
-                """
-                MATCH (p:Topic {path: $parent})
-                MERGE (c:Topic {path: $path})
-                  ON CREATE SET c.name = $name
-                MERGE (p)-[:HAS_SUBTOPIC]->(c)
-                """,
-                parent=parent,
-                path=path,
-                name=name,
-            )
+        def _op():
+            with self._session() as session:
+                session.run(
+                    """
+                    MATCH (p:Topic {path: $parent})
+                    MERGE (c:Topic {path: $path})
+                      ON CREATE SET c.name = $name
+                    MERGE (p)-[:HAS_SUBTOPIC]->(c)
+                    """,
+                    parent=parent,
+                    path=path,
+                    name=name,
+                )
+        self._with_retry(_op)
 
     def get_subtopics(self, topic: str) -> list[str]:
-        with self._session() as session:
-            result = session.run(
-                "MATCH (t:Topic {path: $path})-[:HAS_SUBTOPIC]->(c:Topic) "
-                "RETURN c.path AS path",
-                path=topic,
-            )
-            return [r["path"] for r in result]
+        def _op():
+            with self._session() as session:
+                result = session.run(
+                    "MATCH (t:Topic {path: $path})-[:HAS_SUBTOPIC]->(c:Topic) "
+                    "RETURN c.path AS path",
+                    path=topic,
+                )
+                return [r["path"] for r in result]
+        return self._with_retry(_op)
 
     def get_topic_entry_counts(self, parent: str | None = None) -> dict[str, int]:
         """Return entry counts for direct children of parent (recursive per child).
@@ -73,59 +101,64 @@ class Neo4jGraphDB:
         If parent is None, returns counts for root topics.
         Each child's count includes entries in all its descendants.
         """
-        with self._session() as session:
-            if parent is None:
-                # Root topics: those with no incoming HAS_SUBTOPIC
-                result = session.run(
-                    """
-                    MATCH (t:Topic)
-                    WHERE NOT ()-[:HAS_SUBTOPIC]->(t)
-                    OPTIONAL MATCH (t)-[:HAS_SUBTOPIC*0..]->(desc:Topic)-[:HAS_ENTRY]->(e:Entry)
-                    RETURN t.path AS topic, count(DISTINCT e) AS count
-                    """
-                )
-            else:
-                result = session.run(
-                    """
-                    MATCH (p:Topic {path: $parent})-[:HAS_SUBTOPIC]->(t:Topic)
-                    OPTIONAL MATCH (t)-[:HAS_SUBTOPIC*0..]->(desc:Topic)-[:HAS_ENTRY]->(e:Entry)
-                    RETURN t.path AS topic, count(DISTINCT e) AS count
-                    """,
-                    parent=parent,
-                )
-            return {r["topic"]: r["count"] for r in result}
+        def _op():
+            with self._session() as session:
+                if parent is None:
+                    result = session.run(
+                        """
+                        MATCH (t:Topic)
+                        WHERE NOT ()-[:HAS_SUBTOPIC]->(t)
+                        OPTIONAL MATCH (t)-[:HAS_SUBTOPIC*0..]->(desc:Topic)-[:HAS_ENTRY]->(e:Entry)
+                        RETURN t.path AS topic, count(DISTINCT e) AS count
+                        """
+                    )
+                else:
+                    result = session.run(
+                        """
+                        MATCH (p:Topic {path: $parent})-[:HAS_SUBTOPIC]->(t:Topic)
+                        OPTIONAL MATCH (t)-[:HAS_SUBTOPIC*0..]->(desc:Topic)-[:HAS_ENTRY]->(e:Entry)
+                        RETURN t.path AS topic, count(DISTINCT e) AS count
+                        """,
+                        parent=parent,
+                    )
+                return {r["topic"]: r["count"] for r in result}
+        return self._with_retry(_op)
 
     def get_entry_ids_for_topic(self, topic: str) -> list[str]:
         """Return entry IDs recursively (includes entries in all sub-topics)."""
-        with self._session() as session:
-            result = session.run(
-                """
-                MATCH (t:Topic {path: $path})-[:HAS_SUBTOPIC*0..]->(desc:Topic)-[:HAS_ENTRY]->(e:Entry)
-                RETURN DISTINCT e.id AS id
-                """,
-                path=topic,
-            )
-            return [r["id"] for r in result]
+        def _op():
+            with self._session() as session:
+                result = session.run(
+                    """
+                    MATCH (t:Topic {path: $path})-[:HAS_SUBTOPIC*0..]->(desc:Topic)-[:HAS_ENTRY]->(e:Entry)
+                    RETURN DISTINCT e.id AS id
+                    """,
+                    path=topic,
+                )
+                return [r["id"] for r in result]
+        return self._with_retry(_op)
 
     def get_entries_for_topic(self, topic: str) -> list:
         """Return all entries (with properties) recursively for a topic."""
         from okgv.protocols import GraphRecord
 
-        with self._session() as session:
-            result = session.run(
-                """
-                MATCH (t:Topic {path: $path})-[:HAS_SUBTOPIC*0..]->(desc:Topic)-[:HAS_ENTRY]->(e:Entry)
-                RETURN DISTINCT e AS node, desc.path AS topic
-                """,
-                path=topic,
-            )
-            records = []
-            for row in result:
-                node = row["node"]
-                props = dict(node)
-                eid = props.pop("id", None)
-                records.append(GraphRecord(id=eid, topic=row["topic"], properties=props))
-            return records
+        def _op():
+            with self._session() as session:
+                result = session.run(
+                    """
+                    MATCH (t:Topic {path: $path})-[:HAS_SUBTOPIC*0..]->(desc:Topic)-[:HAS_ENTRY]->(e:Entry)
+                    RETURN DISTINCT e AS node, desc.path AS topic
+                    """,
+                    path=topic,
+                )
+                records = []
+                for row in result:
+                    node = row["node"]
+                    props = dict(node)
+                    eid = props.pop("id", None)
+                    records.append(GraphRecord(id=eid, topic=row["topic"], properties=props))
+                return records
+        return self._with_retry(_op)
 
     def upload_entry(
         self, topic: str, entry_id: str, properties: dict, overwrite: bool = False
@@ -158,41 +191,47 @@ class Neo4jGraphDB:
             session.execute_write(_work)
 
     def get_by_id(self, entry_id: str) -> GraphRecord | None:
-        with self._session() as session:
-            result = session.run(
-                """
-                MATCH (t:Topic)-[:HAS_ENTRY]->(e:Entry {id: $id})
-                RETURN e AS node, t.path AS topic
-                """,
-                id=entry_id,
-            )
-            row = result.single()
-            if row is None:
-                return None
-            node = row["node"]
-            props = dict(node)
-            props.pop("id", None)
-            return GraphRecord(
-                id=entry_id,
-                topic=row["topic"],
-                properties=props,
-            )
+        def _op():
+            with self._session() as session:
+                result = session.run(
+                    """
+                    MATCH (t:Topic)-[:HAS_ENTRY]->(e:Entry {id: $id})
+                    RETURN e AS node, t.path AS topic
+                    """,
+                    id=entry_id,
+                )
+                row = result.single()
+                if row is None:
+                    return None
+                node = row["node"]
+                props = dict(node)
+                props.pop("id", None)
+                return GraphRecord(
+                    id=entry_id,
+                    topic=row["topic"],
+                    properties=props,
+                )
+        return self._with_retry(_op)
 
     def get_all_entry_ids(self) -> list[str]:
-        with self._session() as session:
-            result = session.run("MATCH (e:Entry) RETURN e.id AS id")
-            return [r["id"] for r in result]
+        def _op():
+            with self._session() as session:
+                result = session.run("MATCH (e:Entry) RETURN e.id AS id")
+                return [r["id"] for r in result]
+        return self._with_retry(_op)
 
     def delete_entries(self, ids: list[str]) -> None:
-        with self._session() as session:
-            session.run(
-                """
-                UNWIND $ids AS id
-                MATCH (e:Entry {id: id})
-                DETACH DELETE e
-                """,
-                ids=ids,
-            )
+        def _op():
+            with self._session() as session:
+                session.run(
+                    """
+                    UNWIND $ids AS id
+                    MATCH (e:Entry {id: id})
+                    DETACH DELETE e
+                    """,
+                    ids=ids,
+                )
+        self._with_retry(_op)
 
     def move_topic(self, source: str, destination: str) -> None:
         """Move topic at `source` path under `destination` topic."""
