@@ -50,7 +50,7 @@ Entries can live at any level. Queries on a topic are recursive — include all 
    → agent decides: novel enough → submit, too similar → regenerate
 
 4. okgv submit --topic <topic> --entry '<json>'
-   → upserted into both DBs, logged to log.json
+   → upserted into both DBs, logged to log.db
 ```
 
 ## Commands
@@ -74,6 +74,7 @@ All output is JSON to stdout. Logs go to stderr.
 | `get-vector` | Fetch entry from vector DB by ID |
 | `get-graph` | Fetch entry from graph DB by ID |
 | `undo` | Delete entries submitted after a timestamp |
+| `reconcile` | Find and fix orphan entries across DBs |
 
 ### Examples
 
@@ -105,6 +106,10 @@ okgv move-topic --source algebra/basics --destination geometry
 
 # Undo recent submissions
 okgv undo 2026-05-30T12:00:00
+
+# Find and fix cross-DB inconsistencies
+okgv reconcile
+okgv reconcile --dry-run
 ```
 
 ## Setup
@@ -231,10 +236,38 @@ Exit codes:
 
 ## Session Logging
 
-Every `submit` appends to `log.json`:
+Every `submit` appends to `log.db` (SQLite with WAL mode):
 
-```json
-{"2026-05-30T12:00:00+00:00": {"algebra/basics": ["uuid1", "uuid2"]}}
+```
+| id | timestamp                    | topic           | entry_id |
+|----|------------------------------|-----------------|----------|
+| 1  | 2026-05-30T12:00:00+00:00    | algebra/basics  | uuid1    |
+| 2  | 2026-05-30T12:00:00+00:00    | algebra/basics  | uuid2    |
 ```
 
-Used by `undo` to roll back submissions after a given timestamp.
+Used by `undo` to roll back submissions after a given timestamp. Set `OKGV_LOG` env var to customize path.
+
+## Reliability
+
+### Batch Operations
+
+`submit-batch` and `similar-batch` load the embedding model once and use native Weaviate batch APIs (`insert_many`, `delete_many`) instead of per-entry round trips.
+
+`undo` and `reconcile` also use batch deletes.
+
+### Connection Retry
+
+Both DB connection factories retry up to 3 times with exponential backoff on transient failures.
+
+Per-operation retries (up to 2 retries with backoff) are applied to all read queries and idempotent writes (deletes, MERGE operations). Non-idempotent writes are not retried to avoid double-insertion.
+
+### Cross-DB Consistency
+
+Every entry lives in both Neo4j and Weaviate. The write order ensures safe recovery:
+
+| Operation | Strategy |
+|-----------|----------|
+| **Single upsert** | Graph first → vector. If vector fails, graph entry is rolled back |
+| **Batch upsert** | Graph individually → vector batch. Failed vector entries rolled back from graph |
+| **Undo** | Vector deleted first → graph → log. If vector fails, nothing changed, safe to retry |
+| **Reconcile** | Detects and removes orphan entries that exist in only one DB |
