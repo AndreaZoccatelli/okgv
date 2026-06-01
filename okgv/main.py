@@ -563,13 +563,19 @@ def log_cmd(session: Session, topic: str | None, after: str | None, before: str 
         err("no_log", detail="log.db not found — no submissions yet", exit_code=EXIT_NOT_FOUND)
 
     def _parse_ts(val: str, name: str) -> datetime:
+        """Parse user input as local time, convert to UTC for querying."""
         try:
             ts = datetime.fromisoformat(val)
         except ValueError:
             err("invalid_timestamp", detail=f"Bad --{name} value: {val}", suggestion="Use ISO 8601 format", exit_code=EXIT_USAGE)
         if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
-        return ts
+            ts = ts.replace(tzinfo=datetime.now().astimezone().tzinfo)
+        return ts.astimezone(timezone.utc)
+
+    def _to_local(utc_str: str) -> str:
+        """Convert stored UTC timestamp to local time for display."""
+        ts = datetime.fromisoformat(utc_str).astimezone()
+        return ts.isoformat()
 
     after_dt = _parse_ts(after, "after") if after else None
     before_dt = _parse_ts(before, "before") if before else None
@@ -578,6 +584,8 @@ def log_cmd(session: Session, topic: str | None, after: str | None, before: str 
         output(log_count(log_db, topic=topic, group_by_topic=topic is None))
     else:
         entries = log_query(log_db, topic=topic, after=after_dt, before=before_dt, limit=limit, offset=offset)
+        for e in entries:
+            e["timestamp"] = _to_local(e["timestamp"])
         output(entries)
 
 
@@ -601,7 +609,8 @@ def undo(session: Session, timestamp: str, dry_run: bool):
         )
 
     if cutoff.tzinfo is None:
-        cutoff = cutoff.replace(tzinfo=timezone.utc)
+        cutoff = cutoff.replace(tzinfo=datetime.now().astimezone().tzinfo)
+    cutoff = cutoff.astimezone(timezone.utc)
 
     if not log_db.exists():
         err("no_log", detail="log.db not found", exit_code=EXIT_NOT_FOUND)
