@@ -1,0 +1,36 @@
+{
+  "customer_support": {
+    "billing": {
+      "refund": {},
+      "payment_issue": {},
+      "subscription": {}
+    },
+    "account": {
+      "login_problem": {},
+      "profile_update": {},
+      "delete_account": {}
+    },
+    "product": {
+      "bug_report": {},
+      "feature_request": {},
+      "how_to": {}
+    }
+  },
+  "commerce": {
+    "order": {
+      "track_order": {},
+      "cancel_order": {},
+      "change_order": {}
+    },
+    "shipping": {
+      "delivery_time": {},
+      "shipping_cost": {},
+      "international": {}
+    },
+    "returns": {
+      "return_policy": {},
+      "exchange": {},
+      "damaged_item": {}
+    }
+  }
+}
