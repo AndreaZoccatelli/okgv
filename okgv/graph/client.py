@@ -35,6 +35,7 @@ class Neo4jGraphDB:
             return result.single() is not None
 
     def create_topic(self, name: str) -> None:
+        """Idempotent — safe to call if topic already exists (uses MERGE)."""
         with self._session() as session:
             session.run(
                 "MERGE (t:Topic {path: $path}) ON CREATE SET t.name = $name",
