@@ -175,7 +175,19 @@ class VectorDB(Protocol):
 
     def get_all_entry_ids(self) -> list[str]: ...
 
+    def upload_entries_batch(
+        self,
+        entries: list[dict],
+        vectors: list[list[float]],
+        entry_ids: list[str],
+        topic: str,
+    ) -> list[str]:
+        """Batch insert entries. Returns list of entry IDs that failed."""
+        ...
+
     def delete_by_id(self, entry_id: str) -> None: ...
+
+    def delete_by_ids(self, entry_ids: list[str]) -> None: ...
 
     def ensure_collection(self) -> None: ...
 

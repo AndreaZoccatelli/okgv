@@ -130,6 +130,19 @@ class MockVectorDB:
         self.topics[entry_id] = topic
         self.vectors[entry_id] = vector
 
+    def upload_entries_batch(self, entries: list[dict], vectors: list[list[float]], entry_ids: list[str], topic: str) -> list[str]:
+        if self.fail_on_upload:
+            return entry_ids  # all failed
+        failed = []
+        for eid, props, vec in zip(entry_ids, entries, vectors):
+            if eid in self.entries:
+                failed.append(eid)
+                continue
+            self.entries[eid] = props
+            self.topics[eid] = topic
+            self.vectors[eid] = vec
+        return failed
+
     def update_entry_topic(self, entry_id: str, new_topic: str) -> None:
         self.topics[entry_id] = new_topic
 
@@ -148,6 +161,12 @@ class MockVectorDB:
         self.entries.pop(entry_id, None)
         self.topics.pop(entry_id, None)
         self.vectors.pop(entry_id, None)
+
+    def delete_by_ids(self, entry_ids: list[str]) -> None:
+        for eid in entry_ids:
+            self.entries.pop(eid, None)
+            self.topics.pop(eid, None)
+            self.vectors.pop(eid, None)
 
     def ensure_collection(self) -> None:
         pass

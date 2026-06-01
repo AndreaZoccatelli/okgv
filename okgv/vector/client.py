@@ -129,6 +129,38 @@ class WeaviateVectorDB:
                 uuid=entry_id, properties=stored, vector=vector
             )
 
+    def upload_entries_batch(
+        self,
+        entries: list[dict],
+        vectors: list[list[float]],
+        entry_ids: list[str],
+        topic: str,
+    ) -> list[str]:
+        """Batch insert using Weaviate insert_many. Returns failed entry IDs."""
+        self.ensure_collection()
+        objects = [
+            wvc.data.DataObject(
+                uuid=eid,
+                properties={**props, TOPIC_PROPERTY: topic},
+                vector=vec,
+            )
+            for eid, props, vec in zip(entry_ids, entries, vectors)
+        ]
+        response = self._collection.data.insert_many(objects)
+        failed_ids = []
+        if response.errors:
+            for idx in response.errors:
+                failed_ids.append(entry_ids[idx])
+        return failed_ids
+
+    def delete_by_ids(self, entry_ids: list[str]) -> None:
+        """Batch delete using Weaviate delete_many."""
+        if not entry_ids:
+            return
+        self._collection.data.delete_many(
+            where=wvc.query.Filter.by_id().contains_any(entry_ids)
+        )
+
     def update_entry_topic(self, entry_id: str, new_topic: str) -> None:
         self._collection.data.update(
             uuid=entry_id,

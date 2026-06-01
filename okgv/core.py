@@ -127,6 +127,61 @@ def upsert_entry(
     return eid
 
 
+def upsert_entries_batch(
+    schema,
+    graph_db: GraphDB,
+    vector_db: VectorDB,
+    topic: str,
+    raws: list[dict],
+    vectors: list[list[float]],
+    overwrite: bool = False,
+) -> tuple[list[str], list[dict]]:
+    """Batch upsert entries into both DBs.
+
+    Returns (inserted_ids, failures) where failures are dicts with id and error.
+    Graph uploads are individual (transactional). Vector upload is batched.
+    """
+    # Upload to graph individually, collect successes
+    graph_ok = []
+    failures = []
+    for raw, vec in zip(raws, vectors):
+        eid = entry_id(raw)
+        entry = build_entry(schema, raw)
+        meta = schema.metadata(entry)
+        graph_props = schema.graph_properties(entry)
+        vector_props = schema.vector_properties(entry)
+        validate_schema(schema, meta, graph_props, vector_props)
+        try:
+            graph_db.upload_entry(
+                topic=topic, entry_id=eid, properties={**meta, **graph_props}, overwrite=overwrite,
+            )
+        except (EntryError, ValueError) as e:
+            failures.append({"id": eid, "error": str(e)})
+            continue
+        graph_ok.append((eid, {**meta, **vector_props}, vec))
+
+    if not graph_ok:
+        return [], failures
+
+    # Batch insert to vector DB
+    eids = [eid for eid, _, _ in graph_ok]
+    props_list = [props for _, props, _ in graph_ok]
+    vecs = [vec for _, _, vec in graph_ok]
+    failed_ids = vector_db.upload_entries_batch(props_list, vecs, eids, topic)
+
+    # Roll back graph entries that failed in vector
+    if failed_ids:
+        graph_db.delete_entries(failed_ids)
+        failed_set = set(failed_ids)
+        for fid in failed_ids:
+            failures.append({"id": fid, "error": "Vector DB batch insert failed"})
+        inserted = [eid for eid in eids if eid not in failed_set]
+    else:
+        inserted = eids
+
+    return inserted, failures
+
+
 def log_session(log_db: Path, topic: str, inserted_ids: list[str]) -> None:
     """Log submitted entry IDs to SQLite."""
     timestamp = datetime.now(timezone.utc).isoformat()

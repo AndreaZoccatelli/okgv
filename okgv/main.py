@@ -13,7 +13,7 @@ import sys
 
 import click
 
-from okgv.core import EntryError, build_entry, log_get_entries_after, log_remove_entries, log_session, upsert_entry
+from okgv.core import EntryError, build_entry, log_get_entries_after, log_remove_entries, log_session, upsert_entries_batch, upsert_entry
 from okgv.helpers import EXIT_NOT_FOUND, EXIT_USAGE, err, log, output, read_raw
 from okgv.protocols import entry_id
 from okgv.session import Session
@@ -366,31 +366,25 @@ def submit_batch(session: Session, topic: str, entries: str, overwrite: bool):
     results = []
     for i, raw in enumerate(rows):
         try:
-            entry_obj = build_entry(schema, raw)
+            build_entry(schema, raw)
         except EntryError as e:
             log(f"[{i + 1}/{len(rows)}] Skipping bad entry: {e}")
             results.append({"id": entry_id(raw), "submitted": False, "error": str(e)})
             continue
-        valid.append((i, raw, entry_obj))
+        valid.append(raw)
 
     if valid:
-        texts = [schema.embedding_text(e) for _, _, e in valid]
+        texts = [schema.embedding_text(build_entry(schema, r)) for r in valid]
         vectors = session.embedder(texts)
 
-        inserted_ids = []
-        for (i, raw, _), vec in zip(valid, vectors):
-            log(f"[{i + 1}/{len(rows)}] Upserting entry into topic '{topic}'...")
-            try:
-                eid = upsert_entry(
-                    schema, session.graph_db, session.vector_db, topic, raw,
-                    session.embedder, overwrite=overwrite, vector=vec,
-                )
-            except (EntryError, ValueError) as e:
-                log(f"[{i + 1}/{len(rows)}] Failed: {e}")
-                results.append({"id": entry_id(raw), "submitted": False, "error": str(e)})
-                continue
-            inserted_ids.append(eid)
+        log(f"Batch upserting {len(valid)} entries into topic '{topic}'...")
+        inserted_ids, failures = upsert_entries_batch(
+            schema, session.graph_db, session.vector_db, topic, valid, vectors, overwrite=overwrite,
+        )
+        for eid in inserted_ids:
             results.append({"id": eid, "submitted": True})
+        for f in failures:
+            results.append({"id": f["id"], "submitted": False, "error": f["error"]})
         if inserted_ids:
             log_session(session.log_db, topic, inserted_ids)
 
@@ -578,34 +572,25 @@ def undo(session: Session, timestamp: str, dry_run: bool):
 
     graph_db = session.graph_db
     vector_db = session.vector_db
-    deleted = []
-    failed_at = None
-    for i, uid in enumerate(ids_to_delete):
-        log(f"[{i + 1}/{len(ids_to_delete)}] Deleting {uid}...")
-        graph_db.delete_entries([uid])
-        try:
-            vector_db.delete_by_id(uid)
-        except Exception as e:
-            failed_at = {"id": uid, "error": str(e), "deleted_so_far": deleted}
-            log(f"Vector DB delete failed for {uid}: {e}")
-            break
-        deleted.append(uid)
 
-    # Remove successfully deleted entries from log
-    if deleted:
-        log_remove_entries(log_db, deleted)
-
-    if failed_at:
+    # Delete vector first — if it fails, graph+log are intact and undo can be retried.
+    # If graph fails after vector succeeds, reconcile will clean up the orphans.
+    log(f"Batch deleting {len(ids_to_delete)} entries from vector DB...")
+    try:
+        vector_db.delete_by_ids(ids_to_delete)
+    except Exception as e:
         err(
-            "undo_partial_failure",
-            detail=f"Vector DB failed on entry '{failed_at['id']}': {failed_at['error']}. "
-            f"Entry was deleted from graph but remains in vector DB. "
-            f"{len(deleted)} entries fully deleted before failure.",
-            suggestion="Re-run undo to retry. The failed entry's graph node is already gone.",
+            "undo_vector_failed",
+            detail=f"Vector DB batch delete failed: {e}. No changes were made.",
+            suggestion="Fix connection and re-run undo.",
             exit_code=1,
         )
 
-    output({"deleted": deleted, "count": len(deleted)})
+    log(f"Batch deleting {len(ids_to_delete)} entries from graph DB...")
+    graph_db.delete_entries(ids_to_delete)
+    log_remove_entries(log_db, ids_to_delete)
+
+    output({"deleted": ids_to_delete, "count": len(ids_to_delete)})
 
 
 @cli.command()
@@ -642,8 +627,7 @@ def reconcile(session: Session, dry_run: bool):
         graph_db.delete_entries(list(graph_only))
     if vector_only:
         log(f"Deleting {len(vector_only)} orphan(s) from vector DB...")
-        for uid in vector_only:
-            vector_db.delete_by_id(uid)
+        vector_db.delete_by_ids(list(vector_only))
 
     output({
         "consistent": True,
