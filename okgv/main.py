@@ -16,7 +16,7 @@ import click
 from okgv.core import (
     EntryError, build_entry,
     log_count, log_get_entries_after, log_query, log_remove_entries, log_session,
-    review_add, review_clear, review_count, review_get_rejected, review_list,
+    review_add, review_count, review_get_rejected, review_list,
     review_purge_rejected, review_remove_entries, review_update,
     upsert_entries_batch, upsert_entry,
 )
@@ -280,7 +280,7 @@ def submit(session: Session, topic: str, entry: str, overwrite: bool, review: bo
     log_session(session.log_db, topic, [eid])
     needs_review = review if review is not None else session.review_enabled
     if needs_review:
-        review_add(session.review_db, topic, [eid])
+        review_add(session.log_db, topic, [eid])
     output({"id": eid, "submitted": True, "review": needs_review})
 
 
@@ -411,7 +411,7 @@ def submit_batch(session: Session, topic: str, entries: str, overwrite: bool, re
             log_session(session.log_db, topic, inserted_ids)
             needs_review = review if review is not None else session.review_enabled
             if needs_review:
-                review_add(session.review_db, topic, inserted_ids)
+                review_add(session.log_db, topic, inserted_ids)
 
     output(results)
 
@@ -571,10 +571,10 @@ def get_graph(session: Session, entry_id: str):
 @click.pass_obj
 def review_cmd(session: Session, topic: str | None, status: str, limit: int, offset: int, count: bool, purge_rejected: bool, dry_run: bool):
     """Query the review queue or purge rejected entries."""
-    review_db = session.review_db
+    log_db = session.log_db
 
     if purge_rejected:
-        rejected_ids = review_get_rejected(review_db)
+        rejected_ids = review_get_rejected(log_db)
         if not rejected_ids:
             output({"purged": 0})
             return
@@ -585,15 +585,15 @@ def review_cmd(session: Session, topic: str | None, status: str, limit: int, off
         session.vector_db.delete_by_ids(rejected_ids)
         log(f"Deleting {len(rejected_ids)} rejected entries from graph DB...")
         session.graph_db.delete_entries(rejected_ids)
-        log_remove_entries(session.log_db, rejected_ids)
-        review_purge_rejected(review_db)
+        log_remove_entries(log_db, rejected_ids)
+        review_purge_rejected(log_db)
         output({"purged": len(rejected_ids), "ids": rejected_ids})
         return
 
     if count:
-        output(review_count(review_db, topic=topic))
+        output(review_count(log_db, topic=topic))
     else:
-        entries = review_list(review_db, status=status, topic=topic, limit=limit, offset=offset)
+        entries = review_list(log_db, status=status, topic=topic, limit=limit, offset=offset)
         output(entries)
 
 
@@ -602,7 +602,7 @@ def review_cmd(session: Session, topic: str | None, status: str, limit: int, off
 @click.pass_obj
 def approve(session: Session, entry_id: str):
     """Mark entry as approved in the review queue."""
-    updated = review_update(session.review_db, [entry_id], "approved")
+    updated = review_update(session.log_db, [entry_id], "approved")
     if updated == 0:
         err("not_found", detail=f"Entry '{entry_id}' not in review queue", exit_code=EXIT_NOT_FOUND)
     output({"id": entry_id, "status": "approved"})
@@ -613,7 +613,7 @@ def approve(session: Session, entry_id: str):
 @click.pass_obj
 def reject(session: Session, entry_id: str):
     """Mark entry as rejected in the review queue."""
-    updated = review_update(session.review_db, [entry_id], "rejected")
+    updated = review_update(session.log_db, [entry_id], "rejected")
     if updated == 0:
         err("not_found", detail=f"Entry '{entry_id}' not in review queue", exit_code=EXIT_NOT_FOUND)
     output({"id": entry_id, "status": "rejected"})
@@ -717,7 +717,7 @@ def undo(session: Session, timestamp: str, dry_run: bool):
     log(f"Batch deleting {len(ids_to_delete)} entries from graph DB...")
     graph_db.delete_entries(ids_to_delete)
     log_remove_entries(log_db, ids_to_delete)
-    review_remove_entries(session.review_db, ids_to_delete)
+    review_remove_entries(session.log_db, ids_to_delete)
 
     output({"deleted": ids_to_delete, "count": len(ids_to_delete)})
 
@@ -801,7 +801,6 @@ def purge(session: Session, confirm: str | None, dry_run: bool):
             "vector_db_collection": vector_db.collection_name,
             "vector_entries": vector_count,
             "log_exists": log_db.exists(),
-            "review_exists": session.review_db.exists(),
         })
         return
 
@@ -814,12 +813,8 @@ def purge(session: Session, confirm: str | None, dry_run: bool):
 
     import os
     if log_db.exists():
-        log("Clearing log DB...")
+        log("Clearing log + review DB...")
         os.remove(log_db)
-
-    if session.review_db.exists():
-        log("Clearing review DB...")
-        os.remove(session.review_db)
 
     output({"purged": True})
 

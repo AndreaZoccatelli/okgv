@@ -115,9 +115,9 @@ class TestMoveEntry:
 
 def _seed_log(log_db, timestamp, topic, entry_ids):
     """Insert test log entries into SQLite."""
-    from okgv.core import _log_connect
+    from okgv.core import _connect
 
-    conn = _log_connect(log_db)
+    conn = _connect(log_db)
     conn.executemany(
         "INSERT INTO log (timestamp, topic, entry_id) VALUES (?, ?, ?)",
         [(timestamp, topic, eid) for eid in entry_ids],

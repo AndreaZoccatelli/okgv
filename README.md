@@ -171,8 +171,7 @@ All via environment variables. A `.env` file in the working directory is **auto-
 | `WEAVIATE_COLLECTION` | `knowledge_base` | Collection name for entries |
 | `WEAVIATE_API_KEY` | (none) | Optional API key |
 | `EMBED_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model |
-| `OKGV_LOG` | `./log.db` | Path to session log SQLite file |
-| `OKGV_REVIEW_DB` | `./review.db` | Path to review queue SQLite file |
+| `OKGV_LOG` | `./log.db` | Path to log + review SQLite file |
 | `OKGV_REVIEW` | `none` | Default review mode: `none` or `all` |
 
 ## Entry Schema

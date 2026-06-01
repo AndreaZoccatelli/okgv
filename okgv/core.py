@@ -8,20 +8,27 @@ from typing import Callable
 from okgv.helpers import err, EXIT_USAGE
 from okgv.protocols import EntrySchema, GraphDB, VectorDB, entry_id
 
-_LOG_SCHEMA = """
+_SCHEMA = """
 CREATE TABLE IF NOT EXISTS log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp TEXT NOT NULL,
     topic TEXT NOT NULL,
     entry_id TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS review (
+    entry_id TEXT PRIMARY KEY,
+    topic TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL,
+    reviewed_at TEXT
+);
 """
 
 
-def _log_connect(log_db: Path) -> sqlite3.Connection:
+def _connect(log_db: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(log_db))
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute(_LOG_SCHEMA)
+    conn.executescript(_SCHEMA)
     return conn
 
 
@@ -197,7 +204,7 @@ def upsert_entries_batch(
 def log_session(log_db: Path, topic: str, inserted_ids: list[str]) -> None:
     """Log submitted entry IDs to SQLite."""
     timestamp = datetime.now(timezone.utc).isoformat()
-    conn = _log_connect(log_db)
+    conn = _connect(log_db)
     try:
         conn.executemany(
             "INSERT INTO log (timestamp, topic, entry_id) VALUES (?, ?, ?)",
@@ -210,7 +217,7 @@ def log_session(log_db: Path, topic: str, inserted_ids: list[str]) -> None:
 
 def log_get_entries_after(log_db: Path, cutoff: datetime) -> list[str]:
     """Return entry IDs logged after cutoff timestamp."""
-    conn = _log_connect(log_db)
+    conn = _connect(log_db)
     try:
         rows = conn.execute(
             "SELECT entry_id FROM log WHERE timestamp > ? ORDER BY id",
@@ -230,7 +237,7 @@ def log_query(
     offset: int = 0,
 ) -> list[dict]:
     """Query log entries with optional filters."""
-    conn = _log_connect(log_db)
+    conn = _connect(log_db)
     try:
         clauses = []
         params = []
@@ -261,7 +268,7 @@ def log_count(
     group_by_topic: bool = False,
 ) -> dict:
     """Count log entries, optionally grouped by topic."""
-    conn = _log_connect(log_db)
+    conn = _connect(log_db)
     try:
         if group_by_topic:
             rows = conn.execute(
@@ -285,7 +292,7 @@ def log_count(
 
 def log_remove_entries(log_db: Path, entry_ids: list[str]) -> None:
     """Remove entries from log by ID."""
-    conn = _log_connect(log_db)
+    conn = _connect(log_db)
     try:
         conn.executemany(
             "DELETE FROM log WHERE entry_id = ?",
@@ -298,28 +305,10 @@ def log_remove_entries(log_db: Path, entry_ids: list[str]) -> None:
 
 # ── Review ────────────────────────────────────────────────────────────
 
-_REVIEW_SCHEMA = """
-CREATE TABLE IF NOT EXISTS review (
-    entry_id TEXT PRIMARY KEY,
-    topic TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    created_at TEXT NOT NULL,
-    reviewed_at TEXT
-);
-"""
-
-
-def _review_connect(review_db: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(review_db))
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute(_REVIEW_SCHEMA)
-    return conn
-
-
-def review_add(review_db: Path, topic: str, entry_ids: list[str]) -> None:
+def review_add(log_db: Path, topic: str, entry_ids: list[str]) -> None:
     """Add entries to review queue as pending."""
     timestamp = datetime.now(timezone.utc).isoformat()
-    conn = _review_connect(review_db)
+    conn = _connect(log_db)
     try:
         conn.executemany(
             "INSERT OR IGNORE INTO review (entry_id, topic, status, created_at) VALUES (?, ?, 'pending', ?)",
@@ -331,14 +320,14 @@ def review_add(review_db: Path, topic: str, entry_ids: list[str]) -> None:
 
 
 def review_list(
-    review_db: Path,
+    log_db: Path,
     status: str = "pending",
     topic: str | None = None,
     limit: int = 20,
     offset: int = 0,
 ) -> list[dict]:
     """List review entries filtered by status and optionally topic."""
-    conn = _review_connect(review_db)
+    conn = _connect(log_db)
     try:
         clauses = ["status = ?"]
         params: list = [status]
@@ -357,9 +346,9 @@ def review_list(
         conn.close()
 
 
-def review_count(review_db: Path, topic: str | None = None) -> dict:
+def review_count(log_db: Path, topic: str | None = None) -> dict:
     """Count review entries by status."""
-    conn = _review_connect(review_db)
+    conn = _connect(log_db)
     try:
         if topic:
             rows = conn.execute(
@@ -384,10 +373,10 @@ def review_count(review_db: Path, topic: str | None = None) -> dict:
         conn.close()
 
 
-def review_update(review_db: Path, entry_ids: list[str], status: str) -> int:
+def review_update(log_db: Path, entry_ids: list[str], status: str) -> int:
     """Update review status for entries. Returns number of rows updated."""
     timestamp = datetime.now(timezone.utc).isoformat()
-    conn = _review_connect(review_db)
+    conn = _connect(log_db)
     try:
         cursor = conn.executemany(
             "UPDATE review SET status = ?, reviewed_at = ? WHERE entry_id = ?",
@@ -399,9 +388,9 @@ def review_update(review_db: Path, entry_ids: list[str], status: str) -> int:
         conn.close()
 
 
-def review_get_rejected(review_db: Path) -> list[str]:
+def review_get_rejected(log_db: Path) -> list[str]:
     """Return entry IDs with rejected status."""
-    conn = _review_connect(review_db)
+    conn = _connect(log_db)
     try:
         rows = conn.execute(
             "SELECT entry_id FROM review WHERE status = 'rejected'"
@@ -411,9 +400,9 @@ def review_get_rejected(review_db: Path) -> list[str]:
         conn.close()
 
 
-def review_purge_rejected(review_db: Path) -> list[str]:
+def review_purge_rejected(log_db: Path) -> list[str]:
     """Remove rejected entries from review DB. Returns deleted IDs."""
-    conn = _review_connect(review_db)
+    conn = _connect(log_db)
     try:
         rows = conn.execute(
             "SELECT entry_id FROM review WHERE status = 'rejected'"
@@ -430,9 +419,9 @@ def review_purge_rejected(review_db: Path) -> list[str]:
         conn.close()
 
 
-def review_remove_entries(review_db: Path, entry_ids: list[str]) -> None:
+def review_remove_entries(log_db: Path, entry_ids: list[str]) -> None:
     """Remove entries from review DB by ID (used by undo)."""
-    conn = _review_connect(review_db)
+    conn = _connect(log_db)
     try:
         conn.executemany(
             "DELETE FROM review WHERE entry_id = ?",
@@ -443,9 +432,9 @@ def review_remove_entries(review_db: Path, entry_ids: list[str]) -> None:
         conn.close()
 
 
-def review_clear(review_db: Path) -> None:
+def review_clear(log_db: Path) -> None:
     """Delete all entries from review DB (used by purge)."""
-    conn = _review_connect(review_db)
+    conn = _connect(log_db)
     try:
         conn.execute("DELETE FROM review")
         conn.commit()
