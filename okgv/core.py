@@ -221,6 +221,68 @@ def log_get_entries_after(log_db: Path, cutoff: datetime) -> list[str]:
         conn.close()
 
 
+def log_query(
+    log_db: Path,
+    topic: str | None = None,
+    after: datetime | None = None,
+    before: datetime | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> list[dict]:
+    """Query log entries with optional filters."""
+    conn = _log_connect(log_db)
+    try:
+        clauses = []
+        params = []
+        if topic:
+            clauses.append("topic = ?")
+            params.append(topic)
+        if after:
+            clauses.append("timestamp > ?")
+            params.append(after.isoformat())
+        if before:
+            clauses.append("timestamp < ?")
+            params.append(before.isoformat())
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        query = f"SELECT id, timestamp, topic, entry_id FROM log{where} ORDER BY id DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        rows = conn.execute(query, params).fetchall()
+        return [
+            {"id": r[0], "timestamp": r[1], "topic": r[2], "entry_id": r[3]}
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+def log_count(
+    log_db: Path,
+    topic: str | None = None,
+    group_by_topic: bool = False,
+) -> dict:
+    """Count log entries, optionally grouped by topic."""
+    conn = _log_connect(log_db)
+    try:
+        if group_by_topic:
+            rows = conn.execute(
+                "SELECT topic, count(*) AS count FROM log GROUP BY topic ORDER BY count DESC"
+            ).fetchall()
+            return {"total": sum(r[1] for r in rows), "by_topic": {r[0]: r[1] for r in rows}}
+        clauses = []
+        params = []
+        if topic:
+            clauses.append("topic = ?")
+            params.append(topic)
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        row = conn.execute(f"SELECT count(*) FROM log{where}", params).fetchone()
+        result = {"total": row[0]}
+        if topic:
+            result["topic"] = topic
+        return result
+    finally:
+        conn.close()
+
+
 def log_remove_entries(log_db: Path, entry_ids: list[str]) -> None:
     """Remove entries from log by ID."""
     conn = _log_connect(log_db)

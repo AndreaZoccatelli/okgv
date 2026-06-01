@@ -13,7 +13,7 @@ import sys
 
 import click
 
-from okgv.core import EntryError, build_entry, log_get_entries_after, log_remove_entries, log_session, upsert_entries_batch, upsert_entry
+from okgv.core import EntryError, build_entry, log_count, log_get_entries_after, log_query, log_remove_entries, log_session, upsert_entries_batch, upsert_entry
 from okgv.helpers import EXIT_NOT_FOUND, EXIT_USAGE, err, log, output, read_raw
 from okgv.protocols import entry_id
 from okgv.session import Session
@@ -543,6 +543,41 @@ def get_graph(session: Session, entry_id: str):
             exit_code=EXIT_NOT_FOUND,
         )
     output({"id": matched.id, "topic": matched.topic, **matched.properties})
+
+
+@cli.command(name="log")
+@click.option("--topic", default=None, help="Filter by topic path.")
+@click.option("--after", default=None, help="Show entries after this ISO timestamp.")
+@click.option("--before", default=None, help="Show entries before this ISO timestamp.")
+@click.option("--limit", default=20, show_default=True, help="Max entries to return.")
+@click.option("--offset", default=0, help="Skip first N entries.")
+@click.option("--count", is_flag=True, default=False, help="Show counts instead of entries. Groups by topic if no --topic.")
+@click.pass_obj
+def log_cmd(session: Session, topic: str | None, after: str | None, before: str | None, limit: int, offset: int, count: bool):
+    """Query the submission log."""
+    from datetime import datetime, timezone
+
+    log_db = session.log_db
+    if not log_db.exists():
+        err("no_log", detail="log.db not found — no submissions yet", exit_code=EXIT_NOT_FOUND)
+
+    def _parse_ts(val: str, name: str) -> datetime:
+        try:
+            ts = datetime.fromisoformat(val)
+        except ValueError:
+            err("invalid_timestamp", detail=f"Bad --{name} value: {val}", suggestion="Use ISO 8601 format", exit_code=EXIT_USAGE)
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return ts
+
+    after_dt = _parse_ts(after, "after") if after else None
+    before_dt = _parse_ts(before, "before") if before else None
+
+    if count:
+        output(log_count(log_db, topic=topic, group_by_topic=topic is None))
+    else:
+        entries = log_query(log_db, topic=topic, after=after_dt, before=before_dt, limit=limit, offset=offset)
+        output(entries)
 
 
 @cli.command()

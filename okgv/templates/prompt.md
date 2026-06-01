@@ -38,6 +38,12 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 - `okgv get-vector --id <uuid>` — fetch entry from vector DB.
 - `okgv get-graph --id <uuid>` — fetch entry from graph DB.
 
+### Log
+- `okgv log [--limit N] [--offset N]` — list recent submissions (default: last 20).
+- `okgv log --topic <path>` — filter by topic.
+- `okgv log --after <ISO-timestamp> --before <ISO-timestamp>` — filter by time range.
+- `okgv log --count` — total submissions grouped by topic. Add `--topic` for single topic count.
+
 ### Undo & Maintenance
 - `okgv undo <ISO-timestamp> [--dry-run]` — delete all entries submitted after timestamp.
 - `okgv reconcile [--dry-run] [--batch-size N]` — find and fix entries that exist in one DB but not the other.
