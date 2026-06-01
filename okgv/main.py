@@ -694,12 +694,12 @@ def reconcile(session: Session, dry_run: bool, batch_size: int):
 
 
 @cli.command(hidden=True)
-@click.option("--confirm", required=True, help="Type 'delete all' to confirm.")
+@click.option("--confirm", default=None, help="Type 'delete all' to confirm.")
 @click.option("--dry-run", is_flag=True, default=False, help="Preview what would be deleted.")
 @click.pass_obj
-def purge(session: Session, confirm: str, dry_run: bool):
+def purge(session: Session, confirm: str | None, dry_run: bool):
     """Delete ALL entries from graph DB, vector DB, and log. Hidden command."""
-    if confirm != "delete all":
+    if not dry_run and confirm != "delete all":
         err("bad_confirm", detail="Pass --confirm 'delete all' to proceed", exit_code=EXIT_USAGE)
 
     graph_db = session.graph_db
