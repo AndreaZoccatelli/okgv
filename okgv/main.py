@@ -13,7 +13,7 @@ import sys
 
 import click
 
-from okgv.core import build_entry, log_get_entries_after, log_remove_entries, log_session, upsert_entry
+from okgv.core import EntryError, build_entry, log_get_entries_after, log_remove_entries, log_session, upsert_entry
 from okgv.helpers import EXIT_NOT_FOUND, EXIT_USAGE, err, log, output, read_raw
 from okgv.protocols import entry_id
 from okgv.session import Session
@@ -216,7 +216,10 @@ def similar(session: Session, topic: str, entry: str, top_k: int):
     """Get top-N most similar entries within a topic, with full content."""
     raw = read_raw(entry)
     schema = session.schema
-    entry_obj = build_entry(schema, raw)
+    try:
+        entry_obj = build_entry(schema, raw)
+    except EntryError as e:
+        err("missing_field", detail=str(e), exit_code=EXIT_USAGE)
 
     graph_db = session.graph_db
     vector_db = session.vector_db
@@ -263,10 +266,13 @@ def submit(session: Session, topic: str, entry: str, overwrite: bool):
 
     log("Loading embedding model...")
     log(f"Upserting entry into topic '{topic}'...")
-    eid = upsert_entry(
-        schema, session.graph_db, session.vector_db, topic, raw,
-        session.embedder, overwrite=overwrite,
-    )
+    try:
+        eid = upsert_entry(
+            schema, session.graph_db, session.vector_db, topic, raw,
+            session.embedder, overwrite=overwrite,
+        )
+    except EntryError as e:
+        err("missing_field", detail=str(e), exit_code=EXIT_USAGE)
     log_session(session.log_db, topic, [eid])
     output({"id": eid, "submitted": True})
 
@@ -315,24 +321,35 @@ def similar_batch(session: Session, topic: str, entries: str, top_k: int):
             exit_code=EXIT_NOT_FOUND,
         )
     log(f"Loading embedding model and embedding {len(rows)} candidates...")
-    entry_objs = [build_entry(schema, raw) for raw in rows]
-    texts = [schema.embedding_text(e) for e in entry_objs]
-    vectors = session.embedder(texts)
-
+    # Build entries, skipping bad ones
+    valid = []
     results_all = []
-    for i, (raw, vector) in enumerate(zip(rows, vectors)):
-        log(f"[{i + 1}/{len(rows)}] Searching top-{top_k} similar for candidate...")
-        matches = vector_db.get_top_n(vector, n=top_k, filter_ids=topic_ids)
-        match_ids = [uid for uid, _ in matches]
-        certainties = {uid: cert for uid, cert in matches}
-        fetched = {r.id: r for r in vector_db.get_by_ids(match_ids)} if match_ids else {}
-        results = []
-        for uid in match_ids:
-            item: dict = {"id": uid, "certainty": certainties[uid]}
-            if uid in fetched:
-                item["properties"] = fetched[uid].properties
-            results.append(item)
-        results_all.append({"candidate_id": entry_id(raw), "similar": results})
+    for i, raw in enumerate(rows):
+        try:
+            entry_obj = build_entry(schema, raw)
+        except EntryError as e:
+            log(f"[{i + 1}/{len(rows)}] Skipping bad entry: {e}")
+            results_all.append({"candidate_id": entry_id(raw), "error": str(e)})
+            continue
+        valid.append((i, raw, entry_obj))
+
+    if valid:
+        texts = [schema.embedding_text(e) for _, _, e in valid]
+        vectors = session.embedder(texts)
+
+        for (i, raw, _), vector in zip(valid, vectors):
+            log(f"[{i + 1}/{len(rows)}] Searching top-{top_k} similar for candidate...")
+            matches = vector_db.get_top_n(vector, n=top_k, filter_ids=topic_ids)
+            match_ids = [uid for uid, _ in matches]
+            certainties = {uid: cert for uid, cert in matches}
+            fetched = {r.id: r for r in vector_db.get_by_ids(match_ids)} if match_ids else {}
+            results = []
+            for uid in match_ids:
+                item: dict = {"id": uid, "certainty": certainties[uid]}
+                if uid in fetched:
+                    item["properties"] = fetched[uid].properties
+                results.append(item)
+            results_all.append({"candidate_id": entry_id(raw), "similar": results})
 
     output(results_all)
 
@@ -365,21 +382,39 @@ def submit_batch(session: Session, topic: str, entries: str, overwrite: bool):
         )
 
     log(f"Loading embedding model and embedding {len(rows)} entries...")
-    entry_objs = [build_entry(schema, raw) for raw in rows]
-    texts = [schema.embedding_text(e) for e in entry_objs]
-    vectors = session.embedder(texts)
-
-    inserted_ids = []
+    # Build entries, skipping bad ones
+    valid = []
     results = []
-    for i, (raw, vec) in enumerate(zip(rows, vectors)):
-        log(f"[{i + 1}/{len(rows)}] Upserting entry into topic '{topic}'...")
-        eid = upsert_entry(
-            schema, session.graph_db, session.vector_db, topic, raw,
-            session.embedder, overwrite=overwrite, vector=vec,
-        )
-        inserted_ids.append(eid)
-        results.append({"id": eid, "submitted": True})
-    log_session(session.log_db, topic, inserted_ids)
+    for i, raw in enumerate(rows):
+        try:
+            entry_obj = build_entry(schema, raw)
+        except EntryError as e:
+            log(f"[{i + 1}/{len(rows)}] Skipping bad entry: {e}")
+            results.append({"id": entry_id(raw), "submitted": False, "error": str(e)})
+            continue
+        valid.append((i, raw, entry_obj))
+
+    if valid:
+        texts = [schema.embedding_text(e) for _, _, e in valid]
+        vectors = session.embedder(texts)
+
+        inserted_ids = []
+        for (i, raw, _), vec in zip(valid, vectors):
+            log(f"[{i + 1}/{len(rows)}] Upserting entry into topic '{topic}'...")
+            try:
+                eid = upsert_entry(
+                    schema, session.graph_db, session.vector_db, topic, raw,
+                    session.embedder, overwrite=overwrite, vector=vec,
+                )
+            except (EntryError, ValueError) as e:
+                log(f"[{i + 1}/{len(rows)}] Failed: {e}")
+                results.append({"id": entry_id(raw), "submitted": False, "error": str(e)})
+                continue
+            inserted_ids.append(eid)
+            results.append({"id": eid, "submitted": True})
+        if inserted_ids:
+            log_session(session.log_db, topic, inserted_ids)
+
     output(results)
 
 

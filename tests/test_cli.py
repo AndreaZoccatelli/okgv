@@ -74,6 +74,20 @@ class TestSubmitBatch:
         assert all(d["submitted"] for d in data)
 
 
+    def test_batch_submit_partial_failure(self, runner, mock_session):
+        """Bad entry in batch doesn't kill the whole batch."""
+        entries = json.dumps([{"text": "good"}, {"wrong_key": "bad"}, {"text": "also good"}])
+        result = runner.invoke(cli, ["submit-batch", "--topic", "t", "--entries", entries], obj=mock_session)
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        assert len(data) == 3
+        submitted = [d for d in data if d["submitted"]]
+        failed = [d for d in data if not d["submitted"]]
+        assert len(submitted) == 2
+        assert len(failed) == 1
+        assert "error" in failed[0]
+
+
 class TestMoveTopic:
     def test_dry_run(self, runner, mock_session):
         result = runner.invoke(cli, ["move-topic", "--source", "a/b", "--destination", "c", "--dry-run"], obj=mock_session)

@@ -3,6 +3,7 @@
 import pytest
 
 import okgv.core as core
+from okgv.core import EntryError
 from okgv.protocols import PropertyDefinition, entry_id
 from tests.conftest import MockGraphDB, MockVectorDB, SimpleSchema, fake_embedder
 
@@ -136,8 +137,8 @@ class TestBuildEntry:
         entry = core.build_entry(schema, {"text": "hello"})
         assert entry.text == "hello"
 
-    def test_build_entry_missing_field_exits(self, schema):
-        with pytest.raises(SystemExit):
+    def test_build_entry_missing_field_raises(self, schema):
+        with pytest.raises(EntryError):
             core.build_entry(schema, {"wrong_key": "value"})
 
 

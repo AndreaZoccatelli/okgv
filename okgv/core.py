@@ -64,16 +64,20 @@ def validate_schema(schema, meta: dict, graph_props: dict, vector_props: dict) -
         )
 
 
+class EntryError(Exception):
+    """Raised when a single entry fails to build or upsert."""
+    pass
+
+
 def build_entry(schema, raw: dict):
-    """Build entry object from raw dict using schema's entry_class."""
+    """Build entry object from raw dict using schema's entry_class.
+
+    Raises EntryError on missing fields (catchable in batch operations).
+    """
     try:
         return schema.entry_class(raw)
     except KeyError as e:
-        err(
-            "missing_field",
-            detail=f"Entry JSON missing required key: {e}",
-            exit_code=EXIT_USAGE,
-        )
+        raise EntryError(f"Entry JSON missing required key: {e}") from e
 
 
 def upsert_entry(
