@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, TypeVar
 
 import weaviate
@@ -194,10 +195,20 @@ class WeaviateVectorDB:
             properties={TOPIC_PROPERTY: new_topic},
         )
 
-    def update_topics(self, old_prefix: str, new_prefix: str) -> None:
-        """Update topic for all entries matching old_prefix (exact or descendant)."""
+    def update_topics(self, old_prefix: str, new_prefix: str, max_workers: int = 10) -> None:
+        """Update topic for all entries matching old_prefix (exact or descendant).
+
+        Fetches in batches, updates in parallel using ThreadPoolExecutor.
+        """
         filters = _topic_filter(old_prefix)
         batch_size = 100
+
+        def _update_one(uuid, new_topic):
+            self._collection.data.update(
+                uuid=uuid,
+                properties={TOPIC_PROPERTY: new_topic},
+            )
+
         while True:
             response = self._collection.query.fetch_objects(
                 filters=filters,
@@ -206,13 +217,16 @@ class WeaviateVectorDB:
             )
             if not response.objects:
                 break
+            updates = []
             for obj in response.objects:
                 old_topic = str(obj.properties.get(TOPIC_PROPERTY, ""))
                 new_topic = new_prefix + old_topic[len(old_prefix):]
-                self._collection.data.update(
-                    uuid=obj.uuid,
-                    properties={TOPIC_PROPERTY: new_topic},
-                )
+                updates.append((obj.uuid, new_topic))
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [executor.submit(_update_one, uid, topic) for uid, topic in updates]
+                for future in as_completed(futures):
+                    future.result()  # raises if update failed
 
     def get_all_entry_ids(self) -> list[str]:
         def _op():
