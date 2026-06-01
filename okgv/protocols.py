@@ -149,20 +149,29 @@ class VectorDB(Protocol):
         self,
         vector: list[float],
         n: int,
-        filter_ids: list[str] | None = None,
+        filter_topic: str | None = None,
     ) -> list[tuple[str, float]]: ...
 
     def get_by_id(self, entry_id: str) -> VectorRecord | None: ...
 
     def get_by_ids(self, entry_ids: list[str]) -> list[VectorRecord]: ...
 
+    def get_by_topic(self, topic: str, limit: int) -> list[VectorRecord]: ...
+
     def upload_entry(
         self,
         entry_id: str,
         properties: dict,
         vector: list[float],
+        topic: str,
         overwrite: bool = False,
     ) -> None: ...
+
+    def update_entry_topic(self, entry_id: str, new_topic: str) -> None: ...
+
+    def update_topics(self, old_prefix: str, new_prefix: str) -> None:
+        """Update topic for all entries where topic == old_prefix or starts with old_prefix/."""
+        ...
 
     def get_all_entry_ids(self) -> list[str]: ...
 

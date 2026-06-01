@@ -15,6 +15,16 @@ _WEAVIATE_TYPE_MAP = {
     "text[]": wvc.config.DataType.TEXT_ARRAY,
 }
 
+TOPIC_PROPERTY = "okgv_topic"
+
+
+def _topic_filter(topic: str):
+    """Filter for entries in a topic or any of its subtopics."""
+    return (
+        wvc.query.Filter.by_property(TOPIC_PROPERTY).equal(topic)
+        | wvc.query.Filter.by_property(TOPIC_PROPERTY).like(f"{topic}/*")
+    )
+
 
 class WeaviateVectorDB:
     def __init__(
@@ -48,13 +58,9 @@ class WeaviateVectorDB:
         self,
         vector: list[float],
         n: int,
-        filter_ids: list[str] | None = None,
+        filter_topic: str | None = None,
     ) -> list[tuple[str, float]]:
-        filters = (
-            wvc.query.Filter.by_id().contains_any(filter_ids)
-            if filter_ids
-            else None
-        )
+        filters = _topic_filter(filter_topic) if filter_topic else None
         response = self._collection.query.near_vector(
             near_vector=vector,
             limit=n,
@@ -67,47 +73,80 @@ class WeaviateVectorDB:
         obj = self._collection.query.fetch_object_by_id(entry_id)
         if obj is None:
             return None
-        return VectorRecord(
-            id=str(obj.uuid),
-            properties=dict(obj.properties),
-        )
+        props = dict(obj.properties)
+        props.pop(TOPIC_PROPERTY, None)
+        return VectorRecord(id=str(obj.uuid), properties=props)
 
     def get_by_ids(self, entry_ids: list[str]) -> list[VectorRecord]:
         response = self._collection.query.fetch_objects(
             filters=wvc.query.Filter.by_id().contains_any(entry_ids),
             limit=len(entry_ids),
         )
-        return [
-            VectorRecord(id=str(obj.uuid), properties=dict(obj.properties))
-            for obj in response.objects
-        ]
+        results = []
+        for obj in response.objects:
+            props = dict(obj.properties)
+            props.pop(TOPIC_PROPERTY, None)
+            results.append(VectorRecord(id=str(obj.uuid), properties=props))
+        return results
+
+    def get_by_topic(self, topic: str, limit: int) -> list[VectorRecord]:
+        response = self._collection.query.fetch_objects(
+            filters=_topic_filter(topic),
+            limit=limit,
+        )
+        results = []
+        for obj in response.objects:
+            props = dict(obj.properties)
+            props.pop(TOPIC_PROPERTY, None)
+            results.append(VectorRecord(id=str(obj.uuid), properties=props))
+        return results
 
     def upload_entry(
         self,
         entry_id: str,
         properties: dict,
         vector: list[float],
+        topic: str,
         overwrite: bool = False,
     ) -> None:
         from weaviate.exceptions import UnexpectedStatusCodeError
 
         self.ensure_collection()
+        stored = {**properties, TOPIC_PROPERTY: topic}
         try:
             self._collection.data.insert(
-                uuid=entry_id, properties=properties, vector=vector
+                uuid=entry_id, properties=stored, vector=vector
             )
         except UnexpectedStatusCodeError as e:
             if e.status_code != 422:
                 raise
-            # 422 = already exists
             if not overwrite:
                 raise ValueError(
                     f"Entry '{entry_id}' already exists in vector DB. "
                     f"Pass overwrite=True to replace."
                 ) from e
             self._collection.data.replace(
-                uuid=entry_id, properties=properties, vector=vector
+                uuid=entry_id, properties=stored, vector=vector
             )
+
+    def update_entry_topic(self, entry_id: str, new_topic: str) -> None:
+        self._collection.data.update(
+            uuid=entry_id,
+            properties={TOPIC_PROPERTY: new_topic},
+        )
+
+    def update_topics(self, old_prefix: str, new_prefix: str) -> None:
+        """Update topic for all entries matching old_prefix (exact or descendant)."""
+        # Fetch all matching entries
+        filters = _topic_filter(old_prefix)
+        for obj in self._collection.iterator(include_vector=False, return_properties=[TOPIC_PROPERTY]):
+            old_topic = obj.properties.get(TOPIC_PROPERTY, "")
+            if old_topic == old_prefix or old_topic.startswith(old_prefix + "/"):
+                new_topic = new_prefix + old_topic[len(old_prefix):]
+                self._collection.data.update(
+                    uuid=obj.uuid,
+                    properties={TOPIC_PROPERTY: new_topic},
+                )
 
     def get_all_entry_ids(self) -> list[str]:
         results = []
@@ -128,7 +167,9 @@ class WeaviateVectorDB:
 
     def ensure_collection(self) -> None:
         if not self._client.collections.exists(self._collection_name):
-            weaviate_props = []
+            weaviate_props = [
+                wvc.config.Property(name=TOPIC_PROPERTY, data_type=wvc.config.DataType.TEXT),
+            ]
             for pd in self._property_definitions:
                 wv_type = _WEAVIATE_TYPE_MAP.get(pd.data_type)
                 if wv_type is None:

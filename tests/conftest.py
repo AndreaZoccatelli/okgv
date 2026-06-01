@@ -88,15 +88,20 @@ class MockVectorDB:
     """In-memory vector DB for testing."""
 
     def __init__(self, fail_on_upload=False, fail_on_delete_id=None):
-        self.entries: dict[str, dict] = {}  # entry_id -> properties
+        self.entries: dict[str, dict] = {}  # entry_id -> properties (without topic)
+        self.topics: dict[str, str] = {}  # entry_id -> topic
         self.vectors: dict[str, list[float]] = {}
         self.fail_on_upload = fail_on_upload
         self.fail_on_delete_id = fail_on_delete_id
 
-    def get_top_n(self, vector: list[float], n: int, filter_ids: list[str] | None = None) -> list[tuple[str, float]]:
+    def _matches_topic(self, entry_id: str, topic: str) -> bool:
+        t = self.topics.get(entry_id, "")
+        return t == topic or t.startswith(topic + "/")
+
+    def get_top_n(self, vector: list[float], n: int, filter_topic: str | None = None) -> list[tuple[str, float]]:
         ids = list(self.entries.keys())
-        if filter_ids is not None:
-            ids = [i for i in ids if i in filter_ids]
+        if filter_topic is not None:
+            ids = [i for i in ids if self._matches_topic(i, filter_topic)]
         return [(eid, 0.95) for eid in ids[:n]]
 
     def get_by_id(self, entry_id: str) -> VectorRecord | None:
@@ -107,13 +112,32 @@ class MockVectorDB:
     def get_by_ids(self, entry_ids: list[str]) -> list[VectorRecord]:
         return [VectorRecord(id=eid, properties=self.entries[eid]) for eid in entry_ids if eid in self.entries]
 
-    def upload_entry(self, entry_id: str, properties: dict, vector: list[float], overwrite: bool = False) -> None:
+    def get_by_topic(self, topic: str, limit: int) -> list[VectorRecord]:
+        results = []
+        for eid in self.entries:
+            if self._matches_topic(eid, topic):
+                results.append(VectorRecord(id=eid, properties=self.entries[eid]))
+                if len(results) >= limit:
+                    break
+        return results
+
+    def upload_entry(self, entry_id: str, properties: dict, vector: list[float], topic: str, overwrite: bool = False) -> None:
         if self.fail_on_upload:
             raise ConnectionError("Vector DB unavailable")
         if entry_id in self.entries and not overwrite:
             raise ValueError(f"Entry '{entry_id}' already exists in vector DB. Pass overwrite=True to replace.")
         self.entries[entry_id] = properties
+        self.topics[entry_id] = topic
         self.vectors[entry_id] = vector
+
+    def update_entry_topic(self, entry_id: str, new_topic: str) -> None:
+        self.topics[entry_id] = new_topic
+
+    def update_topics(self, old_prefix: str, new_prefix: str) -> None:
+        for eid in list(self.topics):
+            t = self.topics[eid]
+            if t == old_prefix or t.startswith(old_prefix + "/"):
+                self.topics[eid] = new_prefix + t[len(old_prefix):]
 
     def get_all_entry_ids(self) -> list[str]:
         return list(self.entries.keys())
@@ -122,6 +146,7 @@ class MockVectorDB:
         if self.fail_on_delete_id and entry_id == self.fail_on_delete_id:
             raise ConnectionError(f"Failed to delete {entry_id}")
         self.entries.pop(entry_id, None)
+        self.topics.pop(entry_id, None)
         self.vectors.pop(entry_id, None)
 
     def ensure_collection(self) -> None:

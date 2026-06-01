@@ -221,22 +221,11 @@ def similar(session: Session, topic: str, entry: str, top_k: int):
     except EntryError as e:
         err("missing_field", detail=str(e), exit_code=EXIT_USAGE)
 
-    graph_db = session.graph_db
     vector_db = session.vector_db
-    log(f"Fetching entry IDs for topic '{topic}'...")
-    topic_ids = graph_db.get_entry_ids_for_topic(topic)
-    if not topic_ids:
-        err(
-            "no_entries_in_topic",
-            detail=f"Topic '{topic}' has no entries",
-            suggestion="Check topic name or run least-topic to list topics",
-            exit_code=EXIT_NOT_FOUND,
-        )
     log("Loading embedding model...")
-    embedder = session.embedder
-    vector = embedder([schema.embedding_text(entry_obj)])[0]
+    vector = session.embedder([schema.embedding_text(entry_obj)])[0]
     log(f"Searching top-{top_k} similar entries in topic '{topic}'...")
-    matches = vector_db.get_top_n(vector, n=top_k, filter_ids=topic_ids)
+    matches = vector_db.get_top_n(vector, n=top_k, filter_topic=topic)
 
     match_ids = [uid for uid, _ in matches]
     certainties = {uid: cert for uid, cert in matches}
@@ -309,17 +298,7 @@ def similar_batch(session: Session, topic: str, entries: str, top_k: int):
             exit_code=EXIT_USAGE,
         )
 
-    graph_db = session.graph_db
     vector_db = session.vector_db
-    log(f"Fetching entry IDs for topic '{topic}'...")
-    topic_ids = graph_db.get_entry_ids_for_topic(topic)
-    if not topic_ids:
-        err(
-            "no_entries_in_topic",
-            detail=f"Topic '{topic}' has no entries",
-            suggestion="Check topic name or run least-topic to list topics",
-            exit_code=EXIT_NOT_FOUND,
-        )
     log(f"Loading embedding model and embedding {len(rows)} candidates...")
     # Build entries, skipping bad ones
     valid = []
@@ -339,7 +318,7 @@ def similar_batch(session: Session, topic: str, entries: str, top_k: int):
 
         for (i, raw, _), vector in zip(valid, vectors):
             log(f"[{i + 1}/{len(rows)}] Searching top-{top_k} similar for candidate...")
-            matches = vector_db.get_top_n(vector, n=top_k, filter_ids=topic_ids)
+            matches = vector_db.get_top_n(vector, n=top_k, filter_topic=topic)
             match_ids = [uid for uid, _ in matches]
             certainties = {uid: cert for uid, cert in matches}
             fetched = {r.id: r for r in vector_db.get_by_ids(match_ids)} if match_ids else {}
@@ -494,6 +473,7 @@ def move_topic(session: Session, source: str, destination: str, dry_run: bool):
         graph_db.move_topic(source, destination)
     except ValueError as e:
         err("name_conflict", detail=str(e), exit_code=EXIT_USAGE)
+    session.vector_db.update_topics(source, new_path)
     output({"moved": source, "new_path": new_path})
 
 
@@ -507,8 +487,8 @@ def move_entry(session: Session, entry_id: str, destination: str, dry_run: bool)
     if dry_run:
         output({"dry_run": True, "would_move": entry_id, "destination": destination})
         return
-    graph_db = session.graph_db
-    graph_db.move_entry(entry_id, destination)
+    session.graph_db.move_entry(entry_id, destination)
+    session.vector_db.update_entry_topic(entry_id, destination)
     output({"id": entry_id, "moved_to": destination})
 
 
@@ -518,17 +498,14 @@ def move_entry(session: Session, entry_id: str, destination: str, dry_run: bool)
 @click.pass_obj
 def get_by_topic(session: Session, topic: str, limit: int):
     """Fetch sample entries for a topic from vector DB."""
-    graph_db = session.graph_db
-    vector_db = session.vector_db
-    topic_ids = graph_db.get_entry_ids_for_topic(topic)
-    if not topic_ids:
+    entries = session.vector_db.get_by_topic(topic, limit)
+    if not entries:
         err(
             "no_entries_in_topic",
             detail=f"Topic '{topic}' has no entries",
             suggestion="Check topic name or run least-topic to list topics",
             exit_code=EXIT_NOT_FOUND,
         )
-    entries = vector_db.get_by_ids(topic_ids[:limit])
     output([{"id": e.id, **e.properties} for e in entries])
 
 

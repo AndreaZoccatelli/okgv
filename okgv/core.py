@@ -117,6 +117,7 @@ def upsert_entry(
             entry_id=eid,
             properties={**meta, **vector_props},
             vector=vector,
+            topic=topic,
             overwrite=overwrite,
         )
     except Exception:
