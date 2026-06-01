@@ -13,6 +13,7 @@ _WEAVIATE_TYPE_MAP = {
     "float": wvc.config.DataType.NUMBER,
     "bool": wvc.config.DataType.BOOL,
     "text[]": wvc.config.DataType.TEXT_ARRAY,
+    "number": wvc.config.DataType.NUMBER,
 }
 
 TOPIC_PROPERTY = "okgv_topic"
