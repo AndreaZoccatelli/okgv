@@ -22,3 +22,9 @@ okgv = "okgv.main:cli"
 
 [tool.setuptools.packages.find]
 include = ["okgv*"]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: tests requiring real DB connections (Neo4j, Weaviate)",
+]
+testpaths = ["tests"]
