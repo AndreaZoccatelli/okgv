@@ -568,12 +568,18 @@ def get_graph(session: Session, entry_id: str):
 @click.option("--count", is_flag=True, default=False, help="Show counts by status.")
 @click.option("--export", "export_path", default=None, help="Export review entries with content to JSON file.")
 @click.option("--import", "import_path", default=None, help="Import review decisions from JSON file.")
+@click.option("--tui", is_flag=True, default=False, help="Launch interactive terminal UI for review.")
 @click.option("--purge-rejected", is_flag=True, default=False, help="Delete rejected entries from all DBs.")
 @click.option("--dry-run", is_flag=True, default=False, help="Preview purge without deleting.")
 @click.pass_obj
-def review_cmd(session: Session, topic: str | None, status: str, limit: int, offset: int, count: bool, export_path: str | None, import_path: str | None, purge_rejected: bool, dry_run: bool):
+def review_cmd(session: Session, topic: str | None, status: str, limit: int, offset: int, count: bool, export_path: str | None, import_path: str | None, tui: bool, purge_rejected: bool, dry_run: bool):
     """Query the review queue, export/import decisions, or purge rejected entries."""
     log_db = session.log_db
+
+    if tui:
+        from okgv.tui import run_tui
+        run_tui(log_db=log_db, vector_db=session.vector_db, topic=topic, limit=limit)
+        return
 
     if import_path:
         from pathlib import Path

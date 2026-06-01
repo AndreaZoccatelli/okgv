@@ -43,6 +43,7 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 - `okgv review --count [--topic <path>]` — counts by status.
 - `okgv review --export <file> [--topic <path>] [--status pending]` — export entries with content to JSON file.
 - `okgv review --import <file>` — import review decisions from JSON file (reads `id` + `status` fields).
+- `okgv review --tui [--topic <path>]` — launch interactive terminal UI for review.
 - `okgv approve --id <uuid>` — mark entry as approved.
 - `okgv reject --id <uuid>` — mark entry as rejected.
 - `okgv review --purge-rejected [--dry-run]` — delete rejected entries from all DBs.

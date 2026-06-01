@@ -13,6 +13,7 @@ dependencies = [
     "weaviate-client",
     "sentence-transformers",
     "python-dotenv",
+    "textual",
 ]
 
 [project.optional-dependencies]

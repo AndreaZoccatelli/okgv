@@ -23,6 +23,8 @@ Two databases, each with a role:
 
 Every entry lives in both DBs, linked by a deterministic UUID5 (computed from canonical JSON of the entry content).
 
+A local SQLite file (`log.db`) tracks submissions and review state.
+
 ### Topic Structure
 
 Topics form a tree with path-based identity:
@@ -52,8 +54,9 @@ Entries can live at any level. Queries on a topic are recursive — include all 
    → top-N most similar entries WITH FULL CONTENT
    → agent decides: novel enough → submit, too similar → regenerate
 
-5. okgv submit --topic <topic> --entry '<json>'
+5. okgv submit --topic <topic> --entry '<json>' [--review]
    → upserted into both DBs, logged to log.db
+   → optionally flagged for review
 ```
 
 ## Commands
@@ -72,14 +75,14 @@ All output is JSON to stdout. Logs go to stderr.
 | `topic-stats` | Entry counts grouped by metadata fields |
 | `similar` | Top-N similar entries within a topic |
 | `similar-batch` | Batch similarity search (single model load) |
-| `submit` | Upsert entry into both DBs |
-| `submit-batch` | Batch upsert (single model load) |
+| `submit` | Upsert entry into both DBs. `--review` to flag for review |
+| `submit-batch` | Batch upsert (single model load). `--review` to flag for review |
 | `move-topic` | Move topic/subtopic under different parent. `--dry-run` to preview |
 | `move-entry` | Move entry to different topic. `--dry-run` to preview |
 | `get-by-topic` | Fetch sample entries for a topic |
 | `get-vector` | Fetch entry from vector DB by ID |
 | `get-graph` | Fetch entry from graph DB by ID |
-| `review` | Query review queue. `--status`, `--topic`, `--count`, `--purge-rejected` |
+| `review` | Query review queue. `--tui` for interactive UI, `--export`/`--import` for batch |
 | `approve` | Mark entry as approved in review queue |
 | `reject` | Mark entry as rejected in review queue |
 | `log` | Query submission log. `--topic`, `--after`, `--before`, `--count` |
@@ -111,14 +114,24 @@ okgv topic-stats --topic algebra --fields "difficulty,category"
 # Check similarity before submitting
 okgv similar --topic algebra/linear_algebra --entry '{"text": "..."}' --top-k 5
 
-# Submit
-okgv submit --topic algebra/linear_algebra/basics --entry '{"text": "..."}'
+# Submit (with optional review flag)
+okgv submit --topic algebra/linear_algebra/basics --entry '{"text": "..."}' --review
 
 # Batch operations (single model load)
 okgv submit-batch --topic algebra --entries '[{"text": "..."}, {"text": "..."}]'
 
 # Move a subtopic
 okgv move-topic --source algebra/basics --destination geometry
+
+# Review entries
+okgv review --tui --topic algebra          # interactive terminal UI
+okgv review --topic algebra --count        # counts by status
+okgv review --export review.json           # export for offline review
+okgv review --import review.json           # import decisions
+okgv approve --id <uuid>                   # approve single entry
+okgv reject --id <uuid>                    # reject single entry
+okgv review --purge-rejected --dry-run     # preview rejected cleanup
+okgv review --purge-rejected               # delete rejected from all DBs
 
 # Query submission log
 okgv log
@@ -150,13 +163,17 @@ Neo4j Desktop recommended — provides visual graph exploration.
 3. Set password, start DBMS
 4. Default connection: `bolt://localhost:7687`, user `neo4j`
 
+The configured database is validated on startup — if it doesn't exist, okgv fails with a clear error message.
+
 ### Weaviate
 
 Follow the [official installation guide](https://weaviate.io/developers/weaviate/installation). Docker recommended for local development.
 
+The Weaviate collection is created automatically on first access if it doesn't exist.
+
 ### Configuration
 
-All via environment variables. A `.env` file in the working directory is **auto-loaded** on every `okgv` command (via `python-dotenv`):
+All via environment variables. A `.env` file in the working directory is **auto-loaded** on every `okgv` command (via `python-dotenv`). Only the `.env` in the current directory is loaded — no parent directory traversal.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
@@ -241,6 +258,46 @@ At runtime, okgv validates:
 - No key collisions between `metadata()` and `graph_properties()`/`vector_properties()`
 - `vector_property_definitions()` covers exactly the keys from `metadata()` + `vector_properties()`
 
+## Review System
+
+Entries can be flagged for review at submit time. Review is an external tracking layer — it does not block entry insertion. Entries always go into both DBs immediately.
+
+### Review modes
+
+- `OKGV_REVIEW=none` (default) — entries skip review unless `--review` is passed
+- `OKGV_REVIEW=all` — all entries flagged for review unless `--no-review` is passed
+
+### Review workflow
+
+**For agents** — CLI commands:
+```bash
+okgv review --topic algebra              # list pending entries
+okgv approve --id <uuid>
+okgv reject --id <uuid>
+okgv review --purge-rejected             # delete rejected from all DBs
+```
+
+**For humans** — interactive TUI or export/import:
+```bash
+# Terminal UI (keyboard: a=approve, r=reject, s=skip, q=quit)
+okgv review --tui --topic algebra
+
+# Or export → edit → import
+okgv review --export review.json --topic algebra
+# edit status field in review.json
+okgv review --import review.json
+```
+
+### Review states
+
+| Status | Meaning |
+|--------|---------|
+| `pending` | Awaiting review |
+| `approved` | Reviewed and kept |
+| `rejected` | Reviewed and marked for deletion |
+
+Rejected entries remain in DBs until `okgv review --purge-rejected` is run. `undo` and `purge` also clean up review state.
+
 ## Error Handling
 
 Errors go to stderr as structured JSON:
@@ -265,16 +322,23 @@ Exit codes:
 
 ## Session Logging
 
-Every `submit` appends to `log.db` (SQLite with WAL mode):
+Every `submit` appends to `log.db` (SQLite with WAL mode). The same file also stores the review queue.
 
 ```
+log table:
 | id | timestamp                    | topic           | entry_id |
 |----|------------------------------|-----------------|----------|
 | 1  | 2026-05-30T12:00:00+00:00    | algebra/basics  | uuid1    |
 | 2  | 2026-05-30T12:00:00+00:00    | algebra/basics  | uuid2    |
+
+review table:
+| entry_id | topic          | status   | created_at                  | reviewed_at                 |
+|----------|----------------|----------|-----------------------------|-----------------------------|
+| uuid1    | algebra/basics | approved | 2026-05-30T12:00:00+00:00   | 2026-05-30T14:00:00+00:00   |
+| uuid2    | algebra/basics | pending  | 2026-05-30T12:00:00+00:00   |                             |
 ```
 
-Query with `okgv log`. Used by `undo` to roll back submissions after a given timestamp. Set `OKGV_LOG` env var to customize path.
+Query with `okgv log`. Timestamps are stored in UTC, displayed in local time. Used by `undo` to roll back submissions. Set `OKGV_LOG` env var to customize path.
 
 ## Reliability
 
@@ -298,5 +362,6 @@ Every entry lives in both Neo4j and Weaviate. The write order ensures safe recov
 |-----------|----------|
 | **Single upsert** | Graph first → vector. If vector fails, graph entry is rolled back |
 | **Batch upsert** | Graph individually → vector batch. Failed vector entries rolled back from graph |
-| **Undo** | Vector deleted first → graph → log. If vector fails, nothing changed, safe to retry |
+| **Undo** | Vector deleted first → graph → log → review. If vector fails, nothing changed, safe to retry |
 | **Reconcile** | Chunked iteration with batch existence checks. Memory-efficient at scale. `--batch-size` controls chunk size |
+| **Purge rejected** | Vector → graph → log → review. Same safe ordering as undo |
