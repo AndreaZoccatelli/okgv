@@ -57,9 +57,13 @@ class WeaviateVectorDB:
         )
         self._collection_name = collection_name
         self._property_definitions = property_definitions
+        self._ensured = False
 
     @property
     def _collection(self):
+        if not self._ensured:
+            self.ensure_collection()
+            self._ensured = True
         return self._client.collections.get(self._collection_name)
 
     def _with_retry(self, fn: Callable[[], _T]) -> _T:
@@ -137,7 +141,6 @@ class WeaviateVectorDB:
     ) -> None:
         from weaviate.exceptions import UnexpectedStatusCodeError
 
-        self.ensure_collection()
         stored = {**properties, TOPIC_PROPERTY: topic}
         try:
             self._collection.data.insert(
@@ -163,7 +166,6 @@ class WeaviateVectorDB:
         topic: str,
     ) -> list[str]:
         """Batch insert using Weaviate insert_many. Returns failed entry IDs."""
-        self.ensure_collection()
         objects = [
             wvc.data.DataObject(
                 uuid=eid,

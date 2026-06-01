@@ -31,7 +31,22 @@ class Neo4jGraphDB:
         self._driver = GraphDatabase.driver(uri, auth=(user, password))
         self._database = database
         self._driver.verify_connectivity()
+        self._verify_database()
         self.ensure_indexes()
+
+    def _verify_database(self) -> None:
+        """Check that the configured database exists and is reachable."""
+        from neo4j.exceptions import ClientError
+        try:
+            with self._driver.session(database=self._database) as s:
+                s.run("RETURN 1").consume()
+        except ClientError as e:
+            if "does not exist" in str(e) or "not found" in str(e).lower():
+                raise RuntimeError(
+                    f"Neo4j database '{self._database}' does not exist. "
+                    f"Create it in Neo4j Desktop/Browser or check NEO4J_DATABASE in .env"
+                ) from e
+            raise
 
     def _session(self):
         return self._driver.session(database=self._database)
