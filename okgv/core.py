@@ -133,24 +133,36 @@ def upsert_entries_batch(
     vector_db: VectorDB,
     topic: str,
     raws: list[dict],
-    vectors: list[list[float]],
+    entries: list | None = None,
+    vectors: list[list[float]] = None,
     overwrite: bool = False,
 ) -> tuple[list[str], list[dict]]:
     """Batch upsert entries into both DBs.
 
     Returns (inserted_ids, failures) where failures are dicts with id and error.
     Graph uploads are individual (transactional). Vector upload is batched.
+
+    If entries (pre-built entry objects) are provided, skips build_entry.
+    Schema is validated once using the first entry.
     """
+    if entries is None:
+        entries = [build_entry(schema, raw) for raw in raws]
+
+    # Validate schema once using first entry
+    first = entries[0]
+    validate_schema(
+        schema, schema.metadata(first),
+        schema.graph_properties(first), schema.vector_properties(first),
+    )
+
     # Upload to graph individually, collect successes
     graph_ok = []
     failures = []
-    for raw, vec in zip(raws, vectors):
+    for raw, entry, vec in zip(raws, entries, vectors):
         eid = entry_id(raw)
-        entry = build_entry(schema, raw)
         meta = schema.metadata(entry)
         graph_props = schema.graph_properties(entry)
         vector_props = schema.vector_properties(entry)
-        validate_schema(schema, meta, graph_props, vector_props)
         try:
             graph_db.upload_entry(
                 topic=topic, entry_id=eid, properties={**meta, **graph_props}, overwrite=overwrite,

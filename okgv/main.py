@@ -333,25 +333,28 @@ def submit_batch(session: Session, topic: str, entries: str, overwrite: bool):
         )
 
     log(f"Loading embedding model and embedding {len(rows)} entries...")
-    # Build entries, skipping bad ones
-    valid = []
+    # Build entries once, skipping bad ones
+    valid_raws = []
+    valid_entries = []
     results = []
     for i, raw in enumerate(rows):
         try:
-            build_entry(schema, raw)
+            entry_obj = build_entry(schema, raw)
         except EntryError as e:
             log(f"[{i + 1}/{len(rows)}] Skipping bad entry: {e}")
             results.append({"id": entry_id(raw), "submitted": False, "error": str(e)})
             continue
-        valid.append(raw)
+        valid_raws.append(raw)
+        valid_entries.append(entry_obj)
 
-    if valid:
-        texts = [schema.embedding_text(build_entry(schema, r)) for r in valid]
+    if valid_raws:
+        texts = [schema.embedding_text(e) for e in valid_entries]
         vectors = session.embedder(texts)
 
-        log(f"Batch upserting {len(valid)} entries into topic '{topic}'...")
+        log(f"Batch upserting {len(valid_raws)} entries into topic '{topic}'...")
         inserted_ids, failures = upsert_entries_batch(
-            schema, session.graph_db, session.vector_db, topic, valid, vectors, overwrite=overwrite,
+            schema, session.graph_db, session.vector_db, topic,
+            valid_raws, valid_entries, vectors, overwrite=overwrite,
         )
         for eid in inserted_ids:
             results.append({"id": eid, "submitted": True})

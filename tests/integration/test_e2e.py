@@ -98,7 +98,7 @@ class TestBatchUpsertE2E:
         raws = [{"text": "alpha"}, {"text": "beta"}, {"text": "gamma"}]
         vectors = [make_vector_unique(i) for i in range(3)]
         inserted, failures = upsert_entries_batch(
-            schema, graph_db, vector_db, "t", raws, vectors
+            schema, graph_db, vector_db, "t", raws, vectors=vectors
         )
         assert len(inserted) == 3
         assert len(failures) == 0
@@ -113,7 +113,7 @@ class TestBatchUpsertE2E:
         raws = [{"text": "a"}, {"text": "b"}]
         vectors = [make_vector_unique(i) for i in range(2)]
         inserted, _ = upsert_entries_batch(
-            schema, graph_db, vector_db, "batch_t", raws, vectors
+            schema, graph_db, vector_db, "batch_t", raws, vectors=vectors
         )
         results = vector_db.get_by_topic("batch_t", limit=10)
         assert len(results) == 2
@@ -153,7 +153,7 @@ class TestCrossDBConsistency:
         graph_db.create_topic("t")
         raws = [{"text": f"entry_{i}"} for i in range(5)]
         vectors = [make_vector_unique(i) for i in range(5)]
-        upsert_entries_batch(schema, graph_db, vector_db, "t", raws, vectors)
+        upsert_entries_batch(schema, graph_db, vector_db, "t", raws, vectors=vectors)
 
         graph_ids = set(graph_db.get_all_entry_ids())
         vector_ids = set(vector_db.get_all_entry_ids())
