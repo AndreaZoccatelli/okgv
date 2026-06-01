@@ -566,12 +566,40 @@ def get_graph(session: Session, entry_id: str):
 @click.option("--limit", default=20, show_default=True, help="Max entries to return.")
 @click.option("--offset", default=0, help="Skip first N entries.")
 @click.option("--count", is_flag=True, default=False, help="Show counts by status.")
+@click.option("--export", "export_path", default=None, help="Export review entries with content to JSON file.")
+@click.option("--import", "import_path", default=None, help="Import review decisions from JSON file.")
 @click.option("--purge-rejected", is_flag=True, default=False, help="Delete rejected entries from all DBs.")
 @click.option("--dry-run", is_flag=True, default=False, help="Preview purge without deleting.")
 @click.pass_obj
-def review_cmd(session: Session, topic: str | None, status: str, limit: int, offset: int, count: bool, purge_rejected: bool, dry_run: bool):
-    """Query the review queue or purge rejected entries."""
+def review_cmd(session: Session, topic: str | None, status: str, limit: int, offset: int, count: bool, export_path: str | None, import_path: str | None, purge_rejected: bool, dry_run: bool):
+    """Query the review queue, export/import decisions, or purge rejected entries."""
     log_db = session.log_db
+
+    if import_path:
+        from pathlib import Path
+        p = Path(import_path)
+        if not p.exists():
+            err("file_not_found", detail=f"File '{import_path}' not found", exit_code=EXIT_USAGE)
+        try:
+            rows = json.loads(p.read_text())
+        except json.JSONDecodeError as e:
+            err("invalid_json", detail=str(e), exit_code=EXIT_USAGE)
+        if not isinstance(rows, list):
+            err("invalid_input", detail="Expected a JSON array", exit_code=EXIT_USAGE)
+        approved = [r["id"] for r in rows if r.get("status") == "approved"]
+        rejected = [r["id"] for r in rows if r.get("status") == "rejected"]
+        results = {}
+        if approved:
+            review_update(log_db, approved, "approved")
+            results["approved"] = len(approved)
+        if rejected:
+            review_update(log_db, rejected, "rejected")
+            results["rejected"] = len(rejected)
+        skipped = len(rows) - len(approved) - len(rejected)
+        if skipped:
+            results["skipped"] = skipped
+        output(results)
+        return
 
     if purge_rejected:
         rejected_ids = review_get_rejected(log_db)
@@ -588,6 +616,23 @@ def review_cmd(session: Session, topic: str | None, status: str, limit: int, off
         log_remove_entries(log_db, rejected_ids)
         review_purge_rejected(log_db)
         output({"purged": len(rejected_ids), "ids": rejected_ids})
+        return
+
+    if export_path:
+        entries = review_list(log_db, status=status, topic=topic, limit=limit, offset=offset)
+        if not entries:
+            err("no_entries", detail="No entries match the filter", exit_code=EXIT_NOT_FOUND)
+        entry_ids = [e["entry_id"] for e in entries]
+        fetched = {r.id: r.properties for r in session.vector_db.get_by_ids(entry_ids)}
+        export_data = []
+        for e in entries:
+            item = {"id": e["entry_id"], "status": e["status"], "topic": e["topic"]}
+            if e["entry_id"] in fetched:
+                item.update(fetched[e["entry_id"]])
+            export_data.append(item)
+        from pathlib import Path
+        Path(export_path).write_text(json.dumps(export_data, indent=2, ensure_ascii=False))
+        output({"exported": len(export_data), "file": export_path})
         return
 
     if count:
