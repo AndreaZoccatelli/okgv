@@ -21,10 +21,9 @@ TOPIC_PROPERTY = "okgv_topic"
 
 def _topic_filter(topic: str):
     """Filter for entries in a topic or any of its subtopics."""
-    return (
-        wvc.query.Filter.by_property(TOPIC_PROPERTY).equal(topic)
-        | wvc.query.Filter.by_property(TOPIC_PROPERTY).like(f"{topic}/*")
-    )
+    return wvc.query.Filter.by_property(TOPIC_PROPERTY).equal(
+        topic
+    ) | wvc.query.Filter.by_property(TOPIC_PROPERTY).like(f"{topic}/*")
 
 
 class WeaviateVectorDB:
@@ -138,11 +137,18 @@ class WeaviateVectorDB:
 
     def update_topics(self, old_prefix: str, new_prefix: str) -> None:
         """Update topic for all entries matching old_prefix (exact or descendant)."""
-        # Fetch all matching entries
         filters = _topic_filter(old_prefix)
-        for obj in self._collection.iterator(include_vector=False, return_properties=[TOPIC_PROPERTY]):
-            old_topic = obj.properties.get(TOPIC_PROPERTY, "")
-            if old_topic == old_prefix or old_topic.startswith(old_prefix + "/"):
+        batch_size = 100
+        while True:
+            response = self._collection.query.fetch_objects(
+                filters=filters,
+                limit=batch_size,
+                return_properties=[TOPIC_PROPERTY],
+            )
+            if not response.objects:
+                break
+            for obj in response.objects:
+                old_topic = str(obj.properties.get(TOPIC_PROPERTY, ""))
                 new_topic = new_prefix + old_topic[len(old_prefix):]
                 self._collection.data.update(
                     uuid=obj.uuid,
@@ -169,7 +175,9 @@ class WeaviateVectorDB:
     def ensure_collection(self) -> None:
         if not self._client.collections.exists(self._collection_name):
             weaviate_props = [
-                wvc.config.Property(name=TOPIC_PROPERTY, data_type=wvc.config.DataType.TEXT),
+                wvc.config.Property(
+                    name=TOPIC_PROPERTY, data_type=wvc.config.DataType.TEXT
+                ),
             ]
             for pd in self._property_definitions:
                 wv_type = _WEAVIATE_TYPE_MAP.get(pd.data_type)

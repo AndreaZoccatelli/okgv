@@ -4,7 +4,7 @@ import os
 
 from okgv.embedding import make_embedder
 from okgv.graph.client import Neo4jGraphDB
-from okgv.helpers import env_int, err, EXIT_CONNECTION
+from okgv.helpers import EXIT_CONNECTION, env_int, err
 from okgv.protocols import GraphDB, VectorDB
 from okgv.vector.client import WeaviateVectorDB
 
@@ -34,7 +34,7 @@ def create_vector_db(schema) -> VectorDB:
             grpc_port=env_int("WEAVIATE_GRPC_PORT", 50051),
             collection_name=os.getenv("WEAVIATE_COLLECTION", "knowledge_base"),
             property_definitions=schema.vector_property_definitions(),
-            api_key=os.getos.getenv("WEAVIATE_API_KEY"),
+            api_key=os.getenv("WEAVIATE_API_KEY"),
         )
     except Exception as e:
         err(
@@ -46,4 +46,6 @@ def create_vector_db(schema) -> VectorDB:
 
 
 def create_embedder():
-    return make_embedder(os.getenv("EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2"))
+    return make_embedder(
+        os.getenv("EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+    )
