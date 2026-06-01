@@ -9,6 +9,7 @@ Root topics have path == name.
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Callable, TypeVar
 
@@ -164,6 +165,78 @@ class Neo4jGraphDB:
                     records.append(GraphRecord(id=eid, topic=row["topic"], properties=props))
                 return records
         return self._with_retry(_op)
+
+    def get_topic_stats(
+        self, topic: str, fields: list[str] | None = None,
+    ) -> tuple[int, list[str], list[dict]]:
+        """Aggregate entry counts grouped by fields, computed in Cypher.
+
+        Returns (total_entries, group_fields, groups) where groups is a list
+        of {"fields": {field: value, ...}, "count": int}.
+
+        If fields is None, discovers all property keys first.
+        Field names are validated against [a-zA-Z0-9_] to prevent injection.
+        """
+        _FIELD_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+        def _discover_keys():
+            with self._session() as session:
+                result = session.run(
+                    """
+                    MATCH (t:Topic)-[:HAS_ENTRY]->(e:Entry)
+                    WHERE t.path = $path OR t.path STARTS WITH ($path + '/')
+                    UNWIND keys(e) AS k
+                    WITH DISTINCT k WHERE k <> 'id'
+                    RETURN collect(k) AS keys
+                    """,
+                    path=topic,
+                )
+                row = result.single()
+                return sorted(row["keys"]) if row and row["keys"] else []
+
+        def _count_total():
+            with self._session() as session:
+                result = session.run(
+                    """
+                    MATCH (t:Topic)-[:HAS_ENTRY]->(e:Entry)
+                    WHERE t.path = $path OR t.path STARTS WITH ($path + '/')
+                    RETURN count(DISTINCT e) AS total
+                    """,
+                    path=topic,
+                )
+                row = result.single()
+                return row["total"] if row else 0
+
+        if fields is None:
+            fields = self._with_retry(_discover_keys)
+        for f in fields:
+            if not _FIELD_RE.match(f):
+                raise ValueError(f"Invalid field name: {f!r}")
+
+        total = self._with_retry(_count_total)
+        if total == 0 or not fields:
+            return total, fields, []
+
+        # Build dynamic Cypher: RETURN e.field1, e.field2, count(*)
+        return_clauses = ", ".join(f"e.`{f}` AS `{f}`" for f in fields)
+        query = f"""
+            MATCH (t:Topic)-[:HAS_ENTRY]->(e:Entry)
+            WHERE t.path = $path OR t.path STARTS WITH ($path + '/')
+            RETURN {return_clauses}, count(DISTINCT e) AS count
+            ORDER BY count DESC
+        """
+
+        def _aggregate():
+            with self._session() as session:
+                result = session.run(query, path=topic)
+                groups = []
+                for row in result:
+                    group_fields = {f: row[f] for f in fields}
+                    groups.append({"fields": group_fields, "count": row["count"]})
+                return groups
+
+        groups = self._with_retry(_aggregate)
+        return total, fields, groups
 
     def upload_entry(
         self, topic: str, entry_id: str, properties: dict, overwrite: bool = False

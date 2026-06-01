@@ -150,54 +150,26 @@ def topic_stats(session: Session, topic: str, fields: str | None):
 
     Groups entries by their metadata values and shows counts per combination,
     helping identify underrepresented combinations.
+    Aggregation is performed in the database, not in Python.
     """
-    from collections import Counter
-
     graph_db = session.graph_db
-    entries = graph_db.get_entries_for_topic(topic)
-    if not entries:
+    field_list = [f.strip() for f in fields.split(",")] if fields else None
+
+    try:
+        total, group_fields, groups = graph_db.get_topic_stats(topic, field_list)
+    except ValueError as e:
+        err("invalid_field", detail=str(e), exit_code=EXIT_USAGE)
+
+    if total == 0:
         err(
             "no_entries_in_topic",
             detail=f"Topic '{topic}' has no entries",
             exit_code=EXIT_NOT_FOUND,
         )
 
-    if fields:
-        group_fields = [f.strip() for f in fields.split(",")]
-        all_keys = set()
-        for e in entries:
-            all_keys.update(e.properties.keys())
-        missing = set(group_fields) - all_keys
-        if missing:
-            err(
-                "unknown_fields",
-                detail=f"Fields not found in entries: {missing}",
-                suggestion=f"Available fields: {sorted(all_keys)}",
-                exit_code=EXIT_USAGE,
-            )
-    else:
-        all_keys = set()
-        for e in entries:
-            all_keys.update(e.properties.keys())
-        group_fields = sorted(all_keys)
-
-    counter: Counter = Counter()
-    for e in entries:
-        key = tuple(
-            (f, e.properties.get(f)) for f in group_fields
-        )
-        counter[key] += 1
-
-    groups = []
-    for combo, count in counter.most_common():
-        groups.append({
-            "fields": dict(combo),
-            "count": count,
-        })
-
     output({
         "topic": topic,
-        "total_entries": len(entries),
+        "total_entries": total,
         "group_by": group_fields,
         "groups": groups,
     })

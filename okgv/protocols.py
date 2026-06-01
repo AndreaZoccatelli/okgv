@@ -119,6 +119,16 @@ class GraphDB(Protocol):
 
     def get_entries_for_topic(self, topic: str) -> list[GraphRecord]: ...
 
+    def get_topic_stats(
+        self, topic: str, fields: list[str] | None = None,
+    ) -> tuple[int, list[str], list[dict]]:
+        """Aggregate entry counts grouped by fields.
+
+        Returns (total_entries, group_fields, groups).
+        If fields is None, discovers all property keys first.
+        """
+        ...
+
     def upload_entry(
         self, topic: str, entry_id: str, properties: dict, overwrite: bool = False
     ) -> None: ...

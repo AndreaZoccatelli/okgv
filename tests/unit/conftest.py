@@ -1,5 +1,7 @@
 """Shared fixtures: mock DB backends and schema."""
 
+from collections import Counter
+
 import pytest
 
 from okgv.protocols import GraphRecord, PropertyDefinition, VectorRecord
@@ -48,6 +50,27 @@ class MockGraphDB:
             for eid, t in self.entry_topics.items()
             if t == topic or t.startswith(topic + "/")
         ]
+
+    def get_topic_stats(
+        self, topic: str, fields: list[str] | None = None,
+    ) -> tuple[int, list[str], list[dict]]:
+        entries = self.get_entries_for_topic(topic)
+        total = len(entries)
+        if fields is None:
+            all_keys = set()
+            for e in entries:
+                all_keys.update(e.properties.keys())
+            fields = sorted(all_keys)
+        if total == 0 or not fields:
+            return total, fields, []
+        counter: Counter = Counter()
+        for e in entries:
+            key = tuple((f, e.properties.get(f)) for f in fields)
+            counter[key] += 1
+        groups = []
+        for combo, count in counter.most_common():
+            groups.append({"fields": dict(combo), "count": count})
+        return total, fields, groups
 
     def upload_entry(self, topic: str, entry_id: str, properties: dict, overwrite: bool = False) -> None:
         if entry_id in self.entries and not overwrite:
