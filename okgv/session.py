@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 from typing import Callable
 
+from okgv.protocols import EntrySchema
+
 
 class Session:
     """Holds DB connections, schema, embedder, and log file path.
@@ -19,7 +21,7 @@ class Session:
         graph_db=None,
         vector_db=None,
         embedder: Callable | None = None,
-        schema=None,
+        schema: EntrySchema | None = None,
         log_db: Path | None = None,
     ):
         self._graph_db = graph_db
@@ -30,7 +32,7 @@ class Session:
         self._owns_connections = graph_db is None and vector_db is None
 
     @property
-    def schema(self):
+    def schema(self) -> EntrySchema:
         if self._schema is None:
             from okgv.config import load_schema
 

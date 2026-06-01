@@ -6,7 +6,7 @@ import time
 from okgv.embedding import make_embedder
 from okgv.graph.client import Neo4jGraphDB
 from okgv.helpers import EXIT_CONNECTION, env_int, err
-from okgv.protocols import GraphDB, VectorDB
+from okgv.protocols import EntrySchema, GraphDB, VectorDB
 from okgv.vector.client import WeaviateVectorDB
 
 _MAX_CONNECT_RETRIES = 3
@@ -45,7 +45,7 @@ def create_graph_db() -> GraphDB:
     return _retry_connect(_connect, "graph_db")
 
 
-def create_vector_db(schema) -> VectorDB:
+def create_vector_db(schema: EntrySchema) -> VectorDB:
     def _connect():
         return WeaviateVectorDB(
             host=os.getenv("WEAVIATE_HOST", "localhost"),

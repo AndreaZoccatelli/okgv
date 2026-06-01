@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Callable
 
 from okgv.helpers import err, EXIT_USAGE
-from okgv.protocols import GraphDB, VectorDB, entry_id
+from okgv.protocols import EntrySchema, GraphDB, VectorDB, entry_id
 
 _LOG_SCHEMA = """
 CREATE TABLE IF NOT EXISTS log (
@@ -25,7 +25,7 @@ def _log_connect(log_db: Path) -> sqlite3.Connection:
     return conn
 
 
-def validate_schema(schema, meta: dict, graph_props: dict, vector_props: dict) -> None:
+def validate_schema(schema: EntrySchema, meta: dict, graph_props: dict, vector_props: dict) -> None:
     """Check for key collisions and missing vector property definitions."""
     graph_overlap = set(meta) & set(graph_props)
     if graph_overlap:
@@ -69,7 +69,7 @@ class EntryError(Exception):
     pass
 
 
-def build_entry(schema, raw: dict):
+def build_entry(schema: EntrySchema, raw: dict):
     """Build entry object from raw dict using schema's entry_class.
 
     Raises EntryError on missing fields (catchable in batch operations).
@@ -81,7 +81,7 @@ def build_entry(schema, raw: dict):
 
 
 def upsert_entry(
-    schema,
+    schema: EntrySchema,
     graph_db: GraphDB,
     vector_db: VectorDB,
     topic: str,
@@ -128,7 +128,7 @@ def upsert_entry(
 
 
 def upsert_entries_batch(
-    schema,
+    schema: EntrySchema,
     graph_db: GraphDB,
     vector_db: VectorDB,
     topic: str,
