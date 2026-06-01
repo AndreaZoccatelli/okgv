@@ -34,6 +34,10 @@ class Neo4jGraphDB:
         self._verify_database()
         self.ensure_indexes()
 
+    @property
+    def database_name(self) -> str:
+        return self._database
+
     def _verify_database(self) -> None:
         """Check that the configured database exists and is reachable."""
         from neo4j.exceptions import ClientError
@@ -447,6 +451,22 @@ class Neo4jGraphDB:
                     """,
                     ids=ids,
                 )
+        self._with_retry(_op)
+
+    def count_topics(self) -> int:
+        """Return total number of Topic nodes."""
+        def _op():
+            with self._session() as session:
+                result = session.run("MATCH (t:Topic) RETURN count(t) AS count")
+                row = result.single()
+                return row["count"] if row else 0
+        return self._with_retry(_op)
+
+    def delete_all(self) -> None:
+        """Delete all Entry and Topic nodes and their relationships."""
+        def _op():
+            with self._session() as session:
+                session.run("MATCH (n) DETACH DELETE n")
         self._with_retry(_op)
 
     def move_topic(self, source: str, destination: str) -> None:

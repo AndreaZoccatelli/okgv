@@ -60,6 +60,10 @@ class WeaviateVectorDB:
         self._ensured = False
 
     @property
+    def collection_name(self) -> str:
+        return self._collection_name
+
+    @property
     def _collection(self):
         if not self._ensured:
             self.ensure_collection()

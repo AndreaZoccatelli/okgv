@@ -692,5 +692,48 @@ def reconcile(session: Session, dry_run: bool, batch_size: int):
     })
 
 
+@cli.command(hidden=True)
+@click.option("--confirm", required=True, help="Type 'delete all' to confirm.")
+@click.option("--dry-run", is_flag=True, default=False, help="Preview what would be deleted.")
+@click.pass_obj
+def purge(session: Session, confirm: str, dry_run: bool):
+    """Delete ALL entries from graph DB, vector DB, and log. Hidden command."""
+    if confirm != "delete all":
+        err("bad_confirm", detail="Pass --confirm 'delete all' to proceed", exit_code=EXIT_USAGE)
+
+    graph_db = session.graph_db
+    vector_db = session.vector_db
+    log_db = session.log_db
+
+    if dry_run:
+        vector_count = sum(len(chunk) for chunk in vector_db.iter_entry_ids())
+        graph_count = sum(len(chunk) for chunk in graph_db.iter_entry_ids())
+        topic_count = graph_db.count_topics()
+        output({
+            "dry_run": True,
+            "graph_db": graph_db.database_name,
+            "graph_entries": graph_count,
+            "graph_topics": topic_count,
+            "vector_db_collection": vector_db.collection_name,
+            "vector_entries": vector_count,
+            "log_exists": log_db.exists(),
+        })
+        return
+
+    log("Deleting all entries from vector DB...")
+    for chunk in vector_db.iter_entry_ids():
+        vector_db.delete_by_ids(chunk)
+
+    log("Deleting all nodes from graph DB (entries + topics)...")
+    graph_db.delete_all()
+
+    if log_db.exists():
+        log("Clearing log DB...")
+        import os
+        os.remove(log_db)
+
+    output({"purged": True})
+
+
 if __name__ == "__main__":
     cli()

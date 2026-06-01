@@ -40,16 +40,19 @@ Entries can live at any level. Queries on a topic are recursive — include all 
 ## Agent Workflow
 
 ```
-1. okgv least-topic --topic <parent>
+1. okgv get-structure
+   → understand topic layout
+
+2. okgv least-topic --topic <parent>
    → pick child topic with fewest entries
 
-2. Agent generates candidate entry (LLM call)
+3. Agent generates candidate entry (LLM call)
 
-3. okgv similar --topic <topic> --entry '<json>'
+4. okgv similar --topic <topic> --entry '<json>'
    → top-N most similar entries WITH FULL CONTENT
    → agent decides: novel enough → submit, too similar → regenerate
 
-4. okgv submit --topic <topic> --entry '<json>'
+5. okgv submit --topic <topic> --entry '<json>'
    → upserted into both DBs, logged to log.db
 ```
 
@@ -61,6 +64,8 @@ All output is JSON to stdout. Logs go to stderr.
 |---------|---------|
 | `init` | Scaffold project files (.env, schema.py, topics.json) |
 | `master-prompt` | Print agent instructions for using the CLI |
+| `get-structure` | Topic/subtopic tree as nested JSON. `--root`, `--depth` to scope |
+| `get-depth` | Max depth of topic tree. `--root` to measure from specific topic |
 | `create-topic` | Create topic by path. `--parents` for mkdir -p behavior |
 | `create-structure` | Create topic tree from JSON file |
 | `least-topic` | Child topic with fewest entries. `--topic` scopes to parent |
@@ -74,12 +79,19 @@ All output is JSON to stdout. Logs go to stderr.
 | `get-by-topic` | Fetch sample entries for a topic |
 | `get-vector` | Fetch entry from vector DB by ID |
 | `get-graph` | Fetch entry from graph DB by ID |
+| `log` | Query submission log. `--topic`, `--after`, `--before`, `--count` |
 | `undo` | Delete entries submitted after a timestamp. `--dry-run` to preview |
 | `reconcile` | Find and fix orphan entries across DBs. `--dry-run` to preview |
+| `purge` | **Hidden.** Delete everything (entries, topics, log). Requires `--confirm "delete all"` |
 
 ### Examples
 
 ```bash
+# Explore topic structure
+okgv get-structure
+okgv get-structure --root algebra --depth 2
+okgv get-depth
+
 # Create topic tree
 okgv create-topic --name algebra/linear_algebra/basics --parents
 
@@ -105,6 +117,12 @@ okgv submit-batch --topic algebra --entries '[{"text": "..."}, {"text": "..."}]'
 # Move a subtopic
 okgv move-topic --source algebra/basics --destination geometry
 
+# Query submission log
+okgv log
+okgv log --topic algebra --limit 50
+okgv log --after 2026-05-30T00:00:00
+okgv log --count
+
 # Undo recent submissions
 okgv undo 2026-05-30T12:00:00
 
@@ -112,6 +130,10 @@ okgv undo 2026-05-30T12:00:00
 okgv reconcile --dry-run
 okgv reconcile
 okgv reconcile --batch-size 500
+
+# Nuclear option (hidden command)
+okgv purge --confirm "delete all" --dry-run
+okgv purge --confirm "delete all"
 ```
 
 ## Setup
@@ -131,7 +153,7 @@ Follow the [official installation guide](https://weaviate.io/developers/weaviate
 
 ### Configuration
 
-All via environment variables (`.env` file or exported):
+All via environment variables. A `.env` file in the working directory is **auto-loaded** on every `okgv` command (via `python-dotenv`):
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
@@ -248,7 +270,7 @@ Every `submit` appends to `log.db` (SQLite with WAL mode):
 | 2  | 2026-05-30T12:00:00+00:00    | algebra/basics  | uuid2    |
 ```
 
-Used by `undo` to roll back submissions after a given timestamp. Set `OKGV_LOG` env var to customize path.
+Query with `okgv log`. Used by `undo` to roll back submissions after a given timestamp. Set `OKGV_LOG` env var to customize path.
 
 ## Reliability
 

@@ -105,6 +105,8 @@ class EntrySchema(Protocol):
 
 @runtime_checkable
 class GraphDB(Protocol):
+    database_name: str
+
     def topic_exists(self, path: str) -> bool: ...
 
     def create_topic(self, name: str) -> None: ...
@@ -147,6 +149,14 @@ class GraphDB(Protocol):
 
     def delete_entries(self, ids: list[str]) -> None: ...
 
+    def count_topics(self) -> int:
+        """Return total number of Topic nodes."""
+        ...
+
+    def delete_all(self) -> None:
+        """Delete all nodes (entries, topics) and relationships."""
+        ...
+
     def iter_entry_ids(self, batch_size: int = 1000) -> Iterator[list[str]]:
         """Yield entry IDs in batches. For memory-efficient reconciliation."""
         ...
@@ -172,6 +182,8 @@ class GraphDB(Protocol):
 
 @runtime_checkable
 class VectorDB(Protocol):
+    collection_name: str
+
     def get_top_n(
         self,
         vector: list[float],
