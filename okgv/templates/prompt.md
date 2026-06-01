@@ -8,7 +8,7 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 2. **Find underrepresented area**: `okgv least-topic --topic <parent>` → returns child with fewest entries
 3. **Generate** a candidate entry (your job)
 4. **Check similarity**: `okgv similar --topic <topic> --entry '<json>'` → top-N similar entries with full content
-5. **Decide**: if too similar → regenerate or edit. If novel → submit
+5. **Decide**: if too similar (evaluate similarity score and compare the contents) → regenerate or edit. If novel → submit
 6. **Submit**: `okgv submit --topic <topic> --entry '<json>'`
 
 ## Commands
