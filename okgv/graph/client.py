@@ -253,6 +253,98 @@ class Neo4jGraphDB:
         groups = self._with_retry(_aggregate)
         return total, fields, groups
 
+    def get_topic_tree(self, root: str | None = None, max_depth: int | None = None) -> dict:
+        """Return nested dict of topics/subtopics (no entries).
+
+        Args:
+            root: Start from this topic path. None = full tree.
+            max_depth: Max nesting levels to return. None = unlimited.
+        """
+        def _op():
+            with self._session() as session:
+                if root is not None:
+                    if max_depth is not None:
+                        result = session.run(
+                            """
+                            MATCH (r:Topic {path: $root})-[:HAS_SUBTOPIC*0..]->(t:Topic)
+                            WHERE size(split(t.path, '/')) - size(split($root, '/')) <= $depth
+                            OPTIONAL MATCH (p:Topic)-[:HAS_SUBTOPIC]->(t)
+                            RETURN t.path AS path, t.name AS name, p.path AS parent
+                            ORDER BY t.path
+                            """,
+                            root=root, depth=max_depth,
+                        )
+                    else:
+                        result = session.run(
+                            """
+                            MATCH (r:Topic {path: $root})-[:HAS_SUBTOPIC*0..]->(t:Topic)
+                            OPTIONAL MATCH (p:Topic)-[:HAS_SUBTOPIC]->(t)
+                            RETURN t.path AS path, t.name AS name, p.path AS parent
+                            ORDER BY t.path
+                            """,
+                            root=root,
+                        )
+                else:
+                    if max_depth is not None:
+                        result = session.run(
+                            """
+                            MATCH (t:Topic)
+                            WHERE size(split(t.path, '/')) <= $depth
+                            OPTIONAL MATCH (p:Topic)-[:HAS_SUBTOPIC]->(t)
+                            RETURN t.path AS path, t.name AS name, p.path AS parent
+                            ORDER BY t.path
+                            """,
+                            depth=max_depth,
+                        )
+                    else:
+                        result = session.run(
+                            """
+                            MATCH (t:Topic)
+                            OPTIONAL MATCH (p:Topic)-[:HAS_SUBTOPIC]->(t)
+                            RETURN t.path AS path, t.name AS name, p.path AS parent
+                            ORDER BY t.path
+                            """
+                        )
+                rows = [(r["path"], r["name"], r["parent"]) for r in result]
+
+            # Build nested tree
+            tree = {}
+            nodes = {}
+            for path, name, parent in rows:
+                nodes[path] = {}
+            for path, name, parent in rows:
+                if parent is None or parent not in nodes:
+                    tree[name] = nodes[path]
+                else:
+                    nodes[parent][name] = nodes[path]
+            return tree
+        return self._with_retry(_op)
+
+    def get_topic_depth(self, root: str | None = None) -> int:
+        """Return max depth of topic tree from root."""
+        def _op():
+            with self._session() as session:
+                if root is not None:
+                    result = session.run(
+                        """
+                        MATCH path = (r:Topic {path: $root})-[:HAS_SUBTOPIC*0..]->(leaf:Topic)
+                        WHERE NOT (leaf)-[:HAS_SUBTOPIC]->()
+                        RETURN max(length(path)) AS depth
+                        """,
+                        root=root,
+                    )
+                else:
+                    result = session.run(
+                        """
+                        MATCH path = (r:Topic)-[:HAS_SUBTOPIC*0..]->(leaf:Topic)
+                        WHERE NOT ()-[:HAS_SUBTOPIC]->(r) AND NOT (leaf)-[:HAS_SUBTOPIC]->()
+                        RETURN max(length(path)) AS depth
+                        """
+                    )
+                row = result.single()
+                return (row["depth"] or 0) if row else 0
+        return self._with_retry(_op)
+
     def upload_entry(
         self, topic: str, entry_id: str, properties: dict, overwrite: bool = False
     ) -> None:

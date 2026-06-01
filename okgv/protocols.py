@@ -129,6 +129,14 @@ class GraphDB(Protocol):
         """
         ...
 
+    def get_topic_depth(self, root: str | None = None) -> int:
+        """Return max depth of topic tree from root."""
+        ...
+
+    def get_topic_tree(self, root: str | None = None, max_depth: int | None = None) -> dict:
+        """Return nested dict of topics/subtopics (no entries)."""
+        ...
+
     def upload_entry(
         self, topic: str, entry_id: str, properties: dict, overwrite: bool = False
     ) -> None: ...

@@ -4,15 +4,18 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 
 ## Workflow
 
-1. **Find underrepresented area**: `okgv least-topic --topic <parent>` → returns child with fewest entries
-2. **Generate** a candidate entry (your job)
-3. **Check similarity**: `okgv similar --topic <topic> --entry '<json>'` → top-N similar entries with full content
-4. **Decide**: if too similar → regenerate or edit. If novel → submit
-5. **Submit**: `okgv submit --topic <topic> --entry '<json>'`
+1. **Explore structure**: `okgv get-structure` → understand topic layout
+2. **Find underrepresented area**: `okgv least-topic --topic <parent>` → returns child with fewest entries
+3. **Generate** a candidate entry (your job)
+4. **Check similarity**: `okgv similar --topic <topic> --entry '<json>'` → top-N similar entries with full content
+5. **Decide**: if too similar → regenerate or edit. If novel → submit
+6. **Submit**: `okgv submit --topic <topic> --entry '<json>'`
 
 ## Commands
 
 ### Discovery
+- `okgv get-structure [--root <path>] [--depth N]` — topic/subtopic tree as nested JSON. Use --root for subtree, --depth to limit levels.
+- `okgv get-depth [--root <path>]` — max depth of topic tree. Use --root to measure from a specific topic.
 - `okgv least-topic [--topic <parent>]` — child topic with fewest entries. No --topic = root level.
 - `okgv topic-stats --topic <path> [--fields "f1,f2"]` — entry counts grouped by metadata. Identify coverage gaps.
 - `okgv get-by-topic --topic <path> [--limit N]` — sample entries from a topic.
@@ -50,6 +53,8 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 
 ## Strategy Tips
 
+- Start with `get-structure` to understand the knowledge base layout before generating entries.
+- Use `get-structure --root <topic> --depth 1` for incremental exploration of large trees.
 - Use `least-topic` to balance coverage across the knowledge base.
 - Use `topic-stats` to find underrepresented metadata combinations within a topic.
 - Always check `similar` before submitting — avoid redundant entries.

@@ -69,6 +69,39 @@ def init():
         output({"initialized": False, "message": "All files already exist", "created": []})
 
 
+@cli.command(name="get-structure")
+@click.option("--root", default=None, help="Start from this topic path. Default: full tree.")
+@click.option("--depth", default=None, type=int, help="Max nesting levels to return. Default: unlimited.")
+@click.pass_obj
+def get_structure(session: Session, root: str | None, depth: int | None):
+    """Return the topic/subtopic tree as nested JSON (no entries)."""
+    tree = session.graph_db.get_topic_tree(root=root, max_depth=depth)
+    if not tree:
+        if root:
+            err("not_found", detail=f"Topic '{root}' not found or has no subtopics", exit_code=EXIT_NOT_FOUND)
+        else:
+            err("no_topics", detail="No topics found in graph", exit_code=EXIT_NOT_FOUND)
+    output(tree)
+
+
+@cli.command(name="get-depth")
+@click.option("--root", default=None, help="Start from this topic path. Default: full tree.")
+@click.pass_obj
+def get_depth(session: Session, root: str | None):
+    """Return the maximum depth of the topic tree."""
+    tree = session.graph_db.get_topic_tree(root=root, max_depth=1)
+    if not tree:
+        if root:
+            err("not_found", detail=f"Topic '{root}' not found", exit_code=EXIT_NOT_FOUND)
+        else:
+            err("no_topics", detail="No topics found in graph", exit_code=EXIT_NOT_FOUND)
+    depth = session.graph_db.get_topic_depth(root=root)
+    result = {"depth": depth}
+    if root:
+        result["root"] = root
+    output(result)
+
+
 @cli.command(name="create-topic")
 @click.option("--name", required=True, help="Topic path to create (e.g. 'algebra/linear_algebra').")
 @click.option("--parents", is_flag=True, default=False, help="Create missing parent topics.")
