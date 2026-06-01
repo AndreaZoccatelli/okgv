@@ -220,6 +220,37 @@ class Neo4jGraphDB:
                 return [r["id"] for r in result]
         return self._with_retry(_op)
 
+    def iter_entry_ids(self, batch_size: int = 1000):
+        """Yield entry IDs in batches using SKIP/LIMIT pagination."""
+        offset = 0
+        while True:
+            def _op(skip=offset):
+                with self._session() as session:
+                    result = session.run(
+                        "MATCH (e:Entry) RETURN e.id AS id ORDER BY e.id SKIP $skip LIMIT $limit",
+                        skip=skip,
+                        limit=batch_size,
+                    )
+                    return [r["id"] for r in result]
+            batch = self._with_retry(_op)
+            if not batch:
+                break
+            yield batch
+            if len(batch) < batch_size:
+                break
+            offset += batch_size
+
+    def exists_batch(self, ids: list[str]) -> set[str]:
+        """Return subset of ids that exist in the graph DB."""
+        def _op():
+            with self._session() as session:
+                result = session.run(
+                    "UNWIND $ids AS id MATCH (e:Entry {id: id}) RETURN e.id AS id",
+                    ids=ids,
+                )
+                return {r["id"] for r in result}
+        return self._with_retry(_op)
+
     def delete_entries(self, ids: list[str]) -> None:
         def _op():
             with self._session() as session:

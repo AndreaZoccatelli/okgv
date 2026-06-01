@@ -63,6 +63,14 @@ class MockGraphDB:
     def get_all_entry_ids(self) -> list[str]:
         return list(self.entries.keys())
 
+    def iter_entry_ids(self, batch_size: int = 1000):
+        ids = list(self.entries.keys())
+        for i in range(0, len(ids), batch_size):
+            yield ids[i:i + batch_size]
+
+    def exists_batch(self, ids: list[str]) -> set[str]:
+        return {eid for eid in ids if eid in self.entries}
+
     def delete_entries(self, ids: list[str]) -> None:
         for eid in ids:
             self.entries.pop(eid, None)
@@ -154,6 +162,14 @@ class MockVectorDB:
 
     def get_all_entry_ids(self) -> list[str]:
         return list(self.entries.keys())
+
+    def iter_entry_ids(self, batch_size: int = 1000):
+        ids = list(self.entries.keys())
+        for i in range(0, len(ids), batch_size):
+            yield ids[i:i + batch_size]
+
+    def exists_batch(self, ids: list[str]) -> set[str]:
+        return {eid for eid in ids if eid in self.entries}
 
     def delete_by_id(self, entry_id: str) -> None:
         if self.fail_on_delete_id and entry_id == self.fail_on_delete_id:

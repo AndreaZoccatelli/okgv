@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -128,6 +129,14 @@ class GraphDB(Protocol):
 
     def delete_entries(self, ids: list[str]) -> None: ...
 
+    def iter_entry_ids(self, batch_size: int = 1000) -> Iterator[list[str]]:
+        """Yield entry IDs in batches. For memory-efficient reconciliation."""
+        ...
+
+    def exists_batch(self, ids: list[str]) -> set[str]:
+        """Return subset of ids that exist in the DB."""
+        ...
+
     def move_topic(self, source: str, destination: str) -> None:
         """Move a topic/subtopic under a new parent topic.
 
@@ -183,6 +192,14 @@ class VectorDB(Protocol):
         topic: str,
     ) -> list[str]:
         """Batch insert entries. Returns list of entry IDs that failed."""
+        ...
+
+    def iter_entry_ids(self, batch_size: int = 1000) -> Iterator[list[str]]:
+        """Yield entry IDs in batches. For memory-efficient reconciliation."""
+        ...
+
+    def exists_batch(self, ids: list[str]) -> set[str]:
+        """Return subset of ids that exist in the DB."""
         ...
 
     def delete_by_id(self, entry_id: str) -> None: ...

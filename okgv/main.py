@@ -595,19 +595,29 @@ def undo(session: Session, timestamp: str, dry_run: bool):
 
 @cli.command()
 @click.option("--dry-run", is_flag=True, default=False, help="Preview without deleting orphans.")
+@click.option("--batch-size", default=1000, show_default=True, help="Chunk size for iterating entry IDs.")
 @click.pass_obj
-def reconcile(session: Session, dry_run: bool):
-    """Find and fix entries that exist in one DB but not the other."""
+def reconcile(session: Session, dry_run: bool, batch_size: int):
+    """Find and fix entries that exist in one DB but not the other.
+
+    Uses chunked iteration to avoid loading all IDs into memory at once.
+    """
     graph_db = session.graph_db
     vector_db = session.vector_db
 
-    log("Fetching all entry IDs from graph DB...")
-    graph_ids = set(graph_db.get_all_entry_ids())
-    log("Fetching all entry IDs from vector DB...")
-    vector_ids = set(vector_db.get_all_entry_ids())
+    # Find graph-only orphans: iterate graph, check existence in vector
+    graph_only = []
+    log("Scanning graph DB for orphans...")
+    for chunk in graph_db.iter_entry_ids(batch_size):
+        existing_in_vector = vector_db.exists_batch(chunk)
+        graph_only.extend(eid for eid in chunk if eid not in existing_in_vector)
 
-    graph_only = graph_ids - vector_ids
-    vector_only = vector_ids - graph_ids
+    # Find vector-only orphans: iterate vector, check existence in graph
+    vector_only = []
+    log("Scanning vector DB for orphans...")
+    for chunk in vector_db.iter_entry_ids(batch_size):
+        existing_in_graph = graph_db.exists_batch(chunk)
+        vector_only.extend(eid for eid in chunk if eid not in existing_in_graph)
 
     if not graph_only and not vector_only:
         output({"consistent": True, "orphans": 0})
@@ -624,10 +634,10 @@ def reconcile(session: Session, dry_run: bool):
 
     if graph_only:
         log(f"Deleting {len(graph_only)} orphan(s) from graph DB...")
-        graph_db.delete_entries(list(graph_only))
+        graph_db.delete_entries(graph_only)
     if vector_only:
         log(f"Deleting {len(vector_only)} orphan(s) from vector DB...")
-        vector_db.delete_by_ids(list(vector_only))
+        vector_db.delete_by_ids(vector_only)
 
     output({
         "consistent": True,

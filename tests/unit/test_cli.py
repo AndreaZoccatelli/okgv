@@ -7,7 +7,7 @@ from click.testing import CliRunner
 
 from okgv.main import cli
 from okgv.session import Session
-from tests.conftest import MockGraphDB, MockVectorDB, SimpleSchema, fake_embedder
+from tests.unit.conftest import MockGraphDB, MockVectorDB, SimpleSchema, fake_embedder
 
 
 @pytest.fixture

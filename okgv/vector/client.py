@@ -222,6 +222,27 @@ class WeaviateVectorDB:
             return results
         return self._with_retry(_op)
 
+    def iter_entry_ids(self, batch_size: int = 1000):
+        """Yield entry IDs in batches using Weaviate cursor iterator."""
+        batch = []
+        for obj in self._collection.iterator():
+            batch.append(str(obj.uuid))
+            if len(batch) >= batch_size:
+                yield batch
+                batch = []
+        if batch:
+            yield batch
+
+    def exists_batch(self, ids: list[str]) -> set[str]:
+        """Return subset of ids that exist in the vector DB."""
+        def _op():
+            response = self._collection.query.fetch_objects(
+                filters=wvc.query.Filter.by_id().contains_any(ids),
+                limit=len(ids),
+            )
+            return {str(obj.uuid) for obj in response.objects}
+        return self._with_retry(_op)
+
     def delete_by_id(self, entry_id: str) -> None:
         """Delete entry. No-op if not found. Raises on connection/server errors."""
         from weaviate.exceptions import UnexpectedStatusCodeError

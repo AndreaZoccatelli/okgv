@@ -5,7 +5,7 @@ import pytest
 import okgv.core as core
 from okgv.core import EntryError
 from okgv.protocols import PropertyDefinition, entry_id
-from tests.conftest import MockGraphDB, MockVectorDB, SimpleSchema, fake_embedder
+from tests.unit.conftest import MockGraphDB, MockVectorDB, SimpleSchema, fake_embedder
 
 
 class TestUpsertEntry:
