@@ -279,7 +279,7 @@ okgv review --purge-rejected             # delete rejected from all DBs
 
 **For humans** — interactive TUI or export/import:
 ```bash
-# Terminal UI (keyboard: a=approve, r=reject, s=skip, q=quit)
+# Terminal UI with staged changes
 okgv review --tui --topic algebra
 
 # Or export → edit → import
@@ -287,6 +287,19 @@ okgv review --export review.json --topic algebra
 # edit status field in review.json
 okgv review --import review.json
 ```
+
+**TUI keyboard shortcuts:**
+
+| Key | Action |
+|-----|--------|
+| `a` | Approve entry (toggle — press again to revert to pending) |
+| `r` | Reject entry (toggle) |
+| `u` | Undo mark (revert to pending) |
+| `s` | Skip / next entry |
+| `c` | Commit all staged decisions to DB |
+| `q` | Quit and discard unsaved changes |
+
+Decisions are staged locally — nothing is written until `c` is pressed. Entries stay visible in the table with colored status indicators. The status bar shows pending/approved/rejected counts and unsaved changes.
 
 ### Review states
 
