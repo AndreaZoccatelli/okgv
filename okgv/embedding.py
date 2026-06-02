@@ -1,6 +1,6 @@
 """Embedding utilities, independent of vector DB backend."""
 
-from typing import Callable
+from collections.abc import Callable
 
 from sentence_transformers import SentenceTransformer
 

@@ -73,7 +73,6 @@ class TestSubmitBatch:
         assert len(data) == 2
         assert all(d["submitted"] for d in data)
 
-
     def test_batch_submit_partial_failure(self, runner, mock_session):
         """Bad entry in batch doesn't kill the whole batch."""
         entries = json.dumps([{"text": "good"}, {"wrong_key": "bad"}, {"text": "also good"}])
@@ -90,7 +89,11 @@ class TestSubmitBatch:
 
 class TestMoveTopic:
     def test_dry_run(self, runner, mock_session):
-        result = runner.invoke(cli, ["move-topic", "--source", "a/b", "--destination", "c", "--dry-run"], obj=mock_session)
+        result = runner.invoke(
+            cli,
+            ["move-topic", "--source", "a/b", "--destination", "c", "--dry-run"],
+            obj=mock_session,
+        )
         assert result.exit_code == 0
         data = parse_json_output(result.output)
         assert data["dry_run"] is True
@@ -101,7 +104,11 @@ class TestMoveTopic:
         graph.create_topic("root")
         graph.create_subtopic("root", "child")
         graph.create_topic("other")
-        result = runner.invoke(cli, ["move-topic", "--source", "root/child", "--destination", "other"], obj=mock_session)
+        result = runner.invoke(
+            cli,
+            ["move-topic", "--source", "root/child", "--destination", "other"],
+            obj=mock_session,
+        )
         assert result.exit_code == 0
 
 

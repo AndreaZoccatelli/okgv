@@ -52,7 +52,9 @@ class MockGraphDB:
         ]
 
     def get_topic_stats(
-        self, topic: str, fields: list[str] | None = None,
+        self,
+        topic: str,
+        fields: list[str] | None = None,
     ) -> tuple[int, list[str], list[dict]]:
         entries = self.get_entries_for_topic(topic)
         total = len(entries)
@@ -89,7 +91,7 @@ class MockGraphDB:
     def iter_entry_ids(self, batch_size: int = 1000):
         ids = list(self.entries.keys())
         for i in range(0, len(ids), batch_size):
-            yield ids[i:i + batch_size]
+            yield ids[i : i + batch_size]
 
     def exists_batch(self, ids: list[str]) -> set[str]:
         return {eid for eid in ids if eid in self.entries}
@@ -152,7 +154,14 @@ class MockVectorDB:
                     break
         return results
 
-    def upload_entry(self, entry_id: str, properties: dict, vector: list[float], topic: str, overwrite: bool = False) -> None:
+    def upload_entry(
+        self,
+        entry_id: str,
+        properties: dict,
+        vector: list[float],
+        topic: str,
+        overwrite: bool = False,
+    ) -> None:
         if self.fail_on_upload:
             raise ConnectionError("Vector DB unavailable")
         if entry_id in self.entries and not overwrite:
@@ -161,7 +170,13 @@ class MockVectorDB:
         self.topics[entry_id] = topic
         self.vectors[entry_id] = vector
 
-    def upload_entries_batch(self, entries: list[dict], vectors: list[list[float]], entry_ids: list[str], topic: str) -> list[str]:
+    def upload_entries_batch(
+        self,
+        entries: list[dict],
+        vectors: list[list[float]],
+        entry_ids: list[str],
+        topic: str,
+    ) -> list[str]:
         if self.fail_on_upload:
             return entry_ids  # all failed
         failed = []
@@ -181,7 +196,7 @@ class MockVectorDB:
         for eid in list(self.topics):
             t = self.topics[eid]
             if t == old_prefix or t.startswith(old_prefix + "/"):
-                self.topics[eid] = new_prefix + t[len(old_prefix):]
+                self.topics[eid] = new_prefix + t[len(old_prefix) :]
 
     def get_all_entry_ids(self) -> list[str]:
         return list(self.entries.keys())
@@ -189,7 +204,7 @@ class MockVectorDB:
     def iter_entry_ids(self, batch_size: int = 1000):
         ids = list(self.entries.keys())
         for i in range(0, len(ids), batch_size):
-            yield ids[i:i + batch_size]
+            yield ids[i : i + batch_size]
 
     def exists_batch(self, ids: list[str]) -> set[str]:
         return {eid for eid in ids if eid in self.entries}

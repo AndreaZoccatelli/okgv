@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from okgv.protocols import EntrySchema
 
@@ -67,7 +67,7 @@ class Session:
         stored_dim = get_stored_dim(self._conn)
 
         if env_dim and stored_dim and env_dim != stored_dim:
-            from okgv.helpers import err, EXIT_USAGE
+            from okgv.helpers import EXIT_USAGE, err
 
             err(
                 "embed_dim_mismatch",

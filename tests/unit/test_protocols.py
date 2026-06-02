@@ -18,5 +18,6 @@ class TestEntryId:
 
     def test_returns_valid_uuid(self):
         import uuid
+
         result = entry_id({"test": True})
         uuid.UUID(result)  # raises if invalid

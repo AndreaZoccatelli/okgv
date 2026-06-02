@@ -69,7 +69,5 @@ class TestQAEntrySchema:
     def test_vector_definitions_cover_all_keys(self):
         entry = QAEntry(SAMPLE_RAW)
         defined = {pd.name for pd in QAEntrySchema.vector_property_definitions()}
-        expected = set(QAEntrySchema.metadata(entry)) | set(
-            QAEntrySchema.vector_properties(entry)
-        )
+        expected = set(QAEntrySchema.metadata(entry)) | set(QAEntrySchema.vector_properties(entry))
         assert defined == expected

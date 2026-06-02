@@ -1,11 +1,13 @@
 """Tests for core logic: upsert, schema validation, graph/vector consistency."""
 
+from datetime import UTC
+
 import pytest
 
 import okgv.core as core
 from okgv.core import EntryError
 from okgv.protocols import PropertyDefinition, entry_id
-from tests.unit.conftest import MockGraphDB, MockVectorDB, SimpleSchema, fake_embedder
+from tests.unit.conftest import MockVectorDB, fake_embedder
 
 
 class TestUpsertEntry:
@@ -146,6 +148,7 @@ class TestLogSession:
         core.log_session(db_path, "topic_a", ["id1", "id2"])
 
         import sqlite3
+
         conn = sqlite3.connect(str(db_path))
         rows = conn.execute("SELECT topic, entry_id FROM log ORDER BY id").fetchall()
         conn.close()
@@ -159,6 +162,7 @@ class TestLogSession:
         core.log_session(db_path, "new_topic", ["id1"])
 
         import sqlite3
+
         conn = sqlite3.connect(str(db_path))
         rows = conn.execute("SELECT topic, entry_id FROM log ORDER BY id").fetchall()
         conn.close()
@@ -167,12 +171,13 @@ class TestLogSession:
         assert rows[1] == ("new_topic", "id1")
 
     def test_get_entries_after(self, tmp_path):
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         db_path = tmp_path / "okgv.db"
         core.log_session(db_path, "t", ["early"])
         # Insert a row with a known future timestamp
         import sqlite3
+
         conn = sqlite3.connect(str(db_path))
         conn.execute(
             "INSERT INTO log (timestamp, topic, entry_id) VALUES (?, ?, ?)",
@@ -181,7 +186,7 @@ class TestLogSession:
         conn.commit()
         conn.close()
 
-        cutoff = datetime(2098, 1, 1, tzinfo=timezone.utc)
+        cutoff = datetime(2098, 1, 1, tzinfo=UTC)
         result = core.log_get_entries_after(db_path, cutoff)
         assert result == ["future"]
 
@@ -191,6 +196,7 @@ class TestLogSession:
         core.log_remove_entries(db_path, ["id1", "id3"])
 
         import sqlite3
+
         conn = sqlite3.connect(str(db_path))
         rows = conn.execute("SELECT entry_id FROM log").fetchall()
         conn.close()

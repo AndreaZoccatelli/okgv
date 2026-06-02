@@ -22,9 +22,7 @@ class IntentEntry:
         self.intent = raw["intent"]
         self.difficulty = raw.get("difficulty", "medium")
         if self.difficulty not in self.VALID_DIFFICULTIES:
-            raise ValueError(
-                f"difficulty must be one of {self.VALID_DIFFICULTIES}, got '{self.difficulty}'"
-            )
+            raise ValueError(f"difficulty must be one of {self.VALID_DIFFICULTIES}, got '{self.difficulty}'")
 
     def char_length(self) -> int:
         return len(self.utterance)

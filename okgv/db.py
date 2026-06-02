@@ -30,9 +30,7 @@ def create_conn(db_path: str | Path) -> sqlite3.Connection:
 def get_stored_dim(conn: sqlite3.Connection) -> int | None:
     """Read embed_dim from vec_meta, or None if not stored yet."""
     try:
-        row = conn.execute(
-            "SELECT value FROM vec_meta WHERE key = 'embed_dim'"
-        ).fetchone()
+        row = conn.execute("SELECT value FROM vec_meta WHERE key = 'embed_dim'").fetchone()
         return int(row[0]) if row else None
     except sqlite3.OperationalError:
         return None

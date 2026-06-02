@@ -10,6 +10,7 @@ Exit codes:  0=ok  1=failure  2=usage  3=not_found  4=connection
 
 import json
 import sys
+from datetime import UTC
 
 import click
 
@@ -37,9 +38,7 @@ from okgv.protocols import entry_id
 from okgv.session import Session
 
 
-@click.group(
-    help="Knowledge base CLI for AI agents. All output is JSON to stdout, logs to stderr."
-)
+@click.group(help="Knowledge base CLI for AI agents. All output is JSON to stdout, logs to stderr.")
 @click.pass_context
 def cli(ctx):
     from pathlib import Path
@@ -87,18 +86,12 @@ def init():
     if created:
         output({"initialized": True, "created": created})
     else:
-        output(
-            {"initialized": False, "message": "All files already exist", "created": []}
-        )
+        output({"initialized": False, "message": "All files already exist", "created": []})
 
 
 @cli.command()
-@click.option(
-    "--root", default=None, help="Start from this topic path. Default: full tree."
-)
-@click.option(
-    "--counts", is_flag=True, default=False, help="Show entry counts per node."
-)
+@click.option("--root", default=None, help="Start from this topic path. Default: full tree.")
+@click.option("--counts", is_flag=True, default=False, help="Show entry counts per node.")
 @click.option(
     "--interactive",
     "-i",
@@ -202,9 +195,7 @@ def tree(
 
 
 @cli.command(name="get-structure")
-@click.option(
-    "--root", default=None, help="Start from this topic path. Default: full tree."
-)
+@click.option("--root", default=None, help="Start from this topic path. Default: full tree.")
 @click.option(
     "--depth",
     default=None,
@@ -223,16 +214,12 @@ def get_structure(session: Session, root: str | None, depth: int | None):
                 exit_code=EXIT_NOT_FOUND,
             )
         else:
-            err(
-                "no_topics", detail="No topics found in graph", exit_code=EXIT_NOT_FOUND
-            )
+            err("no_topics", detail="No topics found in graph", exit_code=EXIT_NOT_FOUND)
     output(tree)
 
 
 @cli.command(name="get-depth")
-@click.option(
-    "--root", default=None, help="Start from this topic path. Default: full tree."
-)
+@click.option("--root", default=None, help="Start from this topic path. Default: full tree.")
 @click.pass_obj
 def get_depth(session: Session, root: str | None):
     """Return the maximum depth of the topic tree."""
@@ -245,9 +232,7 @@ def get_depth(session: Session, root: str | None):
                 exit_code=EXIT_NOT_FOUND,
             )
         else:
-            err(
-                "no_topics", detail="No topics found in graph", exit_code=EXIT_NOT_FOUND
-            )
+            err("no_topics", detail="No topics found in graph", exit_code=EXIT_NOT_FOUND)
     depth = session.graph_db.get_topic_depth(root=root)
     result = {"depth": depth}
     if root:
@@ -261,9 +246,7 @@ def get_depth(session: Session, root: str | None):
     required=True,
     help="Topic path to create (e.g. 'algebra/linear_algebra').",
 )
-@click.option(
-    "--parents", is_flag=True, default=False, help="Create missing parent topics."
-)
+@click.option("--parents", is_flag=True, default=False, help="Create missing parent topics.")
 @click.pass_obj
 def create_topic(session: Session, name: str, parents: bool):
     """Create a topic node in the graph DB. Accepts paths.
@@ -373,12 +356,8 @@ def topic_stats(session: Session, topic: str, fields: str | None):
 
 @cli.command()
 @click.option("--topic", required=True, help="Topic to restrict similarity search to.")
-@click.option(
-    "--entry", required=True, help='Entry JSON string, or "-" to read from stdin.'
-)
-@click.option(
-    "--top-k", default=5, show_default=True, help="Number of similar entries to return."
-)
+@click.option("--entry", required=True, help='Entry JSON string, or "-" to read from stdin.')
+@click.option("--top-k", default=5, show_default=True, help="Number of similar entries to return.")
 @click.pass_obj
 def similar(session: Session, topic: str, entry: str, top_k: int):
     """Get top-N most similar entries within a topic, with full content."""
@@ -411,9 +390,7 @@ def similar(session: Session, topic: str, entry: str, top_k: int):
 
 @cli.command()
 @click.option("--topic", required=True, help="Target topic name.")
-@click.option(
-    "--entry", required=True, help='Entry JSON string, or "-" to read from stdin.'
-)
+@click.option("--entry", required=True, help='Entry JSON string, or "-" to read from stdin.')
 @click.option(
     "--overwrite",
     is_flag=True,
@@ -426,9 +403,7 @@ def similar(session: Session, topic: str, entry: str, top_k: int):
     help="Flag entry for review. Default: uses OKGV_REVIEW env var.",
 )
 @click.pass_obj
-def submit(
-    session: Session, topic: str, entry: str, overwrite: bool, review: bool | None
-):
+def submit(session: Session, topic: str, entry: str, overwrite: bool, review: bool | None):
     """Upsert entry into both graph and vector DBs."""
     schema = session.schema
     raw = read_raw(entry)
@@ -509,9 +484,7 @@ def similar_batch(session: Session, topic: str, entries: str, top_k: int):
             matches = vector_db.get_top_n(vector, n=top_k, filter_topic=topic)
             match_ids = [uid for uid, _ in matches]
             certainties = {uid: cert for uid, cert in matches}
-            fetched = (
-                {r.id: r for r in vector_db.get_by_ids(match_ids)} if match_ids else {}
-            )
+            fetched = {r.id: r for r in vector_db.get_by_ids(match_ids)} if match_ids else {}
             results = []
             for uid in match_ids:
                 item: dict = {"id": uid, "certainty": certainties[uid]}
@@ -542,9 +515,7 @@ def similar_batch(session: Session, topic: str, entries: str, top_k: int):
     help="Flag entries for review. Default: uses OKGV_REVIEW env var.",
 )
 @click.pass_obj
-def submit_batch(
-    session: Session, topic: str, entries: str, overwrite: bool, review: bool | None
-):
+def submit_batch(session: Session, topic: str, entries: str, overwrite: bool, review: bool | None):
     """Upsert multiple entries into graph and vector DBs. Single model load."""
     schema = session.schema
     if entries == "-":
@@ -667,9 +638,7 @@ def create_structure(session: Session, file_path: str):
 @cli.command(name="move-topic")
 @click.option("--source", required=True, help="Path of topic/subtopic to move.")
 @click.option("--destination", required=True, help="Path of new parent topic.")
-@click.option(
-    "--dry-run", is_flag=True, default=False, help="Preview without applying changes."
-)
+@click.option("--dry-run", is_flag=True, default=False, help="Preview without applying changes.")
 @click.pass_obj
 def move_topic(session: Session, source: str, destination: str, dry_run: bool):
     """Move a topic/subtopic under a different parent. Blocked if name conflict."""
@@ -690,9 +659,7 @@ def move_topic(session: Session, source: str, destination: str, dry_run: bool):
 @cli.command(name="move-entry")
 @click.option("--id", "entry_id", required=True, help="Entry UUID to move.")
 @click.option("--destination", required=True, help="Path of target topic.")
-@click.option(
-    "--dry-run", is_flag=True, default=False, help="Preview without applying changes."
-)
+@click.option("--dry-run", is_flag=True, default=False, help="Preview without applying changes.")
 @click.pass_obj
 def move_entry(session: Session, entry_id: str, destination: str, dry_run: bool):
     """Move an entry to a different topic."""
@@ -912,9 +879,7 @@ def review_cmd(
         return
 
     if export_path:
-        entries = review_list(
-            db_path, status=status, topic=topic, limit=limit, offset=offset
-        )
+        entries = review_list(db_path, status=status, topic=topic, limit=limit, offset=offset)
         if not entries:
             err(
                 "no_entries",
@@ -931,18 +896,14 @@ def review_cmd(
             export_data.append(item)
         from pathlib import Path
 
-        Path(export_path).write_text(
-            json.dumps(export_data, indent=2, ensure_ascii=False)
-        )
+        Path(export_path).write_text(json.dumps(export_data, indent=2, ensure_ascii=False))
         output({"exported": len(export_data), "file": export_path})
         return
 
     if count:
         output(review_count(db_path, topic=topic))
     else:
-        entries = review_list(
-            db_path, status=status, topic=topic, limit=limit, offset=offset
-        )
+        entries = review_list(db_path, status=status, topic=topic, limit=limit, offset=offset)
         output(entries)
 
 
@@ -999,7 +960,7 @@ def log_cmd(
     count: bool,
 ):
     """Query the submission log."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     db_path = session.db_path
     if not db_path.exists():
@@ -1022,7 +983,7 @@ def log_cmd(
             )
         if ts.tzinfo is None:
             ts = ts.replace(tzinfo=datetime.now().astimezone().tzinfo)
-        return ts.astimezone(timezone.utc)
+        return ts.astimezone(UTC)
 
     def _to_local(utc_str: str) -> str:
         """Convert stored UTC timestamp to local time for display."""
@@ -1059,7 +1020,7 @@ def log_cmd(
 @click.pass_obj
 def undo(session: Session, timestamp: str, dry_run: bool):
     """Delete all entries submitted after TIMESTAMP from both DBs and log."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     db_path = session.db_path
     try:
@@ -1074,7 +1035,7 @@ def undo(session: Session, timestamp: str, dry_run: bool):
 
     if cutoff.tzinfo is None:
         cutoff = cutoff.replace(tzinfo=datetime.now().astimezone().tzinfo)
-    cutoff = cutoff.astimezone(timezone.utc)
+    cutoff = cutoff.astimezone(UTC)
 
     if not db_path.exists():
         err("no_db", detail="okgv.db not found", exit_code=EXIT_NOT_FOUND)
@@ -1105,9 +1066,7 @@ def undo(session: Session, timestamp: str, dry_run: bool):
 
 
 @cli.command()
-@click.option(
-    "--dry-run", is_flag=True, default=False, help="Preview without deleting orphans."
-)
+@click.option("--dry-run", is_flag=True, default=False, help="Preview without deleting orphans.")
 @click.option(
     "--batch-size",
     default=1000,
@@ -1168,9 +1127,7 @@ def reconcile(session: Session, dry_run: bool, batch_size: int):
 
 @cli.command(hidden=True)
 @click.option("--confirm", default=None, help="Type 'delete all' to confirm.")
-@click.option(
-    "--dry-run", is_flag=True, default=False, help="Preview what would be deleted."
-)
+@click.option("--dry-run", is_flag=True, default=False, help="Preview what would be deleted.")
 @click.pass_obj
 def purge(session: Session, confirm: str | None, dry_run: bool):
     """Delete ALL entries from graph DB, vector DB, and log. Hidden command."""
@@ -1218,9 +1175,7 @@ def purge(session: Session, confirm: str | None, dry_run: bool):
 
 
 @cli.command(name="export")
-@click.option(
-    "--output", "output_path", required=True, help="Path to output .jsonl file."
-)
+@click.option("--output", "output_path", required=True, help="Path to output .jsonl file.")
 @click.option(
     "--fields",
     default=None,
@@ -1232,9 +1187,7 @@ def purge(session: Session, confirm: str | None, dry_run: bool):
     default=False,
     help="Exclude entries currently pending in the review queue.",
 )
-@click.option(
-    "--batch-size", default=500, show_default=True, help="Batch size for DB reads."
-)
+@click.option("--batch-size", default=500, show_default=True, help="Batch size for DB reads.")
 @click.option(
     "--dry-run",
     is_flag=True,
@@ -1254,9 +1207,7 @@ def export_cmd(
     import os
 
     field_set = {f.strip() for f in fields.split(",")} if fields else None
-    pending_ids = (
-        review_get_pending_ids(session.db_path) if exclude_in_review else set()
-    )
+    pending_ids = review_get_pending_ids(session.db_path) if exclude_in_review else set()
 
     vector_db = session.vector_db
     graph_db = session.graph_db
@@ -1275,11 +1226,7 @@ def export_cmd(
         )
         return
 
-    out_path = (
-        output_path
-        if os.path.isabs(output_path)
-        else os.path.join(os.getcwd(), output_path)
-    )
+    out_path = output_path if os.path.isabs(output_path) else os.path.join(os.getcwd(), output_path)
     written = 0
     with open(out_path, "w", encoding="utf-8") as fh:
         for chunk in vector_db.iter_entry_ids(batch_size):

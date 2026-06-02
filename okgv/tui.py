@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from rich.text import Text
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable, Footer, Header, Static, Tree
-
-from rich.text import Text
 
 from okgv.core import (
     log_remove_entries,
@@ -124,8 +123,11 @@ class ReviewApp(App):
 
     def _load_entries(self) -> None:
         batch = review_list(
-            self._db_path, status="pending", topic=self._topic,
-            limit=self._limit, offset=self._offset,
+            self._db_path,
+            status="pending",
+            topic=self._topic,
+            limit=self._limit,
+            offset=self._offset,
         )
         self._entries.extend(batch)
         self._offset += len(batch)
@@ -489,7 +491,7 @@ class BrowseApp(App):
         offset = len(loaded)
         if offset >= len(all_ids):
             return 0
-        next_ids = all_ids[offset:offset + self._entry_limit]
+        next_ids = all_ids[offset : offset + self._entry_limit]
         records = self._vector_db.get_by_ids(next_ids)
         loaded.extend(records)
         return len(records)
@@ -561,7 +563,9 @@ def run_browse(
     entry_limit: int = 20,
 ) -> None:
     app = BrowseApp(
-        graph_db=graph_db, vector_db=vector_db,
-        root=root, entry_limit=entry_limit,
+        graph_db=graph_db,
+        vector_db=vector_db,
+        root=root,
+        entry_limit=entry_limit,
     )
     app.run()

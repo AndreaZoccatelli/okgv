@@ -1,5 +1,7 @@
 """End-to-end integration tests: full pipeline through both DBs."""
 
+from datetime import UTC
+
 import pytest
 
 from okgv.core import (
@@ -97,9 +99,7 @@ class TestBatchUpsertE2E:
         graph_db.create_topic("t")
         raws = [{"text": "alpha"}, {"text": "beta"}, {"text": "gamma"}]
         vectors = [make_vector_unique(i) for i in range(3)]
-        inserted, failures = upsert_entries_batch(
-            schema, graph_db, vector_db, "t", raws, vectors=vectors
-        )
+        inserted, failures = upsert_entries_batch(schema, graph_db, vector_db, "t", raws, vectors=vectors)
         assert len(inserted) == 3
         assert len(failures) == 0
 
@@ -112,9 +112,7 @@ class TestBatchUpsertE2E:
         graph_db.create_topic("batch_t")
         raws = [{"text": "a"}, {"text": "b"}]
         vectors = [make_vector_unique(i) for i in range(2)]
-        inserted, _ = upsert_entries_batch(
-            schema, graph_db, vector_db, "batch_t", raws, vectors=vectors
-        )
+        inserted, _ = upsert_entries_batch(schema, graph_db, vector_db, "batch_t", raws, vectors=vectors)
         results = vector_db.get_by_topic("batch_t", limit=10)
         assert len(results) == 2
 
@@ -191,7 +189,7 @@ class TestMoveE2E:
         graph_db.create_subtopic("src", "child")
         graph_db.create_topic("dst")
         raw = {"text": "nested entry"}
-        eid = upsert_entry(schema, graph_db, vector_db, "src/child", raw, fake_embedder)
+        upsert_entry(schema, graph_db, vector_db, "src/child", raw, fake_embedder)
 
         graph_db.move_topic("src/child", "dst")
         vector_db.update_topics("src/child", "dst/child")
@@ -207,7 +205,7 @@ class TestMoveE2E:
 
 class TestLogE2E:
     def test_log_and_query(self, graph_db, vector_db, schema, tmp_path):
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         db_path = tmp_path / "okgv.db"
         graph_db.create_topic("t")
@@ -217,6 +215,6 @@ class TestLogE2E:
         log_session(db_path, "t", [eid])
 
         # Query entries after epoch — should find our entry
-        cutoff = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        cutoff = datetime(2000, 1, 1, tzinfo=UTC)
         ids = log_get_entries_after(db_path, cutoff)
         assert eid in ids

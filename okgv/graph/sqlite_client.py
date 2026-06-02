@@ -43,9 +43,7 @@ class SQLiteGraphDB:
         self._conn.commit()
 
     def topic_exists(self, path: str) -> bool:
-        row = self._execute(
-            "SELECT 1 FROM topics WHERE path = ?", (path,)
-        ).fetchone()
+        row = self._execute("SELECT 1 FROM topics WHERE path = ?", (path,)).fetchone()
         return row is not None
 
     def create_topic(self, name: str) -> None:
@@ -64,20 +62,14 @@ class SQLiteGraphDB:
         self._commit()
 
     def get_subtopics(self, topic: str) -> list[str]:
-        rows = self._execute(
-            "SELECT path FROM topics WHERE parent = ?", (topic,)
-        ).fetchall()
+        rows = self._execute("SELECT path FROM topics WHERE parent = ?", (topic,)).fetchall()
         return [r[0] for r in rows]
 
     def get_topic_entry_counts(self, parent: str | None = None) -> dict[str, int]:
         if parent is None:
-            children = self._execute(
-                "SELECT path FROM topics WHERE parent IS NULL"
-            ).fetchall()
+            children = self._execute("SELECT path FROM topics WHERE parent IS NULL").fetchall()
         else:
-            children = self._execute(
-                "SELECT path FROM topics WHERE parent = ?", (parent,)
-            ).fetchall()
+            children = self._execute("SELECT path FROM topics WHERE parent = ?", (parent,)).fetchall()
 
         counts = {}
         for (child_path,) in children:
@@ -107,7 +99,9 @@ class SQLiteGraphDB:
         return records
 
     def get_topic_stats(
-        self, topic: str, fields: list[str] | None = None,
+        self,
+        topic: str,
+        fields: list[str] | None = None,
     ) -> tuple[int, list[str], list[dict]]:
         _FIELD_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
@@ -141,9 +135,7 @@ class SQLiteGraphDB:
             return total, fields, []
 
         # Build GROUP BY using json_extract
-        extracts = ", ".join(
-            f"json_extract(properties, '$.{f}')" for f in fields
-        )
+        extracts = ", ".join(f"json_extract(properties, '$.{f}')" for f in fields)
         query = (
             f"SELECT {extracts}, count(*) AS cnt "
             f"FROM entries WHERE topic = ? OR topic LIKE ? "
@@ -164,9 +156,7 @@ class SQLiteGraphDB:
                 (root, root + "/%"),
             ).fetchall()
         else:
-            rows = self._execute(
-                "SELECT path, name, parent FROM topics ORDER BY path"
-            ).fetchall()
+            rows = self._execute("SELECT path, name, parent FROM topics ORDER BY path").fetchall()
 
         if max_depth is not None:
             if root is not None:
@@ -203,18 +193,11 @@ class SQLiteGraphDB:
                 return 0
             return max(p.count("/") for (p,) in rows)
 
-    def upload_entry(
-        self, topic: str, entry_id: str, properties: dict, overwrite: bool = False
-    ) -> None:
+    def upload_entry(self, topic: str, entry_id: str, properties: dict, overwrite: bool = False) -> None:
         if not overwrite:
-            existing = self._execute(
-                "SELECT 1 FROM entries WHERE id = ?", (entry_id,)
-            ).fetchone()
+            existing = self._execute("SELECT 1 FROM entries WHERE id = ?", (entry_id,)).fetchone()
             if existing is not None:
-                raise ValueError(
-                    f"Entry '{entry_id}' already exists in graph DB. "
-                    f"Pass overwrite=True to replace."
-                )
+                raise ValueError(f"Entry '{entry_id}' already exists in graph DB. Pass overwrite=True to replace.")
         props_json = json.dumps(properties, sort_keys=True)
         self._execute(
             "INSERT OR REPLACE INTO entries (id, topic, properties) VALUES (?, ?, ?)",
@@ -236,9 +219,7 @@ class SQLiteGraphDB:
         if not ids:
             return {}
         placeholders = ",".join("?" for _ in ids)
-        rows = self._execute(
-            f"SELECT id, topic FROM entries WHERE id IN ({placeholders})", tuple(ids)
-        ).fetchall()
+        rows = self._execute(f"SELECT id, topic FROM entries WHERE id IN ({placeholders})", tuple(ids)).fetchall()
         return {r[0]: r[1] for r in rows}
 
     def get_all_entry_ids(self) -> list[str]:
@@ -263,18 +244,14 @@ class SQLiteGraphDB:
         if not ids:
             return set()
         placeholders = ",".join("?" for _ in ids)
-        rows = self._execute(
-            f"SELECT id FROM entries WHERE id IN ({placeholders})", tuple(ids)
-        ).fetchall()
+        rows = self._execute(f"SELECT id FROM entries WHERE id IN ({placeholders})", tuple(ids)).fetchall()
         return {r[0] for r in rows}
 
     def delete_entries(self, ids: list[str]) -> None:
         if not ids:
             return
         placeholders = ",".join("?" for _ in ids)
-        self._execute(
-            f"DELETE FROM entries WHERE id IN ({placeholders})", tuple(ids)
-        )
+        self._execute(f"DELETE FROM entries WHERE id IN ({placeholders})", tuple(ids))
         self._commit()
 
     def count_topics(self) -> int:
@@ -296,9 +273,7 @@ class SQLiteGraphDB:
             (destination, name),
         ).fetchone()
         if conflict:
-            raise ValueError(
-                f"Destination '{destination}' already has subtopic '{name}'"
-            )
+            raise ValueError(f"Destination '{destination}' already has subtopic '{name}'")
 
         # Temporarily disable FK checks for bulk path update
         self._execute("PRAGMA foreign_keys=OFF")
@@ -310,12 +285,12 @@ class SQLiteGraphDB:
         ).fetchall()
 
         for (old_path,) in affected:
-            updated_path = new_path + old_path[len(source):]
+            updated_path = new_path + old_path[len(source) :]
             if old_path == source:
                 new_parent = destination
             else:
                 old_parent = old_path.rsplit("/", 1)[0]
-                new_parent = new_path + old_parent[len(source):]
+                new_parent = new_path + old_parent[len(source) :]
             self._execute(
                 "UPDATE topics SET path = ?, parent = ? WHERE path = ?",
                 (updated_path, new_parent, old_path),
@@ -327,7 +302,7 @@ class SQLiteGraphDB:
             (source, source + "/%"),
         ).fetchall()
         for eid, old_topic in entries_affected:
-            updated_topic = new_path + old_topic[len(source):]
+            updated_topic = new_path + old_topic[len(source) :]
             self._execute(
                 "UPDATE entries SET topic = ? WHERE id = ?",
                 (updated_topic, eid),

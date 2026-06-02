@@ -120,7 +120,9 @@ class GraphDB(Protocol):
     def get_entries_for_topic(self, topic: str) -> list[GraphRecord]: ...
 
     def get_topic_stats(
-        self, topic: str, fields: list[str] | None = None,
+        self,
+        topic: str,
+        fields: list[str] | None = None,
     ) -> tuple[int, list[str], list[dict]]:
         """Aggregate entry counts grouped by fields.
 
@@ -137,9 +139,7 @@ class GraphDB(Protocol):
         """Return nested dict of topics/subtopics (no entries)."""
         ...
 
-    def upload_entry(
-        self, topic: str, entry_id: str, properties: dict, overwrite: bool = False
-    ) -> None: ...
+    def upload_entry(self, topic: str, entry_id: str, properties: dict, overwrite: bool = False) -> None: ...
 
     def get_by_id(self, entry_id: str) -> GraphRecord | None: ...
 

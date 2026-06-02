@@ -1,11 +1,11 @@
 """Core logic: upsert, logging, schema validation, review."""
 
 import sqlite3
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
 
-from okgv.helpers import err, EXIT_USAGE
+from okgv.helpers import EXIT_USAGE, err
 from okgv.protocols import EntrySchema, GraphDB, VectorDB, entry_id
 
 _SCHEMA = """
@@ -73,6 +73,7 @@ def validate_schema(schema: EntrySchema, meta: dict, graph_props: dict, vector_p
 
 class EntryError(Exception):
     """Raised when a single entry fails to build or upsert."""
+
     pass
 
 
@@ -154,8 +155,10 @@ def upsert_entries_batch(
     # Validate schema once using first entry
     first = entries[0]
     validate_schema(
-        schema, schema.metadata(first),
-        schema.graph_properties(first), schema.vector_properties(first),
+        schema,
+        schema.metadata(first),
+        schema.graph_properties(first),
+        schema.vector_properties(first),
     )
 
     # Upload to graph individually, collect successes
@@ -168,7 +171,10 @@ def upsert_entries_batch(
         vector_props = schema.vector_properties(entry)
         try:
             graph_db.upload_entry(
-                topic=topic, entry_id=eid, properties={**meta, **graph_props}, overwrite=overwrite,
+                topic=topic,
+                entry_id=eid,
+                properties={**meta, **graph_props},
+                overwrite=overwrite,
             )
         except (EntryError, ValueError) as e:
             failures.append({"id": eid, "error": str(e)})
@@ -197,7 +203,7 @@ def upsert_entries_batch(
 
 def log_session(db_path: Path, topic: str, inserted_ids: list[str]) -> None:
     """Log submitted entry IDs to SQLite."""
-    timestamp = datetime.now(timezone.utc).isoformat()
+    timestamp = datetime.now(UTC).isoformat()
     conn = _connect(db_path)
     try:
         conn.executemany(
@@ -248,10 +254,7 @@ def log_query(
         query = f"SELECT id, timestamp, topic, entry_id FROM log{where} ORDER BY id DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         rows = conn.execute(query, params).fetchall()
-        return [
-            {"id": r[0], "timestamp": r[1], "topic": r[2], "entry_id": r[3]}
-            for r in rows
-        ]
+        return [{"id": r[0], "timestamp": r[1], "topic": r[2], "entry_id": r[3]} for r in rows]
     finally:
         conn.close()
 
@@ -299,9 +302,10 @@ def log_remove_entries(db_path: Path, entry_ids: list[str]) -> None:
 
 # ── Review ────────────────────────────────────────────────────────────
 
+
 def review_add(db_path: Path, topic: str, entry_ids: list[str]) -> None:
     """Add entries to review queue as pending."""
-    timestamp = datetime.now(timezone.utc).isoformat()
+    timestamp = datetime.now(UTC).isoformat()
     conn = _connect(db_path)
     try:
         conn.executemany(
@@ -329,12 +333,12 @@ def review_list(
             clauses.append("topic = ?")
             params.append(topic)
         where = " WHERE " + " AND ".join(clauses)
-        query = f"SELECT entry_id, topic, status, created_at, reviewed_at FROM review{where} ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        cols = "entry_id, topic, status, created_at, reviewed_at"
+        query = f"SELECT {cols} FROM review{where} ORDER BY created_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         rows = conn.execute(query, params).fetchall()
         return [
-            {"entry_id": r[0], "topic": r[1], "status": r[2], "created_at": r[3], "reviewed_at": r[4]}
-            for r in rows
+            {"entry_id": r[0], "topic": r[1], "status": r[2], "created_at": r[3], "reviewed_at": r[4]} for r in rows
         ]
     finally:
         conn.close()
@@ -350,9 +354,7 @@ def review_count(db_path: Path, topic: str | None = None) -> dict:
                 (topic,),
             ).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT status, count(*) FROM review GROUP BY status"
-            ).fetchall()
+            rows = conn.execute("SELECT status, count(*) FROM review GROUP BY status").fetchall()
         counts = {r[0]: r[1] for r in rows}
         result = {
             "pending": counts.get("pending", 0),
@@ -369,7 +371,7 @@ def review_count(db_path: Path, topic: str | None = None) -> dict:
 
 def review_update(db_path: Path, entry_ids: list[str], status: str) -> int:
     """Update review status for entries. Returns number of rows updated."""
-    timestamp = datetime.now(timezone.utc).isoformat()
+    timestamp = datetime.now(UTC).isoformat()
     conn = _connect(db_path)
     try:
         cursor = conn.executemany(
@@ -388,9 +390,7 @@ def review_get_pending_ids(db_path: Path) -> set[str]:
         return set()
     conn = _connect(db_path)
     try:
-        rows = conn.execute(
-            "SELECT entry_id FROM review WHERE status = 'pending'"
-        ).fetchall()
+        rows = conn.execute("SELECT entry_id FROM review WHERE status = 'pending'").fetchall()
         return {r[0] for r in rows}
     finally:
         conn.close()
@@ -400,9 +400,7 @@ def review_get_rejected(db_path: Path) -> list[str]:
     """Return entry IDs with rejected status."""
     conn = _connect(db_path)
     try:
-        rows = conn.execute(
-            "SELECT entry_id FROM review WHERE status = 'rejected'"
-        ).fetchall()
+        rows = conn.execute("SELECT entry_id FROM review WHERE status = 'rejected'").fetchall()
         return [r[0] for r in rows]
     finally:
         conn.close()
@@ -412,9 +410,7 @@ def review_purge_rejected(db_path: Path) -> list[str]:
     """Remove rejected entries from review DB. Returns deleted IDs."""
     conn = _connect(db_path)
     try:
-        rows = conn.execute(
-            "SELECT entry_id FROM review WHERE status = 'rejected'"
-        ).fetchall()
+        rows = conn.execute("SELECT entry_id FROM review WHERE status = 'rejected'").fetchall()
         ids = [r[0] for r in rows]
         if ids:
             conn.executemany(

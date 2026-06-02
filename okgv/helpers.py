@@ -24,9 +24,7 @@ def output(data: dict | list) -> None:
     sys.stdout.write("\n")
 
 
-def err(
-    error: str, detail: str = "", suggestion: str = "", exit_code: int = EXIT_FAILURE
-) -> NoReturn:
+def err(error: str, detail: str = "", suggestion: str = "", exit_code: int = EXIT_FAILURE) -> NoReturn:
     """Write structured error to stderr and exit."""
     msg: dict = {"error": error}
     if detail:

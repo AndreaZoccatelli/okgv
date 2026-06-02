@@ -27,8 +27,7 @@ def _import_schema(specifier: str) -> EntrySchema:
     """
     if ":" not in specifier:
         raise ValueError(
-            f"Invalid schema specifier '{specifier}'. "
-            f"Expected format: 'module:ClassName' (e.g. 'schema:MyEntrySchema')"
+            f"Invalid schema specifier '{specifier}'. Expected format: 'module:ClassName' (e.g. 'schema:MyEntrySchema')"
         )
     module_path, class_name = specifier.rsplit(":", 1)
 
@@ -40,8 +39,7 @@ def _import_schema(specifier: str) -> EntrySchema:
         module = importlib.import_module(module_path)
     except ModuleNotFoundError as e:
         raise ImportError(
-            f"Cannot import schema module '{module_path}': {e}. "
-            f"Make sure the file exists in {cwd}"
+            f"Cannot import schema module '{module_path}': {e}. Make sure the file exists in {cwd}"
         ) from e
 
     try:

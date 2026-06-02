@@ -37,9 +37,7 @@ class SQLiteVectorDB:
                 properties TEXT NOT NULL
             )"""
         )
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_vector_entries_topic ON vector_entries(topic)"
-        )
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_vector_entries_topic ON vector_entries(topic)")
         # vec0 virtual table with cosine distance and topic metadata column
         self._conn.execute(
             f"""CREATE VIRTUAL TABLE IF NOT EXISTS vec_entries USING vec0(
@@ -104,14 +102,9 @@ class SQLiteVectorDB:
         topic: str,
         overwrite: bool = False,
     ) -> None:
-        existing = self._conn.execute(
-            "SELECT 1 FROM vector_entries WHERE id = ?", (entry_id,)
-        ).fetchone()
+        existing = self._conn.execute("SELECT 1 FROM vector_entries WHERE id = ?", (entry_id,)).fetchone()
         if existing and not overwrite:
-            raise ValueError(
-                f"Entry '{entry_id}' already exists in vector DB. "
-                f"Pass overwrite=True to replace."
-            )
+            raise ValueError(f"Entry '{entry_id}' already exists in vector DB. Pass overwrite=True to replace.")
         props_json = json.dumps(properties, sort_keys=True)
         blob = _vec_f32(vector)
         if existing and overwrite:
@@ -178,7 +171,7 @@ class SQLiteVectorDB:
             (old_prefix, old_prefix + "/%"),
         ).fetchall()
         for eid, old_topic in rows:
-            new_topic = new_prefix + old_topic[len(old_prefix):]
+            new_topic = new_prefix + old_topic[len(old_prefix) :]
             self._conn.execute(
                 "UPDATE vector_entries SET topic = ? WHERE id = ?",
                 (new_topic, eid),

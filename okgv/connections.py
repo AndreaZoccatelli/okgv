@@ -6,9 +6,7 @@ from okgv.embedding import make_embedder
 
 
 def create_embedder():
-    return make_embedder(
-        os.getenv("EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
-    )
+    return make_embedder(os.getenv("EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2"))
 
 
 def get_embed_dim() -> int | None:
