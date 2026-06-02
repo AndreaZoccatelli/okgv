@@ -662,8 +662,14 @@ def review_cmd(session: Session, topic: str | None, status: str, limit: int, off
             err("invalid_json", detail=str(e), exit_code=EXIT_USAGE)
         if not isinstance(rows, list):
             err("invalid_input", detail="Expected a JSON array", exit_code=EXIT_USAGE)
+        valid_statuses = {"approved", "rejected"}
         approved = [r["id"] for r in rows if r.get("status") == "approved"]
         rejected = [r["id"] for r in rows if r.get("status") == "rejected"]
+        invalid = [
+            {"id": r.get("id"), "status": r["status"]}
+            for r in rows
+            if "status" in r and r["status"] not in valid_statuses
+        ]
         results = {}
         if approved:
             review_update(db_path, approved, "approved")
@@ -671,9 +677,11 @@ def review_cmd(session: Session, topic: str | None, status: str, limit: int, off
         if rejected:
             review_update(db_path, rejected, "rejected")
             results["rejected"] = len(rejected)
-        skipped = len(rows) - len(approved) - len(rejected)
+        skipped = len(rows) - len(approved) - len(rejected) - len(invalid)
         if skipped:
             results["skipped"] = skipped
+        if invalid:
+            results["invalid"] = invalid
         output(results)
         return
 
