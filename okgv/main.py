@@ -16,7 +16,7 @@ import click
 from okgv.core import (
     EntryError, build_entry,
     log_count, log_get_entries_after, log_query, log_remove_entries, log_session,
-    review_add, review_count, review_get_rejected, review_list,
+    review_add, review_count, review_get_pending_ids, review_get_rejected, review_list,
     review_purge_rejected, review_remove_entries, review_update,
     upsert_entries_batch, upsert_entry,
 )
@@ -939,6 +939,68 @@ def purge(session: Session, confirm: str | None, dry_run: bool):
         os.remove(db_path)
 
     output({"purged": True})
+
+
+@cli.command(name="export")
+@click.option("--output", "output_path", required=True, help="Path to output .jsonl file.")
+@click.option(
+    "--fields",
+    default=None,
+    help="Comma-separated fields to include. Default: all fields + id + topic.",
+)
+@click.option(
+    "--exclude-in-review",
+    is_flag=True,
+    default=False,
+    help="Exclude entries currently pending in the review queue.",
+)
+@click.option("--batch-size", default=500, show_default=True, help="Batch size for DB reads.")
+@click.option("--dry-run", is_flag=True, default=False, help="Print count of entries to export, no file written.")
+@click.pass_obj
+def export_cmd(
+    session: Session,
+    output_path: str,
+    fields: str | None,
+    exclude_in_review: bool,
+    batch_size: int,
+    dry_run: bool,
+):
+    """Export all entries to a JSONL file for model training."""
+    import os
+
+    field_set = {f.strip() for f in fields.split(",")} if fields else None
+    pending_ids = review_get_pending_ids(session.db_path) if exclude_in_review else set()
+
+    vector_db = session.vector_db
+    graph_db = session.graph_db
+
+    if dry_run:
+        total = 0
+        for chunk in vector_db.iter_entry_ids(batch_size):
+            filtered = [eid for eid in chunk if eid not in pending_ids]
+            total += len(filtered)
+        output({"dry_run": True, "would_export": total, "exclude_in_review": exclude_in_review})
+        return
+
+    out_path = output_path if os.path.isabs(output_path) else os.path.join(os.getcwd(), output_path)
+    written = 0
+    with open(out_path, "w", encoding="utf-8") as fh:
+        for chunk in vector_db.iter_entry_ids(batch_size):
+            chunk = [eid for eid in chunk if eid not in pending_ids]
+            if not chunk:
+                continue
+            records = vector_db.get_by_ids(chunk)
+            topic_map = graph_db.get_topics_for_ids(chunk)
+            for rec in records:
+                row: dict = {"id": rec.id, "topic": topic_map.get(rec.id)}
+                row.update(rec.properties)
+                if field_set is not None:
+                    row = {k: v for k, v in row.items() if k in field_set}
+                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+                written += 1
+
+    log(f"Exported {written} entries to {out_path}")
+    output({"exported": written, "file": out_path})
 
 
 if __name__ == "__main__":

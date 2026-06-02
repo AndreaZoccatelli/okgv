@@ -382,6 +382,20 @@ def review_update(db_path: Path, entry_ids: list[str], status: str) -> int:
         conn.close()
 
 
+def review_get_pending_ids(db_path: Path) -> set[str]:
+    """Return entry IDs currently pending review."""
+    if not db_path.exists():
+        return set()
+    conn = _connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT entry_id FROM review WHERE status = 'pending'"
+        ).fetchall()
+        return {r[0] for r in rows}
+    finally:
+        conn.close()
+
+
 def review_get_rejected(db_path: Path) -> list[str]:
     """Return entry IDs with rejected status."""
     conn = _connect(db_path)

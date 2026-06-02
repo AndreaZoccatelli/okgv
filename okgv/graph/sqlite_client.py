@@ -232,6 +232,15 @@ class SQLiteGraphDB:
         props = json.loads(row[2])
         return GraphRecord(id=row[0], topic=row[1], properties=props)
 
+    def get_topics_for_ids(self, ids: list[str]) -> dict[str, str]:
+        if not ids:
+            return {}
+        placeholders = ",".join("?" for _ in ids)
+        rows = self._execute(
+            f"SELECT id, topic FROM entries WHERE id IN ({placeholders})", tuple(ids)
+        ).fetchall()
+        return {r[0]: r[1] for r in rows}
+
     def get_all_entry_ids(self) -> list[str]:
         rows = self._execute("SELECT id FROM entries").fetchall()
         return [r[0] for r in rows]
