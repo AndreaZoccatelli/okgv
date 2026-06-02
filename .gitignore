@@ -1,11 +1,12 @@
 *.pyc
+__pycache__
+*.egg-info
 .venv
 .env
 .pytest_cache
 .DS_Store
-__pycache__
-log.db
-review.db
-okgv.egg-info
+.claude/
+
+*.db
 *.db-wal
 *.db-shm

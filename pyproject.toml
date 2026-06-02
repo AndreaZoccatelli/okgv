@@ -6,7 +6,22 @@ build-backend = "setuptools.build_meta"
 name = "okgv"
 version = "0.1.0"
 description = "Organizing knowledge: graphs and vectors"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Andrea Zoccatelli", email = "a.zoccatelli.work@gmail.com"}]
 requires-python = ">=3.11"
+keywords = ["knowledge-base", "vector-search", "sqlite", "semantic-deduplication", "knowledge-graph"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "click",
     "sqlite-vec",
@@ -18,6 +33,11 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest"]
 
+[project.urls]
+Homepage = "https://github.com/AndreaZoccatelli/okgv"
+Repository = "https://github.com/AndreaZoccatelli/okgv"
+"Bug Tracker" = "https://github.com/AndreaZoccatelli/okgv/issues"
+
 [project.scripts]
 okgv = "okgv.main:cli"
 
@@ -25,7 +45,12 @@ okgv = "okgv.main:cli"
 include = ["okgv*"]
 
 [tool.setuptools.package-data]
-okgv = ["py.typed"]
+okgv = [
+    "py.typed",
+    "templates/*.md",
+    "templates/*.txt",
+    "templates/*.json",
+]
 
 [tool.pytest.ini_options]
 markers = [
