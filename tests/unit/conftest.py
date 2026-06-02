@@ -74,6 +74,59 @@ class MockGraphDB:
             groups.append({"fields": dict(combo), "count": count})
         return total, fields, groups
 
+    def get_topic_tree(self, root: str | None = None, max_depth: int | None = None) -> dict:
+        """Build nested dict of topics."""
+
+        def _children(path: str) -> list[str]:
+            return sorted(self.topics.get(path, set()))
+
+        def _build(path: str, depth: int) -> dict:
+            node: dict = {}
+            if max_depth is not None and depth >= max_depth:
+                return node
+            for child in _children(path):
+                name = child.rsplit("/", 1)[-1]
+                node[name] = _build(child, depth + 1)
+            return node
+
+        if root:
+            if root not in self.topics:
+                return {}
+            return {root.rsplit("/", 1)[-1]: _build(root, 0)}
+
+        roots = sorted(p for p in self.topics if "/" not in p)
+        if not roots:
+            return {}
+        tree = {}
+        for r in roots:
+            tree[r] = _build(r, 0)
+        return tree
+
+    def get_topic_depth(self, root: str | None = None) -> int:
+        def _depth(path: str) -> int:
+            children = self.topics.get(path, set())
+            if not children:
+                return 0
+            return 1 + max(_depth(c) for c in children)
+
+        if root:
+            return _depth(root)
+        roots = [p for p in self.topics if "/" not in p]
+        if not roots:
+            return 0
+        return max(_depth(r) for r in roots)
+
+    def get_topics_for_ids(self, ids: list[str]) -> dict[str, str]:
+        return {eid: self.entry_topics[eid] for eid in ids if eid in self.entry_topics}
+
+    def count_topics(self) -> int:
+        return len(self.topics)
+
+    def delete_all(self) -> None:
+        self.topics.clear()
+        self.entries.clear()
+        self.entry_topics.clear()
+
     def upload_entry(self, topic: str, entry_id: str, properties: dict, overwrite: bool = False) -> None:
         if entry_id in self.entries and not overwrite:
             raise ValueError(f"Entry '{entry_id}' already exists in graph DB. Pass overwrite=True to replace.")

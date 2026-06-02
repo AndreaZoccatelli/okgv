@@ -5,6 +5,7 @@ import json
 import pytest
 from click.testing import CliRunner
 
+from okgv.core import review_add
 from okgv.main import cli
 from okgv.session import Session
 from tests.unit.conftest import MockGraphDB, MockVectorDB, SimpleSchema, fake_embedder
@@ -223,3 +224,156 @@ class TestLeastTopic:
         data = parse_json_output(result.output)
         assert data["topic"] == "b"
         assert data["count"] == 0
+
+
+class TestGetStructure:
+    def test_get_structure(self, runner, mock_session):
+        graph = mock_session.graph_db
+        graph.create_topic("math")
+        graph.create_subtopic("math", "algebra")
+        result = runner.invoke(cli, ["get-structure"], obj=mock_session)
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        assert "math" in data
+
+    def test_get_structure_empty(self, runner, mock_session):
+        result = runner.invoke(cli, ["get-structure"], obj=mock_session)
+        assert result.exit_code == 3  # EXIT_NOT_FOUND
+
+    def test_get_structure_with_root(self, runner, mock_session):
+        graph = mock_session.graph_db
+        graph.create_topic("math")
+        graph.create_subtopic("math", "algebra")
+        result = runner.invoke(cli, ["get-structure", "--root", "math"], obj=mock_session)
+        assert result.exit_code == 0
+
+    def test_get_structure_root_not_found(self, runner, mock_session):
+        graph = mock_session.graph_db
+        graph.create_topic("math")
+        result = runner.invoke(cli, ["get-structure", "--root", "nonexistent"], obj=mock_session)
+        assert result.exit_code == 3
+
+
+class TestCreateTopic:
+    def test_create_topic(self, runner, mock_session):
+        result = runner.invoke(cli, ["create-topic", "--name", "math"], obj=mock_session)
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        assert data["created"] is True
+        assert data["topic"] == "math"
+        assert mock_session.graph_db.topic_exists("math")
+
+    def test_create_nested_with_parents(self, runner, mock_session):
+        result = runner.invoke(cli, ["create-topic", "--name", "a/b/c", "--parents"], obj=mock_session)
+        assert result.exit_code == 0
+        assert mock_session.graph_db.topic_exists("a")
+        assert mock_session.graph_db.topic_exists("a/b")
+        assert mock_session.graph_db.topic_exists("a/b/c")
+
+    def test_create_nested_without_parents_fails(self, runner, mock_session):
+        result = runner.invoke(cli, ["create-topic", "--name", "a/b"], obj=mock_session)
+        assert result.exit_code != 0
+
+
+class TestGetByTopic:
+    def test_no_entries(self, runner, mock_session):
+        result = runner.invoke(cli, ["get-by-topic", "--topic", "t"], obj=mock_session)
+        assert result.exit_code == 3
+
+    def test_with_entries(self, runner, mock_session):
+        vector = mock_session.vector_db
+        vector.entries["id1"] = {"text": "hello"}
+        vector.topics["id1"] = "t"
+        result = runner.invoke(cli, ["get-by-topic", "--topic", "t"], obj=mock_session)
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        assert len(data) == 1
+        assert data[0]["id"] == "id1"
+
+
+class TestGetVector:
+    def test_found(self, runner, mock_session):
+        mock_session.vector_db.entries["abc"] = {"text": "hello"}
+        result = runner.invoke(cli, ["get-vector", "--id", "abc"], obj=mock_session)
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        assert data["id"] == "abc"
+
+    def test_not_found(self, runner, mock_session):
+        result = runner.invoke(cli, ["get-vector", "--id", "nonexistent"], obj=mock_session)
+        assert result.exit_code == 3
+
+
+class TestGetGraph:
+    def test_found(self, runner, mock_session):
+        mock_session.graph_db.entries["abc"] = {"text": "hello"}
+        mock_session.graph_db.entry_topics["abc"] = "t"
+        result = runner.invoke(cli, ["get-graph", "--id", "abc"], obj=mock_session)
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        assert data["id"] == "abc"
+        assert data["topic"] == "t"
+
+    def test_not_found(self, runner, mock_session):
+        result = runner.invoke(cli, ["get-graph", "--id", "nonexistent"], obj=mock_session)
+        assert result.exit_code == 3
+
+
+class TestReviewApproveReject:
+    def test_approve(self, runner, mock_session):
+        review_add(mock_session.db_path, "t", ["id1"])
+        result = runner.invoke(cli, ["approve", "--id", "id1"], obj=mock_session)
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        assert data["status"] == "approved"
+
+    def test_approve_not_found(self, runner, mock_session):
+        result = runner.invoke(cli, ["approve", "--id", "nonexistent"], obj=mock_session)
+        assert result.exit_code == 3
+
+    def test_reject(self, runner, mock_session):
+        review_add(mock_session.db_path, "t", ["id1"])
+        result = runner.invoke(cli, ["reject", "--id", "id1"], obj=mock_session)
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        assert data["status"] == "rejected"
+
+
+class TestExport:
+    def test_export_dry_run(self, runner, mock_session):
+        mock_session.vector_db.entries["id1"] = {"text": "hello"}
+        mock_session.vector_db.topics["id1"] = "t"
+        result = runner.invoke(cli, ["export", "--output", "out.jsonl", "--dry-run"], obj=mock_session)
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        assert data["dry_run"] is True
+        assert data["would_export"] == 1
+
+    def test_export_writes_file(self, runner, mock_session, tmp_path):
+        mock_session.vector_db.entries["id1"] = {"text": "hello"}
+        mock_session.vector_db.topics["id1"] = "t"
+        mock_session.graph_db.entries["id1"] = {"text": "hello"}
+        mock_session.graph_db.entry_topics["id1"] = "t"
+        out = str(tmp_path / "out.jsonl")
+        result = runner.invoke(cli, ["export", "--output", out], obj=mock_session)
+        assert result.exit_code == 0
+        with open(out) as f:
+            lines = f.readlines()
+        assert len(lines) == 1
+        row = json.loads(lines[0])
+        assert row["id"] == "id1"
+        assert row["topic"] == "t"
+
+    def test_export_with_field_filter(self, runner, mock_session, tmp_path):
+        mock_session.vector_db.entries["id1"] = {"text": "hello", "extra": "x"}
+        mock_session.vector_db.topics["id1"] = "t"
+        mock_session.graph_db.entries["id1"] = {"text": "hello"}
+        mock_session.graph_db.entry_topics["id1"] = "t"
+        out = str(tmp_path / "out.jsonl")
+        result = runner.invoke(cli, ["export", "--output", out, "--fields", "text"], obj=mock_session)
+        assert result.exit_code == 0
+        with open(out) as f:
+            row = json.loads(f.readline())
+        assert "text" in row
+        assert "extra" not in row
+        assert "id" not in row

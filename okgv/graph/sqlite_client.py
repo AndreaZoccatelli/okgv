@@ -285,10 +285,14 @@ class SQLiteGraphDB:
         ).fetchall()
 
         for (old_path,) in affected:
+            # Replace source prefix with new_path, keeping the suffix.
+            # e.g. source="a/b", new_path="c/b", old_path="a/b/x" -> "c/b/x"
             updated_path = new_path + old_path[len(source) :]
             if old_path == source:
+                # Root of the moved subtree: parent is the destination topic
                 new_parent = destination
             else:
+                # Descendant: rewrite its parent path with the same prefix swap
                 old_parent = old_path.rsplit("/", 1)[0]
                 new_parent = new_path + old_parent[len(source) :]
             self._execute(
@@ -302,6 +306,7 @@ class SQLiteGraphDB:
             (source, source + "/%"),
         ).fetchall()
         for eid, old_topic in entries_affected:
+            # Same prefix swap for entry topic paths
             updated_topic = new_path + old_topic[len(source) :]
             self._execute(
                 "UPDATE entries SET topic = ? WHERE id = ?",

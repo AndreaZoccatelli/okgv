@@ -138,11 +138,11 @@ okgv review --recover-rejected             # set rejected back to pending
 # Query submission log
 okgv log
 okgv log --topic algebra --limit 50
-okgv log --after 2026-05-30T00:00:00
+okgv log --after 2025-01-15T00:00:00
 okgv log --count
 
 # Undo recent submissions
-okgv undo 2026-05-30T12:00:00
+okgv undo 2025-01-15T12:00:00
 
 # Find and fix cross-DB inconsistencies
 okgv reconcile --dry-run
@@ -327,14 +327,14 @@ Every `submit` appends to `okgv.db` (SQLite with WAL mode). The same file stores
 log table:
 | id | timestamp                    | topic           | entry_id |
 |----|------------------------------|-----------------|----------|
-| 1  | 2026-05-30T12:00:00+00:00    | algebra/basics  | uuid1    |
-| 2  | 2026-05-30T12:00:00+00:00    | algebra/basics  | uuid2    |
+| 1  | 2025-01-15T12:00:00+00:00    | algebra/basics  | uuid1    |
+| 2  | 2025-01-15T12:00:00+00:00    | algebra/basics  | uuid2    |
 
 review table:
 | entry_id | topic          | status   | created_at                  | reviewed_at                 |
 |----------|----------------|----------|-----------------------------|-----------------------------|
-| uuid1    | algebra/basics | approved | 2026-05-30T12:00:00+00:00   | 2026-05-30T14:00:00+00:00   |
-| uuid2    | algebra/basics | pending  | 2026-05-30T12:00:00+00:00   |                             |
+| uuid1    | algebra/basics | approved | 2025-01-15T12:00:00+00:00   | 2025-01-15T14:00:00+00:00   |
+| uuid2    | algebra/basics | pending  | 2025-01-15T12:00:00+00:00   |                             |
 ```
 
 Query with `okgv log`. Timestamps are stored in UTC, displayed in local time. Used by `undo` to roll back submissions.
