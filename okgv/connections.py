@@ -4,7 +4,9 @@ import os
 import time
 
 from okgv.embedding import make_embedder
-from okgv.graph.client import Neo4jGraphDB
+from pathlib import Path
+
+from okgv.graph.sqlite_client import SQLiteGraphDB
 from okgv.helpers import EXIT_CONNECTION, env_int, err
 from okgv.protocols import EntrySchema, GraphDB, VectorDB
 from okgv.vector.client import WeaviateVectorDB
@@ -34,15 +36,8 @@ def _retry_connect(fn, label: str):
     )
 
 
-def create_graph_db() -> GraphDB:
-    def _connect():
-        return Neo4jGraphDB(
-            uri=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
-            user=os.getenv("NEO4J_USER", "neo4j"),
-            password=os.getenv("NEO4J_PASSWORD", "password"),
-            database=os.getenv("NEO4J_DATABASE", "neo4j"),
-        )
-    return _retry_connect(_connect, "graph_db")
+def create_graph_db(db_path: str | Path) -> GraphDB:
+    return SQLiteGraphDB(db_path)
 
 
 def create_vector_db(schema: EntrySchema) -> VectorDB:

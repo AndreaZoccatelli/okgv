@@ -274,5 +274,5 @@ def session(graph_db, vector_db, schema, tmp_path):
         vector_db=vector_db,
         embedder=fake_embedder,
         schema=schema,
-        log_db=tmp_path / "log.db",
+        db_path=tmp_path / "okgv.db",
     )

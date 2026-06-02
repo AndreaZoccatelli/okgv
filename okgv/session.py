@@ -10,7 +10,7 @@ from okgv.protocols import EntrySchema
 
 
 class Session:
-    """Holds DB connections, schema, embedder, and log file path.
+    """Holds DB connections, schema, embedder, and database path.
 
     All properties are lazily initialized on first access.
     For testing, pass pre-built objects to __init__ to skip real connections.
@@ -22,13 +22,13 @@ class Session:
         vector_db=None,
         embedder: Callable | None = None,
         schema: EntrySchema | None = None,
-        log_db: Path | None = None,
+        db_path: Path | None = None,
     ):
         self._graph_db = graph_db
         self._vector_db = vector_db
         self._embedder = embedder
         self._schema = schema
-        self._log_db = log_db
+        self._db_path = db_path
         self._owns_connections = graph_db is None and vector_db is None
 
     @property
@@ -44,7 +44,7 @@ class Session:
         if self._graph_db is None:
             from okgv.connections import create_graph_db
 
-            self._graph_db = create_graph_db()
+            self._graph_db = create_graph_db(self.db_path)
         return self._graph_db
 
     @property
@@ -64,18 +64,18 @@ class Session:
         return self._embedder
 
     @property
-    def log_db(self) -> Path:
-        if self._log_db is None:
-            custom = os.getenv("OKGV_LOG")
+    def db_path(self) -> Path:
+        if self._db_path is None:
+            custom = os.getenv("OKGV_DB")
             if custom:
                 p = Path(custom)
                 if p.is_dir() or custom.endswith("/"):
-                    self._log_db = p / "log.db"
+                    self._db_path = p / "okgv.db"
                 else:
-                    self._log_db = p
+                    self._db_path = p
             else:
-                self._log_db = Path.cwd() / "log.db"
-        return self._log_db
+                self._db_path = Path.cwd() / "okgv.db"
+        return self._db_path
 
     @property
     def review_enabled(self) -> bool:

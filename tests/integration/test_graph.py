@@ -1,4 +1,4 @@
-"""Integration tests for Neo4j GraphDB client."""
+"""Integration tests for SQLite GraphDB client."""
 
 import pytest
 

@@ -1,13 +1,10 @@
 """Integration test fixtures — real DB connections.
 
-Skip all tests if DBs are unavailable.
 Uses DEDICATED test databases to avoid polluting real data:
-  - Neo4j: database "okgv_test" (override with NEO4J_TEST_DATABASE)
+  - SQLite: in-memory database for graph tests
   - Weaviate: random collection name per run (okgv_test_<hex>)
 
 Env vars (defaults match local dev setup):
-  NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
-  NEO4J_TEST_DATABASE (default: "okgv_test")
   WEAVIATE_HOST, WEAVIATE_PORT, WEAVIATE_GRPC_PORT
 """
 
@@ -32,42 +29,17 @@ def _test_collection_name() -> str:
     return f"okgv_test_{uuid.uuid4().hex[:8]}"
 
 
-# ── Neo4j ──────────────────────────────────────────────────────────────
+# ── SQLite Graph ──────────────────────────────────────────────────────
 
 
-NEO4J_TEST_DB = os.getenv("NEO4J_TEST_DATABASE", "okgv-test")
-
-
-@pytest.fixture(scope="session")
+@pytest.fixture
 def graph_db():
-    """Real Neo4j connection using dedicated test database. Skips if unavailable.
+    """In-memory SQLite graph DB for testing."""
+    from okgv.graph.sqlite_client import SQLiteGraphDB
 
-    IMPORTANT: Uses database "okgv_test" by default, NOT "neo4j".
-    Create it in Neo4j Desktop: CREATE DATABASE okgv_test IF NOT EXISTS
-    """
-    try:
-        from okgv.graph.client import Neo4jGraphDB
-
-        db = Neo4jGraphDB(
-            uri=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
-            user=os.getenv("NEO4J_USER", "neo4j"),
-            password=os.getenv("NEO4J_PASSWORD", "password"),
-            database=NEO4J_TEST_DB,
-        )
-    except Exception as e:
-        pytest.skip(f"Neo4j unavailable (database={NEO4J_TEST_DB}): {e}")
+    db = SQLiteGraphDB(":memory:")
     yield db
-    # Cleanup: remove all test nodes
-    with db._session() as session:
-        session.run("MATCH (n) DETACH DELETE n")
     db.close()
-
-
-@pytest.fixture(autouse=True)
-def _clean_graph(graph_db):
-    """Wipe graph before each test."""
-    with graph_db._session() as session:
-        session.run("MATCH (n) DETACH DELETE n")
 
 
 # ── Weaviate ───────────────────────────────────────────────────────────

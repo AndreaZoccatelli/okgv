@@ -1,3 +1,3 @@
-from .client import Neo4jGraphDB
+from .sqlite_client import SQLiteGraphDB
 
-__all__ = ["Neo4jGraphDB"]
+__all__ = ["SQLiteGraphDB"]

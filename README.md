@@ -16,14 +16,14 @@ okgv create-structure --file topics.json
 
 ## Architecture
 
-Two databases, each with a role:
+Two storage layers:
 
-- **Neo4j** — relationships: topics, sub-topics, entries. Visual exploration via Neo4j Desktop.
+- **SQLite** — topics, sub-topics, entries, submission log, review state. All local, zero setup.
 - **Weaviate** — vectors: entry embeddings, similarity search.
 
-Every entry lives in both DBs, linked by a deterministic UUID5 (computed from canonical JSON of the entry content).
+Every entry lives in both stores, linked by a deterministic UUID5 (computed from canonical JSON of the entry content).
 
-A local SQLite file (`log.db`) tracks submissions and review state.
+Use `okgv tree` to visualize the topic hierarchy in the terminal.
 
 ### Topic Structure
 
@@ -55,7 +55,7 @@ Entries can live at any level. Queries on a topic are recursive — include all 
    → agent decides: novel enough → submit, too similar → regenerate
 
 5. okgv submit --topic <topic> --entry '<json>' [--review]
-   → upserted into both DBs, logged to log.db
+   → upserted into both DBs, logged to okgv.db
    → optionally flagged for review
 ```
 
@@ -79,6 +79,7 @@ All output is JSON to stdout. Logs go to stderr.
 | `submit-batch` | Batch upsert (single model load). `--review` to flag for review |
 | `move-topic` | Move topic/subtopic under different parent. `--dry-run` to preview |
 | `move-entry` | Move entry to different topic. `--dry-run` to preview |
+| `tree` | Visualize topic tree in terminal. `--counts`, `--export dot\|json` |
 | `get-by-topic` | Fetch sample entries for a topic |
 | `get-vector` | Fetch entry from vector DB by ID |
 | `get-graph` | Fetch entry from graph DB by ID |
@@ -154,17 +155,6 @@ okgv purge --confirm "delete all"
 
 ## Setup
 
-### Neo4j
-
-Neo4j Desktop recommended — provides visual graph exploration.
-
-1. Download [Neo4j Desktop](https://neo4j.com/download/)
-2. Create a Project → add local DBMS (5.x recommended)
-3. Set password, start DBMS
-4. Default connection: `bolt://localhost:7687`, user `neo4j`
-
-The configured database is validated on startup — if it doesn't exist, okgv fails with a clear error message.
-
 ### Weaviate
 
 Follow the [official installation guide](https://weaviate.io/developers/weaviate/installation). Docker recommended for local development.
@@ -178,17 +168,13 @@ All via environment variables. A `.env` file in the working directory is **auto-
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `OKGV_SCHEMA` | built-in QA schema | `module:ClassName` schema specifier |
-| `NEO4J_URI` | `bolt://localhost:7687` | Neo4j connection |
-| `NEO4J_USER` | `neo4j` | |
-| `NEO4J_PASSWORD` | `password` | |
-| `NEO4J_DATABASE` | `neo4j` | Database name in Neo4j Desktop |
+| `OKGV_DB` | `./okgv.db` | Path to SQLite database (graph + log + review) |
 | `WEAVIATE_HOST` | `localhost` | |
 | `WEAVIATE_PORT` | `8080` | HTTP port |
 | `WEAVIATE_GRPC_PORT` | `50051` | gRPC port |
 | `WEAVIATE_COLLECTION` | `knowledge_base` | Collection name for entries |
 | `WEAVIATE_API_KEY` | (none) | Optional API key |
 | `EMBED_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model |
-| `OKGV_LOG` | `./log.db` | Path to log + review SQLite file |
 | `OKGV_REVIEW` | `none` | Default review mode: `none` or `all` |
 
 ## Entry Schema
@@ -335,7 +321,7 @@ Exit codes:
 
 ## Session Logging
 
-Every `submit` appends to `log.db` (SQLite with WAL mode). The same file also stores the review queue.
+Every `submit` appends to `okgv.db` (SQLite with WAL mode). The same file stores the graph (topics + entries), submission log, and review queue.
 
 ```
 log table:
@@ -351,7 +337,7 @@ review table:
 | uuid2    | algebra/basics | pending  | 2026-05-30T12:00:00+00:00   |                             |
 ```
 
-Query with `okgv log`. Timestamps are stored in UTC, displayed in local time. Used by `undo` to roll back submissions. Set `OKGV_LOG` env var to customize path.
+Query with `okgv log`. Timestamps are stored in UTC, displayed in local time. Used by `undo` to roll back submissions.
 
 ## Reliability
 
@@ -369,7 +355,7 @@ Per-operation retries (up to 2 retries with backoff) are applied to all read que
 
 ### Cross-DB Consistency
 
-Every entry lives in both Neo4j and Weaviate. The write order ensures safe recovery:
+Every entry lives in both SQLite and Weaviate. The write order ensures safe recovery:
 
 | Operation | Strategy |
 |-----------|----------|

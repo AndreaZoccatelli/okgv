@@ -76,6 +76,68 @@ def init():
         output({"initialized": False, "message": "All files already exist", "created": []})
 
 
+@cli.command()
+@click.option("--root", default=None, help="Start from this topic path. Default: full tree.")
+@click.option("--counts", is_flag=True, default=False, help="Show entry counts per node.")
+@click.option("--export", "export_fmt", type=click.Choice(["dot", "json"]), default=None, help="Export format: dot (Graphviz) or json.")
+@click.pass_obj
+def tree(session: Session, root: str | None, counts: bool, export_fmt: str | None):
+    """Display the topic tree visually in the terminal."""
+    tree_data = session.graph_db.get_topic_tree(root=root)
+    if not tree_data:
+        if root:
+            err("not_found", detail=f"Topic '{root}' not found or has no subtopics", exit_code=EXIT_NOT_FOUND)
+        else:
+            err("no_topics", detail="No topics found", exit_code=EXIT_NOT_FOUND)
+
+    if export_fmt == "json":
+        output(tree_data)
+        return
+
+    if export_fmt == "dot":
+        lines = ["digraph topics {", "  rankdir=TB;", "  node [shape=box];"]
+
+        def _dot(subtree: dict, parent: str | None = None):
+            for name, children in subtree.items():
+                node_id = name.replace("/", "_").replace("-", "_")
+                lines.append(f'  "{node_id}" [label="{name}"];')
+                if parent:
+                    lines.append(f'  "{parent}" -> "{node_id}";')
+                _dot(children, node_id)
+
+        _dot(tree_data)
+        lines.append("}")
+        click.echo("\n".join(lines))
+        return
+
+    # Terminal display with rich.tree
+    from rich.console import Console
+    from rich.tree import Tree as RichTree
+
+    count_map = {}
+    if counts:
+        def _collect_counts(subtree: dict, prefix: str | None = None):
+            for name, children in subtree.items():
+                path = f"{prefix}/{name}" if prefix else name
+                count_map[name] = len(session.graph_db.get_entry_ids_for_topic(path))
+                _collect_counts(children, path)
+        _collect_counts(tree_data)
+
+    def _build(subtree: dict, parent_tree: RichTree, prefix: str | None = None):
+        for name, children in subtree.items():
+            label = name
+            if counts and name in count_map:
+                label = f"{name} [dim]({count_map[name]})[/dim]"
+            branch = parent_tree.add(label)
+            path = f"{prefix}/{name}" if prefix else name
+            _build(children, branch, path)
+
+    label = root or "topics"
+    rich_tree = RichTree(f"[bold]{label}[/bold]")
+    _build(tree_data, rich_tree)
+    Console(stderr=True).print(rich_tree)
+
+
 @cli.command(name="get-structure")
 @click.option("--root", default=None, help="Start from this topic path. Default: full tree.")
 @click.option("--depth", default=None, type=int, help="Max nesting levels to return. Default: unlimited.")
@@ -277,10 +339,10 @@ def submit(session: Session, topic: str, entry: str, overwrite: bool, review: bo
         )
     except EntryError as e:
         return err("missing_field", detail=str(e), exit_code=EXIT_USAGE)
-    log_session(session.log_db, topic, [eid])
+    log_session(session.db_path, topic, [eid])
     needs_review = review if review is not None else session.review_enabled
     if needs_review:
-        review_add(session.log_db, topic, [eid])
+        review_add(session.db_path, topic, [eid])
     output({"id": eid, "submitted": True, "review": needs_review})
 
 
@@ -408,10 +470,10 @@ def submit_batch(session: Session, topic: str, entries: str, overwrite: bool, re
         for f in failures:
             results.append({"id": f["id"], "submitted": False, "error": f["error"]})
         if inserted_ids:
-            log_session(session.log_db, topic, inserted_ids)
+            log_session(session.db_path, topic, inserted_ids)
             needs_review = review if review is not None else session.review_enabled
             if needs_review:
-                review_add(session.log_db, topic, inserted_ids)
+                review_add(session.db_path, topic, inserted_ids)
 
     output(results)
 
@@ -574,7 +636,7 @@ def get_graph(session: Session, entry_id: str):
 @click.pass_obj
 def review_cmd(session: Session, topic: str | None, status: str, limit: int, offset: int, count: bool, export_path: str | None, import_path: str | None, tui: bool, purge_rejected: bool, dry_run: bool):
     """Query the review queue, export/import decisions, or purge rejected entries."""
-    log_db = session.log_db
+    log_db = session.db_path
 
     if tui:
         from okgv.tui import run_tui
@@ -653,7 +715,7 @@ def review_cmd(session: Session, topic: str | None, status: str, limit: int, off
 @click.pass_obj
 def approve(session: Session, entry_id: str):
     """Mark entry as approved in the review queue."""
-    updated = review_update(session.log_db, [entry_id], "approved")
+    updated = review_update(session.db_path, [entry_id], "approved")
     if updated == 0:
         err("not_found", detail=f"Entry '{entry_id}' not in review queue", exit_code=EXIT_NOT_FOUND)
     output({"id": entry_id, "status": "approved"})
@@ -664,7 +726,7 @@ def approve(session: Session, entry_id: str):
 @click.pass_obj
 def reject(session: Session, entry_id: str):
     """Mark entry as rejected in the review queue."""
-    updated = review_update(session.log_db, [entry_id], "rejected")
+    updated = review_update(session.db_path, [entry_id], "rejected")
     if updated == 0:
         err("not_found", detail=f"Entry '{entry_id}' not in review queue", exit_code=EXIT_NOT_FOUND)
     output({"id": entry_id, "status": "rejected"})
@@ -682,7 +744,7 @@ def log_cmd(session: Session, topic: str | None, after: str | None, before: str 
     """Query the submission log."""
     from datetime import datetime, timezone
 
-    log_db = session.log_db
+    log_db = session.db_path
     if not log_db.exists():
         err("no_log", detail="log.db not found — no submissions yet", exit_code=EXIT_NOT_FOUND)
 
@@ -721,7 +783,7 @@ def undo(session: Session, timestamp: str, dry_run: bool):
     """Delete all entries submitted after TIMESTAMP from both DBs and log."""
     from datetime import datetime, timezone
 
-    log_db = session.log_db
+    log_db = session.db_path
     try:
         cutoff = datetime.fromisoformat(timestamp)
     except ValueError as e:
@@ -768,7 +830,7 @@ def undo(session: Session, timestamp: str, dry_run: bool):
     log(f"Batch deleting {len(ids_to_delete)} entries from graph DB...")
     graph_db.delete_entries(ids_to_delete)
     log_remove_entries(log_db, ids_to_delete)
-    review_remove_entries(session.log_db, ids_to_delete)
+    review_remove_entries(session.db_path, ids_to_delete)
 
     output({"deleted": ids_to_delete, "count": len(ids_to_delete)})
 
@@ -838,7 +900,7 @@ def purge(session: Session, confirm: str | None, dry_run: bool):
 
     graph_db = session.graph_db
     vector_db = session.vector_db
-    log_db = session.log_db
+    log_db = session.db_path
 
     if dry_run:
         vector_count = sum(len(chunk) for chunk in vector_db.iter_entry_ids())

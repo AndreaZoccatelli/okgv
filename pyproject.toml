@@ -9,7 +9,6 @@ description = "Organizing knowledge: graphs and vectors"
 requires-python = ">=3.11"
 dependencies = [
     "click",
-    "neo4j",
     "weaviate-client",
     "sentence-transformers",
     "python-dotenv",
@@ -30,6 +29,6 @@ okgv = ["py.typed"]
 
 [tool.pytest.ini_options]
 markers = [
-    "integration: tests requiring real DB connections (Neo4j, Weaviate)",
+    "integration: tests requiring real DB connections (Weaviate)",
 ]
 testpaths = ["tests"]

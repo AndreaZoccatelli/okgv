@@ -6,7 +6,7 @@ Synthetic training data for fine-tuning LLM intent classifiers. Each entry is a 
 
 ```bash
 cd example
-# Edit .env with your Neo4j password and connection details
+# Edit .env with your connection details
 okgv create-structure --file topics.json
 ```
 
