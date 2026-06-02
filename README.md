@@ -1,11 +1,11 @@
-# okgv — organizing knowledge: graphs and vectors
+# okgv - organizing knowledge: graphs and vectors
 
 [![Tests](https://github.com/AndreaZoccatelli/okgv/actions/workflows/tests.yml/badge.svg)](https://github.com/AndreaZoccatelli/okgv/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 CLI for AI agents to build self-organized synthetic knowledge bases.
 
-Coding agents generate entries, okgv handles deduplication (via vector similarity) and organization (via graph structure). The agent owns the decision loop — okgv provides the tools.
+Coding agents generate entries, okgv handles deduplication (via vector similarity) and organization (via graph structure). The agent owns the decision loop, okgv provides the tools.
 
 ## Quickstart
 
@@ -21,7 +21,7 @@ okgv create-structure --file topics.json
 
 Single storage layer:
 
-- **SQLite** (`okgv.db`) — topics, entries, vectors (via [sqlite-vec](https://github.com/asg017/sqlite-vec)), submission log, review state. All local, zero setup, fully portable single file.
+- **SQLite** (`okgv.db`): topics, entries, vectors (via [sqlite-vec](https://github.com/asg017/sqlite-vec)), submission log, review state. All local, zero setup, fully portable single file.
 
 Every entry is identified by a deterministic UUID5 (computed from canonical JSON of the entry content).
 
@@ -39,7 +39,7 @@ algebra                          → path: "algebra"
 └── abstract_algebra             → path: "algebra/abstract_algebra"
 ```
 
-Entries can live at any level. Queries on a topic are recursive — include all descendant entries.
+Entries can live at any level. Queries on a topic are recursive, including all descendant entries.
 
 ## Agent Workflow
 
@@ -168,15 +168,15 @@ No external services required. Everything runs locally via SQLite and sqlite-vec
 
 ```bash
 pip install -e ".[embeddings]"    # with sentence-transformers (default embedding backend)
-pip install -e .                  # core only — bring your own embedding backend
+pip install -e .                  # core only, bring your own embedding backend
 ```
 
 Optional extras:
 
 | Extra | What it adds |
 |-------|-------------|
-| `embeddings` | `sentence-transformers` — local embedding via transformer models |
-| `tui` | `textual` — interactive terminal UI for review and browsing |
+| `embeddings` | `sentence-transformers`, local embedding via transformer models |
+| `tui` | `textual`, interactive terminal UI for review and browsing |
 
 Install multiple: `pip install -e ".[embeddings,tui]"`
 
@@ -207,7 +207,7 @@ register_backend("my-backend", my_embedder_factory)
 
 ### Configuration
 
-All via environment variables. A `.env` file in the working directory is **auto-loaded** on every `okgv` command (via `python-dotenv`). Only the `.env` in the current directory is loaded — no parent directory traversal.
+All via environment variables. A `.env` file in the working directory is **auto-loaded** on every `okgv` command (via `python-dotenv`). Only the `.env` in the current directory is loaded, no parent directory traversal.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
@@ -221,8 +221,8 @@ All via environment variables. A `.env` file in the working directory is **auto-
 
 okgv does not assume a fixed entry structure. Define your own with two classes:
 
-1. **Entry class** — field extraction from raw JSON + computed properties
-2. **Schema class** — DB mapping (what goes where, what to embed)
+1. **Entry class**: field extraction from raw JSON + computed properties
+2. **Schema class**: DB mapping (what goes where, what to embed)
 
 Run `okgv init` to get a template, or write from scratch:
 
@@ -276,7 +276,7 @@ Set in `.env`:
 OKGV_SCHEMA=schema:MySchema
 ```
 
-Format: `module:ClassName` — module resolved relative to cwd.
+Format: `module:ClassName`, module resolved relative to cwd.
 
 ### Schema Validation
 
@@ -286,16 +286,16 @@ At runtime, okgv validates:
 
 ## Review System
 
-Entries can be flagged for review at submit time. Review is an external tracking layer — it does not block entry insertion. Entries always go into both DBs immediately.
+Entries can be flagged for review at submit time. Review is an external tracking layer, it does not block entry insertion. Entries always go into both DBs immediately.
 
 ### Review modes
 
-- `OKGV_REVIEW=none` (default) — entries skip review unless `--review` is passed
-- `OKGV_REVIEW=all` — all entries flagged for review unless `--no-review` is passed
+- `OKGV_REVIEW=none` (default): entries skip review unless `--review` is passed
+- `OKGV_REVIEW=all`: all entries flagged for review unless `--no-review` is passed
 
 ### Review workflow
 
-**For agents** — CLI commands:
+**For agents**, CLI commands:
 ```bash
 okgv review --topic algebra              # list pending entries
 okgv approve --id <uuid>
@@ -304,7 +304,7 @@ okgv review --purge-rejected             # delete rejected from all DBs
 okgv review --recover-rejected           # set rejected back to pending
 ```
 
-**For humans** — interactive TUI or export/import:
+**For humans**, interactive TUI or export/import:
 ```bash
 # Terminal UI with staged changes (requires: pip install okgv[tui])
 okgv review --tui --topic algebra
@@ -319,7 +319,7 @@ okgv review --import review.json
 
 | Key | Action |
 |-----|--------|
-| `a` | Approve entry (toggle — press again to revert to pending) |
+| `a` | Approve entry (toggle, press again to revert to pending) |
 | `r` | Reject entry (toggle) |
 | `u` | Undo mark (revert to pending) |
 | `s` | Skip / next entry |
@@ -328,7 +328,7 @@ okgv review --import review.json
 | `v` | Recover rejected entries (set back to pending) |
 | `q` | Quit and discard unsaved changes |
 
-Decisions are staged locally — nothing is written until `c` is pressed. Entries stay visible in the table with colored status indicators. The status bar shows pending/approved/rejected counts and unsaved changes.
+Decisions are staged locally, nothing is written until `c` is pressed. Entries stay visible in the table with colored status indicators. The status bar shows pending/approved/rejected counts and unsaved changes.
 
 ### Review states
 
@@ -384,11 +384,11 @@ Query with `okgv log`. Timestamps are stored in UTC, displayed in local time. Us
 
 ## Similarity Scoping
 
-**Similarity search is scoped to the exact target topic.** When checking for duplicates before submitting to `topic1/sub_topic1`, only entries already in `topic1/sub_topic1` are compared — entries in sibling topics like `topic1/sub_topic2` are not considered.
+**Similarity search is scoped to the exact target topic.** When checking for duplicates before submitting to `topic1/sub_topic1`, only entries already in `topic1/sub_topic1` are compared. Entries in sibling topics like `topic1/sub_topic2` are not considered.
 
 This is by design for performance (native sqlite-vec pre-filtering) and correctness (each topic has its own semantic scope). It means:
 
-- **Same topic name, different parent = fine.** `dogs/legs` and `cats/legs` both contain "legs" entries but about different animals — no cross-dedup needed.
+- **Same topic name, different parent = fine.** `dogs/legs` and `cats/legs` both contain "legs" entries but about different animals, no cross-dedup needed.
 - **The full path determines semantic scope.** A well-structured topic tree naturally avoids ambiguity.
 - **Avoid overlapping topics.** If `anatomy/limbs` and `dogs/legs` could contain similar entries, design the tree so each leaf has a clear, non-overlapping scope.
 
