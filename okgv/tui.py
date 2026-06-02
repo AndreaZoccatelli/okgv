@@ -71,13 +71,13 @@ class ReviewApp(App):
 
     def __init__(
         self,
-        log_db: Path,
+        db_path: Path,
         vector_db: VectorDB,
         topic: str | None = None,
         limit: int = 100,
     ):
         super().__init__()
-        self._log_db = log_db
+        self._db_path = db_path
         self._vector_db = vector_db
         self._topic = topic
         self._limit = limit
@@ -107,7 +107,7 @@ class ReviewApp(App):
 
     def _load_entries(self) -> None:
         self._entries = review_list(
-            self._log_db, status="pending", topic=self._topic, limit=self._limit,
+            self._db_path, status="pending", topic=self._topic, limit=self._limit,
         )
         if self._entries:
             entry_ids = [e["entry_id"] for e in self._entries]
@@ -204,9 +204,9 @@ class ReviewApp(App):
         approved = [eid for eid, s in self._staged.items() if s == "approved"]
         rejected = [eid for eid, s in self._staged.items() if s == "rejected"]
         if approved:
-            review_update(self._log_db, approved, "approved")
+            review_update(self._db_path, approved, "approved")
         if rejected:
-            review_update(self._log_db, rejected, "rejected")
+            review_update(self._db_path, rejected, "rejected")
         total = len(approved) + len(rejected)
         self.notify(f"Committed {total} decisions ({len(approved)} approved, {len(rejected)} rejected)")
         # Remove committed entries from list
@@ -234,6 +234,6 @@ class ReviewApp(App):
             self._show_detail(str(event.row_key.value))
 
 
-def run_tui(log_db: Path, vector_db: VectorDB, topic: str | None = None, limit: int = 100) -> None:
-    app = ReviewApp(log_db=log_db, vector_db=vector_db, topic=topic, limit=limit)
+def run_tui(db_path: Path, vector_db: VectorDB, topic: str | None = None, limit: int = 100) -> None:
+    app = ReviewApp(db_path=db_path, vector_db=vector_db, topic=topic, limit=limit)
     app.run()

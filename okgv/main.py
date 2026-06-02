@@ -636,11 +636,11 @@ def get_graph(session: Session, entry_id: str):
 @click.pass_obj
 def review_cmd(session: Session, topic: str | None, status: str, limit: int, offset: int, count: bool, export_path: str | None, import_path: str | None, tui: bool, purge_rejected: bool, dry_run: bool):
     """Query the review queue, export/import decisions, or purge rejected entries."""
-    log_db = session.db_path
+    db_path = session.db_path
 
     if tui:
         from okgv.tui import run_tui
-        run_tui(log_db=log_db, vector_db=session.vector_db, topic=topic, limit=limit)
+        run_tui(db_path=db_path, vector_db=session.vector_db, topic=topic, limit=limit)
         return
 
     if import_path:
@@ -658,10 +658,10 @@ def review_cmd(session: Session, topic: str | None, status: str, limit: int, off
         rejected = [r["id"] for r in rows if r.get("status") == "rejected"]
         results = {}
         if approved:
-            review_update(log_db, approved, "approved")
+            review_update(db_path, approved, "approved")
             results["approved"] = len(approved)
         if rejected:
-            review_update(log_db, rejected, "rejected")
+            review_update(db_path, rejected, "rejected")
             results["rejected"] = len(rejected)
         skipped = len(rows) - len(approved) - len(rejected)
         if skipped:
@@ -670,7 +670,7 @@ def review_cmd(session: Session, topic: str | None, status: str, limit: int, off
         return
 
     if purge_rejected:
-        rejected_ids = review_get_rejected(log_db)
+        rejected_ids = review_get_rejected(db_path)
         if not rejected_ids:
             output({"purged": 0})
             return
@@ -681,13 +681,13 @@ def review_cmd(session: Session, topic: str | None, status: str, limit: int, off
         session.vector_db.delete_by_ids(rejected_ids)
         log(f"Deleting {len(rejected_ids)} rejected entries from graph DB...")
         session.graph_db.delete_entries(rejected_ids)
-        log_remove_entries(log_db, rejected_ids)
-        review_purge_rejected(log_db)
+        log_remove_entries(db_path, rejected_ids)
+        review_purge_rejected(db_path)
         output({"purged": len(rejected_ids), "ids": rejected_ids})
         return
 
     if export_path:
-        entries = review_list(log_db, status=status, topic=topic, limit=limit, offset=offset)
+        entries = review_list(db_path, status=status, topic=topic, limit=limit, offset=offset)
         if not entries:
             err("no_entries", detail="No entries match the filter", exit_code=EXIT_NOT_FOUND)
         entry_ids = [e["entry_id"] for e in entries]
@@ -704,9 +704,9 @@ def review_cmd(session: Session, topic: str | None, status: str, limit: int, off
         return
 
     if count:
-        output(review_count(log_db, topic=topic))
+        output(review_count(db_path, topic=topic))
     else:
-        entries = review_list(log_db, status=status, topic=topic, limit=limit, offset=offset)
+        entries = review_list(db_path, status=status, topic=topic, limit=limit, offset=offset)
         output(entries)
 
 
@@ -744,9 +744,9 @@ def log_cmd(session: Session, topic: str | None, after: str | None, before: str 
     """Query the submission log."""
     from datetime import datetime, timezone
 
-    log_db = session.db_path
-    if not log_db.exists():
-        err("no_log", detail="log.db not found — no submissions yet", exit_code=EXIT_NOT_FOUND)
+    db_path = session.db_path
+    if not db_path.exists():
+        err("no_db", detail="okgv.db not found — no submissions yet", exit_code=EXIT_NOT_FOUND)
 
     def _parse_ts(val: str, name: str) -> datetime:
         """Parse user input as local time, convert to UTC for querying."""
@@ -767,9 +767,9 @@ def log_cmd(session: Session, topic: str | None, after: str | None, before: str 
     before_dt = _parse_ts(before, "before") if before else None
 
     if count:
-        output(log_count(log_db, topic=topic, group_by_topic=topic is None))
+        output(log_count(db_path, topic=topic, group_by_topic=topic is None))
     else:
-        entries = log_query(log_db, topic=topic, after=after_dt, before=before_dt, limit=limit, offset=offset)
+        entries = log_query(db_path, topic=topic, after=after_dt, before=before_dt, limit=limit, offset=offset)
         for e in entries:
             e["timestamp"] = _to_local(e["timestamp"])
         output(entries)
@@ -783,7 +783,7 @@ def undo(session: Session, timestamp: str, dry_run: bool):
     """Delete all entries submitted after TIMESTAMP from both DBs and log."""
     from datetime import datetime, timezone
 
-    log_db = session.db_path
+    db_path = session.db_path
     try:
         cutoff = datetime.fromisoformat(timestamp)
     except ValueError as e:
@@ -798,10 +798,10 @@ def undo(session: Session, timestamp: str, dry_run: bool):
         cutoff = cutoff.replace(tzinfo=datetime.now().astimezone().tzinfo)
     cutoff = cutoff.astimezone(timezone.utc)
 
-    if not log_db.exists():
-        err("no_log", detail="log.db not found", exit_code=EXIT_NOT_FOUND)
+    if not db_path.exists():
+        err("no_db", detail="okgv.db not found", exit_code=EXIT_NOT_FOUND)
 
-    ids_to_delete = log_get_entries_after(log_db, cutoff)
+    ids_to_delete = log_get_entries_after(db_path, cutoff)
 
     if not ids_to_delete:
         output({"deleted": [], "count": 0})
@@ -829,7 +829,7 @@ def undo(session: Session, timestamp: str, dry_run: bool):
 
     log(f"Batch deleting {len(ids_to_delete)} entries from graph DB...")
     graph_db.delete_entries(ids_to_delete)
-    log_remove_entries(log_db, ids_to_delete)
+    log_remove_entries(db_path, ids_to_delete)
     review_remove_entries(session.db_path, ids_to_delete)
 
     output({"deleted": ids_to_delete, "count": len(ids_to_delete)})
@@ -900,7 +900,7 @@ def purge(session: Session, confirm: str | None, dry_run: bool):
 
     graph_db = session.graph_db
     vector_db = session.vector_db
-    log_db = session.db_path
+    db_path = session.db_path
 
     if dry_run:
         vector_count = sum(len(chunk) for chunk in vector_db.iter_entry_ids())
@@ -913,7 +913,7 @@ def purge(session: Session, confirm: str | None, dry_run: bool):
             "graph_topics": topic_count,
             "vector_db_collection": vector_db.collection_name,
             "vector_entries": vector_count,
-            "log_exists": log_db.exists(),
+            "db_exists": db_path.exists(),
         })
         return
 
@@ -925,9 +925,9 @@ def purge(session: Session, confirm: str | None, dry_run: bool):
     graph_db.delete_all()
 
     import os
-    if log_db.exists():
+    if db_path.exists():
         log("Clearing log + review DB...")
-        os.remove(log_db)
+        os.remove(db_path)
 
     output({"purged": True})
 

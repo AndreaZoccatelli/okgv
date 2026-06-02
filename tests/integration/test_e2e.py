@@ -209,14 +209,14 @@ class TestLogE2E:
     def test_log_and_query(self, graph_db, vector_db, schema, tmp_path):
         from datetime import datetime, timezone
 
-        log_db = tmp_path / "log.db"
+        db_path = tmp_path / "okgv.db"
         graph_db.create_topic("t")
 
         raw = {"text": "logged entry"}
         eid = upsert_entry(schema, graph_db, vector_db, "t", raw, fake_embedder)
-        log_session(log_db, "t", [eid])
+        log_session(db_path, "t", [eid])
 
         # Query entries after epoch — should find our entry
         cutoff = datetime(2000, 1, 1, tzinfo=timezone.utc)
-        ids = log_get_entries_after(log_db, cutoff)
+        ids = log_get_entries_after(db_path, cutoff)
         assert eid in ids

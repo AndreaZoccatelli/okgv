@@ -144,11 +144,11 @@ class TestBuildEntry:
 
 class TestLogSession:
     def test_log_creates_db_and_inserts(self, tmp_path):
-        log_db = tmp_path / "log.db"
-        core.log_session(log_db, "topic_a", ["id1", "id2"])
+        db_path = tmp_path / "okgv.db"
+        core.log_session(db_path, "topic_a", ["id1", "id2"])
 
         import sqlite3
-        conn = sqlite3.connect(str(log_db))
+        conn = sqlite3.connect(str(db_path))
         rows = conn.execute("SELECT topic, entry_id FROM log ORDER BY id").fetchall()
         conn.close()
         assert len(rows) == 2
@@ -156,12 +156,12 @@ class TestLogSession:
         assert rows[1] == ("topic_a", "id2")
 
     def test_log_appends_to_existing(self, tmp_path):
-        log_db = tmp_path / "log.db"
-        core.log_session(log_db, "old_topic", ["x"])
-        core.log_session(log_db, "new_topic", ["id1"])
+        db_path = tmp_path / "okgv.db"
+        core.log_session(db_path, "old_topic", ["x"])
+        core.log_session(db_path, "new_topic", ["id1"])
 
         import sqlite3
-        conn = sqlite3.connect(str(log_db))
+        conn = sqlite3.connect(str(db_path))
         rows = conn.execute("SELECT topic, entry_id FROM log ORDER BY id").fetchall()
         conn.close()
         assert len(rows) == 2
@@ -171,11 +171,11 @@ class TestLogSession:
     def test_get_entries_after(self, tmp_path):
         from datetime import datetime, timezone
 
-        log_db = tmp_path / "log.db"
-        core.log_session(log_db, "t", ["early"])
+        db_path = tmp_path / "okgv.db"
+        core.log_session(db_path, "t", ["early"])
         # Insert a row with a known future timestamp
         import sqlite3
-        conn = sqlite3.connect(str(log_db))
+        conn = sqlite3.connect(str(db_path))
         conn.execute(
             "INSERT INTO log (timestamp, topic, entry_id) VALUES (?, ?, ?)",
             ("2099-01-01T00:00:00+00:00", "t", "future"),
@@ -184,16 +184,16 @@ class TestLogSession:
         conn.close()
 
         cutoff = datetime(2098, 1, 1, tzinfo=timezone.utc)
-        result = core.log_get_entries_after(log_db, cutoff)
+        result = core.log_get_entries_after(db_path, cutoff)
         assert result == ["future"]
 
     def test_remove_entries(self, tmp_path):
-        log_db = tmp_path / "log.db"
-        core.log_session(log_db, "t", ["id1", "id2", "id3"])
-        core.log_remove_entries(log_db, ["id1", "id3"])
+        db_path = tmp_path / "okgv.db"
+        core.log_session(db_path, "t", ["id1", "id2", "id3"])
+        core.log_remove_entries(db_path, ["id1", "id3"])
 
         import sqlite3
-        conn = sqlite3.connect(str(log_db))
+        conn = sqlite3.connect(str(db_path))
         rows = conn.execute("SELECT entry_id FROM log").fetchall()
         conn.close()
         assert [r[0] for r in rows] == ["id2"]

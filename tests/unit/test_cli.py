@@ -113,11 +113,11 @@ class TestMoveEntry:
         assert data["dry_run"] is True
 
 
-def _seed_log(log_db, timestamp, topic, entry_ids):
+def _seed_log(db_path, timestamp, topic, entry_ids):
     """Insert test log entries into SQLite."""
     from okgv.core import _connect
 
-    conn = _connect(log_db)
+    conn = _connect(db_path)
     conn.executemany(
         "INSERT INTO log (timestamp, topic, entry_id) VALUES (?, ?, ?)",
         [(timestamp, topic, eid) for eid in entry_ids],
