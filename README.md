@@ -16,12 +16,11 @@ okgv create-structure --file topics.json
 
 ## Architecture
 
-Two storage layers:
+Single storage layer:
 
-- **SQLite** — topics, sub-topics, entries, submission log, review state. All local, zero setup.
-- **Weaviate** — vectors: entry embeddings, similarity search.
+- **SQLite** (`okgv.db`) — topics, entries, vectors (via [sqlite-vec](https://github.com/asg017/sqlite-vec)), submission log, review state. All local, zero setup, fully portable single file.
 
-Every entry lives in both stores, linked by a deterministic UUID5 (computed from canonical JSON of the entry content).
+Every entry is identified by a deterministic UUID5 (computed from canonical JSON of the entry content).
 
 Use `okgv tree` to visualize the topic hierarchy in the terminal.
 
@@ -157,11 +156,11 @@ okgv purge --confirm "delete all"
 
 ## Setup
 
-### Weaviate
+No external services required. Everything runs locally via SQLite and sqlite-vec.
 
-Follow the [official installation guide](https://weaviate.io/developers/weaviate/installation). Docker recommended for local development.
-
-The Weaviate collection is created automatically on first access if it doesn't exist.
+```bash
+pip install -e .
+```
 
 ### Configuration
 
@@ -170,13 +169,9 @@ All via environment variables. A `.env` file in the working directory is **auto-
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `OKGV_SCHEMA` | built-in QA schema | `module:ClassName` schema specifier |
-| `OKGV_DB` | `./okgv.db` | Path to SQLite database (graph + log + review) |
-| `WEAVIATE_HOST` | `localhost` | |
-| `WEAVIATE_PORT` | `8080` | HTTP port |
-| `WEAVIATE_GRPC_PORT` | `50051` | gRPC port |
-| `WEAVIATE_COLLECTION` | `knowledge_base` | Collection name for entries |
-| `WEAVIATE_API_KEY` | (none) | Optional API key |
+| `OKGV_DB` | `./okgv.db` | Path to SQLite database (graph + vectors + log + review) |
 | `EMBED_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model |
+| `EMBED_DIM` | auto-detect from model | Embedding dimension override |
 | `OKGV_REVIEW` | `none` | Default review mode: `none` or `all` |
 
 ## Entry Schema
@@ -326,7 +321,7 @@ Exit codes:
 
 ## Session Logging
 
-Every `submit` appends to `okgv.db` (SQLite with WAL mode). The same file stores the graph (topics + entries), submission log, and review queue.
+Every `submit` appends to `okgv.db` (SQLite with WAL mode). The same file stores the graph (topics + entries), vectors (embeddings via sqlite-vec), submission log, and review queue.
 
 ```
 log table:
@@ -344,28 +339,24 @@ review table:
 
 Query with `okgv log`. Timestamps are stored in UTC, displayed in local time. Used by `undo` to roll back submissions.
 
+## Similarity Scoping
+
+**Similarity search is scoped to the exact target topic.** When checking for duplicates before submitting to `topic1/sub_topic1`, only entries already in `topic1/sub_topic1` are compared — entries in sibling topics like `topic1/sub_topic2` are not considered.
+
+This is by design for performance (native sqlite-vec pre-filtering) and correctness (each topic has its own semantic scope). It means:
+
+- **Same topic name, different parent = fine.** `dogs/legs` and `cats/legs` both contain "legs" entries but about different animals — no cross-dedup needed.
+- **The full path determines semantic scope.** A well-structured topic tree naturally avoids ambiguity.
+- **Avoid overlapping topics.** If `anatomy/limbs` and `dogs/legs` could contain similar entries, design the tree so each leaf has a clear, non-overlapping scope.
+
 ## Reliability
 
 ### Batch Operations
 
-`submit-batch` and `similar-batch` load the embedding model once and use native Weaviate batch APIs (`insert_many`, `delete_many`) instead of per-entry round trips.
+`submit-batch` and `similar-batch` load the embedding model once and process all entries with a single model load.
 
 `undo` and `reconcile` also use batch deletes.
 
-### Connection Retry
+### Consistency
 
-Both DB connection factories retry up to 3 times with exponential backoff on transient failures.
-
-Per-operation retries (up to 2 retries with backoff) are applied to all read queries and idempotent writes (deletes, MERGE operations). Non-idempotent writes are not retried to avoid double-insertion.
-
-### Cross-DB Consistency
-
-Every entry lives in both SQLite and Weaviate. The write order ensures safe recovery:
-
-| Operation | Strategy |
-|-----------|----------|
-| **Single upsert** | Graph first → vector. If vector fails, graph entry is rolled back |
-| **Batch upsert** | Graph individually → vector batch. Failed vector entries rolled back from graph |
-| **Undo** | Vector deleted first → graph → log → review. If vector fails, nothing changed, safe to retry |
-| **Reconcile** | Chunked iteration with batch existence checks. Memory-efficient at scale. `--batch-size` controls chunk size |
-| **Purge rejected** | Vector → graph → log → review. Same safe ordering as undo |
+All data lives in a single SQLite database (`okgv.db`). Graph entries and vector entries share the same connection, so operations are atomic within a single command. Use `okgv reconcile` to detect and fix any inconsistencies between graph and vector tables.

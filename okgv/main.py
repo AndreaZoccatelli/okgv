@@ -831,26 +831,11 @@ def undo(session: Session, timestamp: str, dry_run: bool):
         output({"dry_run": True, "would_delete": ids_to_delete, "count": len(ids_to_delete)})
         return
 
-    graph_db = session.graph_db
-    vector_db = session.vector_db
-
-    # Delete vector first — if it fails, graph+log are intact and undo can be retried.
-    # If graph fails after vector succeeds, reconcile will clean up the orphans.
-    log(f"Batch deleting {len(ids_to_delete)} entries from vector DB...")
-    try:
-        vector_db.delete_by_ids(ids_to_delete)
-    except Exception as e:
-        err(
-            "undo_vector_failed",
-            detail=f"Vector DB batch delete failed: {e}. No changes were made.",
-            suggestion="Fix connection and re-run undo.",
-            exit_code=1,
-        )
-
-    log(f"Batch deleting {len(ids_to_delete)} entries from graph DB...")
-    graph_db.delete_entries(ids_to_delete)
+    log(f"Deleting {len(ids_to_delete)} entries...")
+    session.vector_db.delete_by_ids(ids_to_delete)
+    session.graph_db.delete_entries(ids_to_delete)
     log_remove_entries(db_path, ids_to_delete)
-    review_remove_entries(session.db_path, ids_to_delete)
+    review_remove_entries(db_path, ids_to_delete)
 
     output({"deleted": ids_to_delete, "count": len(ids_to_delete)})
 
@@ -860,10 +845,7 @@ def undo(session: Session, timestamp: str, dry_run: bool):
 @click.option("--batch-size", default=1000, show_default=True, help="Chunk size for iterating entry IDs.")
 @click.pass_obj
 def reconcile(session: Session, dry_run: bool, batch_size: int):
-    """Find and fix entries that exist in one DB but not the other.
-
-    Uses chunked iteration to avoid loading all IDs into memory at once.
-    """
+    """Find and fix entries that exist in graph but not vector, or vice versa."""
     graph_db = session.graph_db
     vector_db = session.vector_db
 
@@ -928,10 +910,9 @@ def purge(session: Session, confirm: str | None, dry_run: bool):
         topic_count = graph_db.count_topics()
         output({
             "dry_run": True,
-            "graph_db": graph_db.database_name,
+            "db_path": str(db_path),
             "graph_entries": graph_count,
             "graph_topics": topic_count,
-            "vector_db_collection": vector_db.collection_name,
             "vector_entries": vector_count,
             "db_exists": db_path.exists(),
         })

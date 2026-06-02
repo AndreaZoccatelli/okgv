@@ -57,7 +57,7 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 
 ### Undo & Maintenance
 - `okgv undo <ISO-timestamp> [--dry-run]` — delete all entries submitted after timestamp.
-- `okgv reconcile [--dry-run] [--batch-size N]` — find and fix entries that exist in one DB but not the other.
+- `okgv reconcile [--dry-run] [--batch-size N]` — find and fix inconsistencies between graph and vector tables.
 
 ## Conventions
 
@@ -74,8 +74,8 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 - Use `get-structure --root <topic> --depth 1` for incremental exploration of large trees.
 - Use `least-topic` to balance coverage across the knowledge base.
 - Use `topic-stats` to find underrepresented metadata combinations within a topic.
-- Always check `similar` before submitting — avoid redundant entries.
+- Always check `similar` before submitting — avoid redundant entries. Similarity checks only see entries in the target topic — design your topic tree so each leaf has a clear, non-overlapping scope.
 - Use batch commands when processing multiple entries — single model load, much faster.
 - If a topic grows too large, suggest creating subtopics to the user.
 - Use `--dry-run` on destructive commands (`undo`, `reconcile`, `move-topic`, `move-entry`) to preview before committing.
-- Use `reconcile` periodically to detect cross-DB inconsistencies.
+- Use `reconcile` periodically to detect internal inconsistencies.

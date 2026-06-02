@@ -9,7 +9,7 @@ description = "Organizing knowledge: graphs and vectors"
 requires-python = ">=3.11"
 dependencies = [
     "click",
-    "weaviate-client",
+    "sqlite-vec",
     "sentence-transformers",
     "python-dotenv",
     "textual",
@@ -29,6 +29,6 @@ okgv = ["py.typed"]
 
 [tool.pytest.ini_options]
 markers = [
-    "integration: tests requiring real DB connections (Weaviate)",
+    "integration: tests requiring real DB connections (SQLite + sqlite-vec)",
 ]
 testpaths = ["tests"]

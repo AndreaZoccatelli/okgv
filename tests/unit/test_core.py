@@ -63,25 +63,23 @@ class TestUpsertEntry:
 
 
 class TestGraphVectorConsistency:
-    def test_vector_failure_rolls_back_graph(self, graph_db, schema):
+    def test_vector_failure_raises(self, graph_db, schema):
         vector_db = MockVectorDB(fail_on_upload=True)
         raw = {"text": "will fail"}
 
         with pytest.raises(ConnectionError):
             core.upsert_entry(schema, graph_db, vector_db, "t", raw, fake_embedder)
 
-        eid = entry_id(raw)
-        assert eid not in graph_db.entries
-        assert eid in graph_db.deleted
-
-    def test_vector_failure_does_not_leave_partial_state(self, graph_db, schema):
+    def test_vector_failure_leaves_graph_entry(self, graph_db, schema):
+        """Graph entry persists on vector failure — reconcile handles cleanup."""
         vector_db = MockVectorDB(fail_on_upload=True)
         raw = {"text": "partial"}
+        eid = entry_id(raw)
 
         with pytest.raises(ConnectionError):
             core.upsert_entry(schema, graph_db, vector_db, "t", raw, fake_embedder)
 
-        assert len(graph_db.entries) == 0
+        assert eid in graph_db.entries
         assert len(vector_db.entries) == 0
 
 

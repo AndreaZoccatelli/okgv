@@ -1,21 +1,19 @@
 """Integration test fixtures — real DB connections.
 
-Uses DEDICATED test databases to avoid polluting real data:
-  - SQLite: in-memory database for graph tests
-  - Weaviate: random collection name per run (okgv_test_<hex>)
-
-Env vars (defaults match local dev setup):
-  WEAVIATE_HOST, WEAVIATE_PORT, WEAVIATE_GRPC_PORT
+Uses a shared in-memory SQLite connection with sqlite-vec for both graph and vector.
 """
 
-import os
+import sqlite3
 import uuid
 
 import pytest
+import sqlite_vec
+
+from okgv.graph.sqlite_client import SQLiteGraphDB
+from okgv.protocols import PropertyDefinition
+from okgv.vector.sqlite_client import SQLiteVectorDB
 
 pytestmark = pytest.mark.integration
-
-from okgv.protocols import PropertyDefinition
 
 # Test schema: simple text entries
 TEST_PROPERTY_DEFINITIONS = [
@@ -23,65 +21,42 @@ TEST_PROPERTY_DEFINITIONS = [
     PropertyDefinition(name="text_length", data_type="int"),
 ]
 
-
-def _test_collection_name() -> str:
-    """Unique collection name per test run to avoid collisions."""
-    return f"okgv_test_{uuid.uuid4().hex[:8]}"
+# Embedding dimension for tests
+TEST_EMBED_DIM = 384
 
 
-# ── SQLite Graph ──────────────────────────────────────────────────────
+# ── Shared connection ─────────────────────────────────────────────────
 
 
 @pytest.fixture
-def graph_db():
-    """In-memory SQLite graph DB for testing."""
-    from okgv.graph.sqlite_client import SQLiteGraphDB
-
-    db = SQLiteGraphDB(":memory:")
-    yield db
-    db.close()
-
-
-# ── Weaviate ───────────────────────────────────────────────────────────
-
-
-@pytest.fixture(scope="session")
-def vector_db():
-    """Real Weaviate connection with isolated test collection. Skips if unavailable."""
-    try:
-        from okgv.vector.client import WeaviateVectorDB
-
-        collection_name = _test_collection_name()
-        db = WeaviateVectorDB(
-            host=os.getenv("WEAVIATE_HOST", "localhost"),
-            http_port=int(os.getenv("WEAVIATE_PORT", "8080")),
-            grpc_port=int(os.getenv("WEAVIATE_GRPC_PORT", "50051")),
-            collection_name=collection_name,
-            property_definitions=TEST_PROPERTY_DEFINITIONS,
-        )
-        db.ensure_collection()
-    except Exception as e:
-        pytest.skip(f"Weaviate unavailable: {e}")
-    yield db
-    # Cleanup: drop test collection
-    try:
-        db._client.collections.delete(collection_name)
-    except Exception:
-        pass
-    db.close()
+def shared_conn():
+    """In-memory SQLite connection with sqlite-vec loaded."""
+    conn = sqlite3.connect(":memory:")
+    conn.enable_load_extension(True)
+    sqlite_vec.load(conn)
+    conn.enable_load_extension(False)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    yield conn
+    conn.close()
 
 
-@pytest.fixture(autouse=True)
-def _clean_vector(vector_db):
-    """Wipe all entries from test collection before each test."""
-    for eid in vector_db.get_all_entry_ids():
-        vector_db.delete_by_id(eid)
+@pytest.fixture
+def graph_db(shared_conn):
+    """SQLite graph DB sharing the test connection."""
+    return SQLiteGraphDB(shared_conn)
+
+
+@pytest.fixture
+def vector_db(shared_conn):
+    """SQLite vector DB sharing the test connection."""
+    return SQLiteVectorDB(shared_conn, embed_dim=TEST_EMBED_DIM)
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────
 
 
-def make_vector(dim: int = 384) -> list[float]:
+def make_vector(dim: int = TEST_EMBED_DIM) -> list[float]:
     """Generate a random-ish vector of given dimension."""
     import random
 
@@ -89,7 +64,7 @@ def make_vector(dim: int = 384) -> list[float]:
     return [random.random() for _ in range(dim)]
 
 
-def make_vector_unique(seed: int, dim: int = 384) -> list[float]:
+def make_vector_unique(seed: int, dim: int = TEST_EMBED_DIM) -> list[float]:
     """Generate a deterministic vector from seed."""
     import random
 
@@ -98,5 +73,5 @@ def make_vector_unique(seed: int, dim: int = 384) -> list[float]:
 
 
 def make_uuid(label: str) -> str:
-    """Deterministic UUID5 from a label string. Weaviate requires valid UUIDs."""
+    """Deterministic UUID5 from a label string."""
     return str(uuid.uuid5(uuid.NAMESPACE_DNS, label))

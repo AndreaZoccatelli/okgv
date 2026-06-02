@@ -105,8 +105,6 @@ class EntrySchema(Protocol):
 
 @runtime_checkable
 class GraphDB(Protocol):
-    database_name: str
-
     def topic_exists(self, path: str) -> bool: ...
 
     def create_topic(self, name: str) -> None: ...
@@ -182,8 +180,6 @@ class GraphDB(Protocol):
 
 @runtime_checkable
 class VectorDB(Protocol):
-    collection_name: str
-
     def get_top_n(
         self,
         vector: list[float],

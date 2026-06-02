@@ -1,4 +1,4 @@
-"""Integration tests for Weaviate VectorDB client."""
+"""Integration tests for SQLite VectorDB client."""
 
 import pytest
 

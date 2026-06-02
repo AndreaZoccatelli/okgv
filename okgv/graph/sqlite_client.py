@@ -6,7 +6,6 @@ import json
 import re
 import sqlite3
 from collections.abc import Iterator
-from pathlib import Path
 
 from okgv.protocols import GraphRecord
 
@@ -30,16 +29,9 @@ CREATE INDEX IF NOT EXISTS idx_entries_topic ON entries(topic);
 
 
 class SQLiteGraphDB:
-    def __init__(self, db_path: str | Path) -> None:
-        self._db_path = str(db_path)
-        self._conn = sqlite3.connect(self._db_path)
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA foreign_keys=ON")
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
         self._conn.executescript(_SCHEMA)
-
-    @property
-    def database_name(self) -> str:
-        return self._db_path
 
     def _execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
         return self._conn.execute(sql, params)

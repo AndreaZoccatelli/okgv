@@ -1,3 +1,3 @@
-from .client import WeaviateVectorDB
+from .sqlite_client import SQLiteVectorDB
 
-__all__ = ["WeaviateVectorDB"]
+__all__ = ["SQLiteVectorDB"]

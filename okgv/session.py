@@ -29,6 +29,7 @@ class Session:
         self._embedder = embedder
         self._schema = schema
         self._db_path = db_path
+        self._conn = None
         self._owns_connections = graph_db is None and vector_db is None
 
     @property
@@ -39,20 +40,33 @@ class Session:
             self._schema = load_schema()
         return self._schema
 
+    def _ensure_db(self) -> None:
+        """Create shared connection and both DB layers on first access."""
+        if self._conn is not None:
+            return
+        from okgv.connections import get_embed_dim
+        from okgv.db import create_db
+
+        embed_dim = get_embed_dim() or self._detect_embed_dim()
+        self._conn, self._graph_db, self._vector_db = create_db(
+            self.db_path, embed_dim
+        )
+
+    def _detect_embed_dim(self) -> int:
+        """Auto-detect embedding dimension from model."""
+        test_vec = self.embedder(["test"])
+        return len(test_vec[0])
+
     @property
     def graph_db(self):
         if self._graph_db is None:
-            from okgv.connections import create_graph_db
-
-            self._graph_db = create_graph_db(self.db_path)
+            self._ensure_db()
         return self._graph_db
 
     @property
     def vector_db(self):
         if self._vector_db is None:
-            from okgv.connections import create_vector_db
-
-            self._vector_db = create_vector_db(self.schema)
+            self._ensure_db()
         return self._vector_db
 
     @property
@@ -85,10 +99,9 @@ class Session:
     def close(self) -> None:
         if not self._owns_connections:
             return
-        if self._graph_db is not None:
-            self._graph_db.close()
-            self._graph_db = None
-        if self._vector_db is not None:
-            self._vector_db.close()
-            self._vector_db = None
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
+        self._graph_db = None
+        self._vector_db = None
         self._embedder = None

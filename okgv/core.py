@@ -119,17 +119,13 @@ def upsert_entry(
 
     if vector is None:
         vector = embedder([schema.embedding_text(entry)])[0]
-    try:
-        vector_db.upload_entry(
-            entry_id=eid,
-            properties={**meta, **vector_props},
-            vector=vector,
-            topic=topic,
-            overwrite=overwrite,
-        )
-    except Exception:
-        graph_db.delete_entries([eid])
-        raise
+    vector_db.upload_entry(
+        entry_id=eid,
+        properties={**meta, **vector_props},
+        vector=vector,
+        topic=topic,
+        overwrite=overwrite,
+    )
 
     return eid
 
@@ -188,12 +184,10 @@ def upsert_entries_batch(
     vecs = [vec for _, _, vec in graph_ok]
     failed_ids = vector_db.upload_entries_batch(props_list, vecs, eids, topic)
 
-    # Roll back graph entries that failed in vector
     if failed_ids:
-        graph_db.delete_entries(failed_ids)
         failed_set = set(failed_ids)
         for fid in failed_ids:
-            failures.append({"id": fid, "error": "Vector DB batch insert failed"})
+            failures.append({"id": fid, "error": "Vector batch insert failed"})
         inserted = [eid for eid in eids if eid not in failed_set]
     else:
         inserted = eids
