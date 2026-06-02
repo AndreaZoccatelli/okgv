@@ -1,5 +1,8 @@
 # okgv — organizing knowledge: graphs and vectors
 
+[![Tests](https://github.com/AndreaZoccatelli/okgv/actions/workflows/tests.yml/badge.svg)](https://github.com/AndreaZoccatelli/okgv/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 CLI for AI agents to build self-organized synthetic knowledge bases.
 
 Coding agents generate entries, okgv handles deduplication (via vector similarity) and organization (via graph structure). The agent owns the decision loop — okgv provides the tools.
