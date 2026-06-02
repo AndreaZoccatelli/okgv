@@ -24,11 +24,11 @@ classifiers = [
 dependencies = [
     "click>=8.0",
     "sqlite-vec>=0.1.6",
-    "sentence-transformers>=3.0",
     "python-dotenv>=1.0",
 ]
 
 [project.optional-dependencies]
+embeddings = ["sentence-transformers>=3.0"]
 tui = ["textual>=1.0"]
 dev = ["pytest", "ruff"]
 

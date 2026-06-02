@@ -618,7 +618,6 @@ source = { editable = "." }
 dependencies = [
     { name = "click" },
     { name = "python-dotenv" },
-    { name = "sentence-transformers" },
     { name = "sqlite-vec" },
 ]
 
@@ -626,6 +625,9 @@ dependencies = [
 dev = [
     { name = "pytest" },
     { name = "ruff" },
+]
+embeddings = [
+    { name = "sentence-transformers" },
 ]
 tui = [
     { name = "textual" },
@@ -637,11 +639,11 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "ruff", marker = "extra == 'dev'" },
-    { name = "sentence-transformers", specifier = ">=3.0" },
+    { name = "sentence-transformers", marker = "extra == 'embeddings'", specifier = ">=3.0" },
     { name = "sqlite-vec", specifier = ">=0.1.6" },
     { name = "textual", marker = "extra == 'tui'", specifier = ">=1.0" },
 ]
-provides-extras = ["tui", "dev"]
+provides-extras = ["embeddings", "tui", "dev"]
 
 [[package]]
 name = "packaging"

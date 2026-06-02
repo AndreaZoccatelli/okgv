@@ -7,7 +7,7 @@ Coding agents generate entries, okgv handles deduplication (via vector similarit
 ## Quickstart
 
 ```bash
-pip install -e .
+pip install -e ".[embeddings]"
 cd my-dataset-project
 okgv init
 # edit .env, schema.py, topics.json
@@ -88,6 +88,7 @@ All output is JSON to stdout. Logs go to stderr.
 | `log` | Query submission log. `--topic`, `--after`, `--before`, `--count` |
 | `undo` | Delete entries submitted after a timestamp. `--dry-run` to preview |
 | `reconcile` | Find and fix orphan entries across DBs. `--dry-run` to preview |
+| `export` | Export all entries to JSONL. `--fields`, `--exclude-in-review`, `--dry-run` |
 | `purge` | **Hidden.** Delete everything (entries, topics, log). Requires `--confirm "delete all"` |
 
 ### Examples
@@ -135,6 +136,10 @@ okgv review --purge-rejected               # delete rejected from all DBs
 okgv review --recover-rejected --dry-run   # preview recovery
 okgv review --recover-rejected             # set rejected back to pending
 
+# Export for training
+okgv export --output dataset.jsonl
+okgv export --output dataset.jsonl --fields "text,label" --exclude-in-review
+
 # Query submission log
 okgv log
 okgv log --topic algebra --limit 50
@@ -159,7 +164,42 @@ okgv purge --confirm "delete all"
 No external services required. Everything runs locally via SQLite and sqlite-vec.
 
 ```bash
-pip install -e .
+pip install -e ".[embeddings]"    # with sentence-transformers (default embedding backend)
+pip install -e .                  # core only — bring your own embedding backend
+```
+
+Optional extras:
+
+| Extra | What it adds |
+|-------|-------------|
+| `embeddings` | `sentence-transformers` — local embedding via transformer models |
+| `tui` | `textual` — interactive terminal UI for review and browsing |
+
+Install multiple: `pip install -e ".[embeddings,tui]"`
+
+### Embedding Backends
+
+okgv uses a pluggable embedding system. The `EMBED_MODEL` variable controls which backend loads:
+
+```bash
+# sentence-transformers (requires: pip install okgv[embeddings])
+EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2
+
+# Models without a recognized prefix default to sentence-transformers
+EMBED_MODEL=all-MiniLM-L6-v2
+```
+
+New backends can be registered programmatically:
+
+```python
+from okgv.embedding import register_backend
+
+def my_embedder_factory(model_name: str):
+    # Load your model, return a callable: list[str] -> list[list[float]]
+    ...
+
+register_backend("my-backend", my_embedder_factory)
+# Then use: EMBED_MODEL=my-backend/model-name
 ```
 
 ### Configuration
@@ -170,7 +210,7 @@ All via environment variables. A `.env` file in the working directory is **auto-
 |----------|---------|---------|
 | `OKGV_SCHEMA` | built-in QA schema | `module:ClassName` schema specifier |
 | `OKGV_DB` | `./okgv.db` | Path to SQLite database (graph + vectors + log + review) |
-| `EMBED_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model |
+| `EMBED_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model (`backend/model-name`) |
 | `EMBED_DIM` | auto-detect from model | Embedding dimension override |
 | `OKGV_REVIEW` | `none` | Default review mode: `none` or `all` |
 
@@ -263,7 +303,7 @@ okgv review --recover-rejected           # set rejected back to pending
 
 **For humans** — interactive TUI or export/import:
 ```bash
-# Terminal UI with staged changes
+# Terminal UI with staged changes (requires: pip install okgv[tui])
 okgv review --tui --topic algebra
 
 # Or export → edit → import

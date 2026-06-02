@@ -105,7 +105,12 @@ class Session:
         if self._embedder is None:
             from okgv.connections import create_embedder
 
-            self._embedder = create_embedder()
+            try:
+                self._embedder = create_embedder()
+            except ImportError as e:
+                from okgv.helpers import err
+
+                err("missing_dependency", detail=str(e), exit_code=1)
         return self._embedder
 
     @property
