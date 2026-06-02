@@ -23,6 +23,7 @@ class MyEntry:
 class MyEntrySchema:
     entry_class = MyEntry
     validators = [text_validator, category_validator]
+    balance_fields = ["category"]
     field_descriptions = {
         "text": "the main content of the entry",
         "category": (

@@ -32,6 +32,7 @@ class IntentEntry:
 class IntentSchema:
     entry_class = IntentEntry
     validators = [utterance, intent, difficulty]
+    balance_fields = ["difficulty"]
     field_descriptions = {
         "utterance": "a realistic user message, 5-30 words, natural tone",
         "intent": "the user's intent category, matching the topic structure",

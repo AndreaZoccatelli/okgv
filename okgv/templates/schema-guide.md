@@ -21,7 +21,11 @@ Ask the user these questions to build the schema. Do not assume answers.
 - Are there fields that must be non-empty?
 - For each constrained field: what does each valid value mean? (this helps agents generate correct entries)
 
-### 4. Storage layout
+### 4. Balancing
+- Which fields should the dataset be balanced across? (e.g. difficulty, category)
+- Not all fields need balancing. Computed metadata like text length or fields derived from topic structure typically don't.
+
+### 5. Storage layout
 - Which fields should be searchable in the graph DB? (typically: labels, categories, metadata)
 - Which fields should be stored in the vector DB? (typically: text content for retrieval)
 - Which fields should be in both? (typically: shared metadata like counts or categories)
@@ -36,6 +40,7 @@ After gathering answers, create a `candidate_schema.py` with:
    - `entry_class` pointing to the Entry class
    - `validators` list for prompt generation
    - `field_descriptions` dict for agent instructions (use tuples for fields that need per-option explanations)
+   - `balance_fields` list of field names the dataset should be balanced across
    - `metadata()` returning fields stored in both DBs
    - `graph_properties()` returning graph-only fields
    - `vector_properties()` returning vector-only fields

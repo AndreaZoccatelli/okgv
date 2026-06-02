@@ -304,6 +304,7 @@ class MyEntry:
 class MySchema:
     entry_class = MyEntry
     validators = [text, difficulty, score]
+    balance_fields = ["difficulty"]
     ...
 ```
 
@@ -354,6 +355,17 @@ Each entry in this knowledge base has the following fields:
   - medium: requires combining 2-3 concepts
   - hard: multi-step reasoning, edge cases
 ```
+
+### Balance Fields
+
+Add `balance_fields` to tell agents which fields the dataset should be balanced across. Not all metadata fields need balancing, computed fields like text length or fields derived from topic structure typically don't.
+
+```python
+class MySchema:
+    balance_fields = ["difficulty", "category"]
+```
+
+`okgv entry-prompt` includes a balancing section when `balance_fields` is defined. `okgv topic-stats` defaults to these fields when `--fields` is not passed.
 
 ### Schema Validation
 

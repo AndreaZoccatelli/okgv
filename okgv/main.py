@@ -94,6 +94,12 @@ def entry_prompt(ctx):
                 parts.append(validator.prompt().split(": ", 1)[1])
             text += f"- **{field}**: {'. '.join(parts)}\n"
 
+    balance_fields = getattr(ctx.obj.schema, "balance_fields", [])
+    if balance_fields:
+        text += "\n## Balancing\n\n"
+        text += f"Ensure balanced coverage across these fields: {', '.join(balance_fields)}.\n"
+        text += "Use `okgv topic-stats` to check current distribution.\n"
+
     click.echo(text)
 
 
@@ -372,7 +378,10 @@ def topic_stats(session: Session, topic: str, fields: str | None):
     Aggregation is performed in the database, not in Python.
     """
     graph_db = session.graph_db
-    field_list = [f.strip() for f in fields.split(",")] if fields else None
+    if fields:
+        field_list = [f.strip() for f in fields.split(",")]
+    else:
+        field_list = getattr(session.schema, "balance_fields", None)
 
     try:
         total, group_fields, groups = graph_db.get_topic_stats(topic, field_list)
