@@ -43,6 +43,8 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 - `okgv get-graph --id <uuid>` — fetch entry from graph DB.
 
 ### Review
+You can review entries submitted by yourself or other agents. Use `okgv review` to list pending entries, inspect their content, and approve or reject them.
+
 - `okgv review [--topic <path>] [--status pending|approved|rejected] [--limit N]` — list review queue entries.
 - `okgv review --count [--topic <path>]` — counts by status.
 - `okgv review --export <file> [--topic <path>] [--status pending]` — export entries with content to JSON file.

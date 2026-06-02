@@ -377,6 +377,8 @@ At runtime, okgv validates:
 
 Entries can be flagged for review at submit time. Review is an external tracking layer, it does not block entry insertion. Entries always go into both DBs immediately.
 
+All review commands are CLI-based, so both humans and agents can drive review. This enables multi-agent pipelines: one agent generates entries, another reviews them for quality, consistency, or adherence to constraints.
+
 ### Review modes
 
 - `OKGV_REVIEW=none` (default): entries skip review unless `--review` is passed
@@ -384,16 +386,17 @@ Entries can be flagged for review at submit time. Review is an external tracking
 
 ### Review workflow
 
-**For agents**, CLI commands:
+**Via CLI** (agents or humans):
 ```bash
 okgv review --topic algebra              # list pending entries
+okgv review --topic algebra --count      # counts by status
 okgv approve --id <uuid>
 okgv reject --id <uuid>
 okgv review --purge-rejected             # delete rejected from all DBs
 okgv review --recover-rejected           # set rejected back to pending
 ```
 
-**For humans**, interactive TUI or export/import:
+**Via interactive TUI** (humans only):
 ```bash
 # Terminal UI with staged changes (requires: pip install okgv[tui])
 okgv review --tui --topic algebra
