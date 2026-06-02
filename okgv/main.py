@@ -14,11 +14,23 @@ import sys
 import click
 
 from okgv.core import (
-    EntryError, build_entry,
-    log_count, log_get_entries_after, log_query, log_remove_entries, log_session,
-    review_add, review_count, review_get_pending_ids, review_get_rejected, review_list,
-    review_purge_rejected, review_remove_entries, review_update,
-    upsert_entries_batch, upsert_entry,
+    EntryError,
+    build_entry,
+    log_count,
+    log_get_entries_after,
+    log_query,
+    log_remove_entries,
+    log_session,
+    review_add,
+    review_count,
+    review_get_pending_ids,
+    review_get_rejected,
+    review_list,
+    review_purge_rejected,
+    review_remove_entries,
+    review_update,
+    upsert_entries_batch,
+    upsert_entry,
 )
 from okgv.helpers import EXIT_NOT_FOUND, EXIT_USAGE, err, log, output, read_raw
 from okgv.protocols import entry_id
@@ -31,7 +43,9 @@ from okgv.session import Session
 @click.pass_context
 def cli(ctx):
     from pathlib import Path
+
     from dotenv import load_dotenv
+
     load_dotenv(Path.cwd() / ".env")
     if ctx.obj is None:
         ctx.obj = Session()
@@ -73,27 +87,67 @@ def init():
     if created:
         output({"initialized": True, "created": created})
     else:
-        output({"initialized": False, "message": "All files already exist", "created": []})
+        output(
+            {"initialized": False, "message": "All files already exist", "created": []}
+        )
 
 
 @cli.command()
-@click.option("--root", default=None, help="Start from this topic path. Default: full tree.")
-@click.option("--counts", is_flag=True, default=False, help="Show entry counts per node.")
-@click.option("--interactive", "-i", is_flag=True, default=False, help="Interactive browser: navigate topics, view entries.")
-@click.option("--limit", default=20, show_default=True, help="Max entries per topic in interactive mode.")
-@click.option("--export", "export_fmt", type=click.Choice(["dot", "json"]), default=None, help="Export format: dot (Graphviz) or json.")
+@click.option(
+    "--root", default=None, help="Start from this topic path. Default: full tree."
+)
+@click.option(
+    "--counts", is_flag=True, default=False, help="Show entry counts per node."
+)
+@click.option(
+    "--interactive",
+    "-i",
+    is_flag=True,
+    default=False,
+    help="Interactive browser: navigate topics, view entries.",
+)
+@click.option(
+    "--limit",
+    default=20,
+    show_default=True,
+    help="Max entries per topic in interactive mode.",
+)
+@click.option(
+    "--export",
+    "export_fmt",
+    type=click.Choice(["dot", "json"]),
+    default=None,
+    help="Export format: dot (Graphviz) or json.",
+)
 @click.pass_obj
-def tree(session: Session, root: str | None, counts: bool, interactive: bool, limit: int, export_fmt: str | None):
+def tree(
+    session: Session,
+    root: str | None,
+    counts: bool,
+    interactive: bool,
+    limit: int,
+    export_fmt: str | None,
+):
     """Display the topic tree visually in the terminal."""
     if interactive:
         from okgv.tui import run_browse
-        run_browse(graph_db=session.graph_db, vector_db=session.vector_db, root=root, entry_limit=limit)
+
+        run_browse(
+            graph_db=session.graph_db,
+            vector_db=session.vector_db,
+            root=root,
+            entry_limit=limit,
+        )
         return
 
     tree_data = session.graph_db.get_topic_tree(root=root)
     if not tree_data:
         if root:
-            err("not_found", detail=f"Topic '{root}' not found or has no subtopics", exit_code=EXIT_NOT_FOUND)
+            err(
+                "not_found",
+                detail=f"Topic '{root}' not found or has no subtopics",
+                exit_code=EXIT_NOT_FOUND,
+            )
         else:
             err("no_topics", detail="No topics found", exit_code=EXIT_NOT_FOUND)
 
@@ -123,11 +177,13 @@ def tree(session: Session, root: str | None, counts: bool, interactive: bool, li
 
     count_map = {}
     if counts:
+
         def _collect_counts(subtree: dict, prefix: str | None = None):
             for name, children in subtree.items():
                 path = f"{prefix}/{name}" if prefix else name
                 count_map[name] = len(session.graph_db.get_entry_ids_for_topic(path))
                 _collect_counts(children, path)
+
         _collect_counts(tree_data)
 
     def _build(subtree: dict, parent_tree: RichTree, prefix: str | None = None):
@@ -146,31 +202,52 @@ def tree(session: Session, root: str | None, counts: bool, interactive: bool, li
 
 
 @cli.command(name="get-structure")
-@click.option("--root", default=None, help="Start from this topic path. Default: full tree.")
-@click.option("--depth", default=None, type=int, help="Max nesting levels to return. Default: unlimited.")
+@click.option(
+    "--root", default=None, help="Start from this topic path. Default: full tree."
+)
+@click.option(
+    "--depth",
+    default=None,
+    type=int,
+    help="Max nesting levels to return. Default: unlimited.",
+)
 @click.pass_obj
 def get_structure(session: Session, root: str | None, depth: int | None):
     """Return the topic/subtopic tree as nested JSON (no entries)."""
     tree = session.graph_db.get_topic_tree(root=root, max_depth=depth)
     if not tree:
         if root:
-            err("not_found", detail=f"Topic '{root}' not found or has no subtopics", exit_code=EXIT_NOT_FOUND)
+            err(
+                "not_found",
+                detail=f"Topic '{root}' not found or has no subtopics",
+                exit_code=EXIT_NOT_FOUND,
+            )
         else:
-            err("no_topics", detail="No topics found in graph", exit_code=EXIT_NOT_FOUND)
+            err(
+                "no_topics", detail="No topics found in graph", exit_code=EXIT_NOT_FOUND
+            )
     output(tree)
 
 
 @cli.command(name="get-depth")
-@click.option("--root", default=None, help="Start from this topic path. Default: full tree.")
+@click.option(
+    "--root", default=None, help="Start from this topic path. Default: full tree."
+)
 @click.pass_obj
 def get_depth(session: Session, root: str | None):
     """Return the maximum depth of the topic tree."""
     tree = session.graph_db.get_topic_tree(root=root, max_depth=1)
     if not tree:
         if root:
-            err("not_found", detail=f"Topic '{root}' not found", exit_code=EXIT_NOT_FOUND)
+            err(
+                "not_found",
+                detail=f"Topic '{root}' not found",
+                exit_code=EXIT_NOT_FOUND,
+            )
         else:
-            err("no_topics", detail="No topics found in graph", exit_code=EXIT_NOT_FOUND)
+            err(
+                "no_topics", detail="No topics found in graph", exit_code=EXIT_NOT_FOUND
+            )
     depth = session.graph_db.get_topic_depth(root=root)
     result = {"depth": depth}
     if root:
@@ -179,8 +256,14 @@ def get_depth(session: Session, root: str | None):
 
 
 @cli.command(name="create-topic")
-@click.option("--name", required=True, help="Topic path to create (e.g. 'algebra/linear_algebra').")
-@click.option("--parents", is_flag=True, default=False, help="Create missing parent topics.")
+@click.option(
+    "--name",
+    required=True,
+    help="Topic path to create (e.g. 'algebra/linear_algebra').",
+)
+@click.option(
+    "--parents", is_flag=True, default=False, help="Create missing parent topics."
+)
 @click.pass_obj
 def create_topic(session: Session, name: str, parents: bool):
     """Create a topic node in the graph DB. Accepts paths.
@@ -278,12 +361,14 @@ def topic_stats(session: Session, topic: str, fields: str | None):
             exit_code=EXIT_NOT_FOUND,
         )
 
-    output({
-        "topic": topic,
-        "total_entries": total,
-        "group_by": group_fields,
-        "groups": groups,
-    })
+    output(
+        {
+            "topic": topic,
+            "total_entries": total,
+            "group_by": group_fields,
+            "groups": groups,
+        }
+    )
 
 
 @cli.command()
@@ -329,10 +414,21 @@ def similar(session: Session, topic: str, entry: str, top_k: int):
 @click.option(
     "--entry", required=True, help='Entry JSON string, or "-" to read from stdin.'
 )
-@click.option("--overwrite", is_flag=True, default=False, help="Overwrite if entry already exists in vector DB.")
-@click.option("--review/--no-review", default=None, help="Flag entry for review. Default: uses OKGV_REVIEW env var.")
+@click.option(
+    "--overwrite",
+    is_flag=True,
+    default=False,
+    help="Overwrite if entry already exists in vector DB.",
+)
+@click.option(
+    "--review/--no-review",
+    default=None,
+    help="Flag entry for review. Default: uses OKGV_REVIEW env var.",
+)
 @click.pass_obj
-def submit(session: Session, topic: str, entry: str, overwrite: bool, review: bool | None):
+def submit(
+    session: Session, topic: str, entry: str, overwrite: bool, review: bool | None
+):
     """Upsert entry into both graph and vector DBs."""
     schema = session.schema
     raw = read_raw(entry)
@@ -341,8 +437,13 @@ def submit(session: Session, topic: str, entry: str, overwrite: bool, review: bo
     log(f"Upserting entry into topic '{topic}'...")
     try:
         eid = upsert_entry(
-            schema, session.graph_db, session.vector_db, topic, raw,
-            session.embedder, overwrite=overwrite,
+            schema,
+            session.graph_db,
+            session.vector_db,
+            topic,
+            raw,
+            session.embedder,
+            overwrite=overwrite,
         )
     except EntryError as e:
         return err("missing_field", detail=str(e), exit_code=EXIT_USAGE)
@@ -408,7 +509,9 @@ def similar_batch(session: Session, topic: str, entries: str, top_k: int):
             matches = vector_db.get_top_n(vector, n=top_k, filter_topic=topic)
             match_ids = [uid for uid, _ in matches]
             certainties = {uid: cert for uid, cert in matches}
-            fetched = {r.id: r for r in vector_db.get_by_ids(match_ids)} if match_ids else {}
+            fetched = (
+                {r.id: r for r in vector_db.get_by_ids(match_ids)} if match_ids else {}
+            )
             results = []
             for uid in match_ids:
                 item: dict = {"id": uid, "certainty": certainties[uid]}
@@ -427,10 +530,21 @@ def similar_batch(session: Session, topic: str, entries: str, top_k: int):
     required=True,
     help='JSON array of entry objects, or "-" to read from stdin.',
 )
-@click.option("--overwrite", is_flag=True, default=False, help="Overwrite if entries already exist in vector DB.")
-@click.option("--review/--no-review", default=None, help="Flag entries for review. Default: uses OKGV_REVIEW env var.")
+@click.option(
+    "--overwrite",
+    is_flag=True,
+    default=False,
+    help="Overwrite if entries already exist in vector DB.",
+)
+@click.option(
+    "--review/--no-review",
+    default=None,
+    help="Flag entries for review. Default: uses OKGV_REVIEW env var.",
+)
 @click.pass_obj
-def submit_batch(session: Session, topic: str, entries: str, overwrite: bool, review: bool | None):
+def submit_batch(
+    session: Session, topic: str, entries: str, overwrite: bool, review: bool | None
+):
     """Upsert multiple entries into graph and vector DBs. Single model load."""
     schema = session.schema
     if entries == "-":
@@ -469,8 +583,14 @@ def submit_batch(session: Session, topic: str, entries: str, overwrite: bool, re
 
         log(f"Batch upserting {len(valid_raws)} entries into topic '{topic}'...")
         inserted_ids, failures = upsert_entries_batch(
-            schema, session.graph_db, session.vector_db, topic,
-            valid_raws, valid_entries, vectors, overwrite=overwrite,
+            schema,
+            session.graph_db,
+            session.vector_db,
+            topic,
+            valid_raws,
+            valid_entries,
+            vectors,
+            overwrite=overwrite,
         )
         for eid in inserted_ids:
             results.append({"id": eid, "submitted": True})
@@ -547,7 +667,9 @@ def create_structure(session: Session, file_path: str):
 @cli.command(name="move-topic")
 @click.option("--source", required=True, help="Path of topic/subtopic to move.")
 @click.option("--destination", required=True, help="Path of new parent topic.")
-@click.option("--dry-run", is_flag=True, default=False, help="Preview without applying changes.")
+@click.option(
+    "--dry-run", is_flag=True, default=False, help="Preview without applying changes."
+)
 @click.pass_obj
 def move_topic(session: Session, source: str, destination: str, dry_run: bool):
     """Move a topic/subtopic under a different parent. Blocked if name conflict."""
@@ -568,7 +690,9 @@ def move_topic(session: Session, source: str, destination: str, dry_run: bool):
 @cli.command(name="move-entry")
 @click.option("--id", "entry_id", required=True, help="Entry UUID to move.")
 @click.option("--destination", required=True, help="Path of target topic.")
-@click.option("--dry-run", is_flag=True, default=False, help="Preview without applying changes.")
+@click.option(
+    "--dry-run", is_flag=True, default=False, help="Preview without applying changes."
+)
 @click.pass_obj
 def move_entry(session: Session, entry_id: str, destination: str, dry_run: bool):
     """Move an entry to a different topic."""
@@ -631,31 +755,92 @@ def get_graph(session: Session, entry_id: str):
 
 @cli.command(name="review")
 @click.option("--topic", default=None, help="Filter by topic path.")
-@click.option("--status", default="pending", show_default=True, help="Filter by status: pending, approved, rejected.")
+@click.option(
+    "--status",
+    default="pending",
+    show_default=True,
+    help="Filter by status: pending, approved, rejected.",
+)
 @click.option("--limit", default=20, show_default=True, help="Max entries to return.")
 @click.option("--offset", default=0, help="Skip first N entries.")
 @click.option("--count", is_flag=True, default=False, help="Show counts by status.")
-@click.option("--export", "export_path", default=None, help="Export review entries with content to JSON file.")
-@click.option("--import", "import_path", default=None, help="Import review decisions from JSON file.")
-@click.option("--tui", is_flag=True, default=False, help="Launch interactive terminal UI for review.")
-@click.option("--purge-rejected", is_flag=True, default=False, help="Delete rejected entries from all DBs.")
-@click.option("--recover-rejected", is_flag=True, default=False, help="Set rejected entries back to pending.")
-@click.option("--dry-run", is_flag=True, default=False, help="Preview purge/recover without applying.")
+@click.option(
+    "--export",
+    "export_path",
+    default=None,
+    help="Export review entries with content to JSON file.",
+)
+@click.option(
+    "--import",
+    "import_path",
+    default=None,
+    help="Import review decisions from JSON file.",
+)
+@click.option(
+    "--interactive",
+    "-i",
+    is_flag=True,
+    default=False,
+    help="Launch interactive terminal UI for review.",
+)
+@click.option(
+    "--purge-rejected",
+    is_flag=True,
+    default=False,
+    help="Delete rejected entries from all DBs.",
+)
+@click.option(
+    "--recover-rejected",
+    is_flag=True,
+    default=False,
+    help="Set rejected entries back to pending.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Preview purge/recover without applying.",
+)
 @click.pass_obj
-def review_cmd(session: Session, topic: str | None, status: str, limit: int, offset: int, count: bool, export_path: str | None, import_path: str | None, tui: bool, purge_rejected: bool, recover_rejected: bool, dry_run: bool):
+def review_cmd(
+    session: Session,
+    topic: str | None,
+    status: str,
+    limit: int,
+    offset: int,
+    count: bool,
+    export_path: str | None,
+    import_path: str | None,
+    interactive: bool,
+    purge_rejected: bool,
+    recover_rejected: bool,
+    dry_run: bool,
+):
     """Query the review queue, export/import decisions, purge or recover rejected entries."""
     db_path = session.db_path
 
-    if tui:
+    if interactive:
         from okgv.tui import run_tui
-        run_tui(db_path=db_path, graph_db=session.graph_db, vector_db=session.vector_db, topic=topic, limit=limit)
+
+        run_tui(
+            db_path=db_path,
+            graph_db=session.graph_db,
+            vector_db=session.vector_db,
+            topic=topic,
+            limit=limit,
+        )
         return
 
     if import_path:
         from pathlib import Path
+
         p = Path(import_path)
         if not p.exists():
-            err("file_not_found", detail=f"File '{import_path}' not found", exit_code=EXIT_USAGE)
+            err(
+                "file_not_found",
+                detail=f"File '{import_path}' not found",
+                exit_code=EXIT_USAGE,
+            )
         try:
             rows = json.loads(p.read_text())
         except json.JSONDecodeError as e:
@@ -691,7 +876,13 @@ def review_cmd(session: Session, topic: str | None, status: str, limit: int, off
             output({"purged": 0})
             return
         if dry_run:
-            output({"dry_run": True, "would_delete": rejected_ids, "count": len(rejected_ids)})
+            output(
+                {
+                    "dry_run": True,
+                    "would_delete": rejected_ids,
+                    "count": len(rejected_ids),
+                }
+            )
             return
         log(f"Deleting {len(rejected_ids)} rejected entries from vector DB...")
         session.vector_db.delete_by_ids(rejected_ids)
@@ -708,16 +899,28 @@ def review_cmd(session: Session, topic: str | None, status: str, limit: int, off
             output({"recovered": 0})
             return
         if dry_run:
-            output({"dry_run": True, "would_recover": rejected_ids, "count": len(rejected_ids)})
+            output(
+                {
+                    "dry_run": True,
+                    "would_recover": rejected_ids,
+                    "count": len(rejected_ids),
+                }
+            )
             return
         review_update(db_path, rejected_ids, "pending")
         output({"recovered": len(rejected_ids), "ids": rejected_ids})
         return
 
     if export_path:
-        entries = review_list(db_path, status=status, topic=topic, limit=limit, offset=offset)
+        entries = review_list(
+            db_path, status=status, topic=topic, limit=limit, offset=offset
+        )
         if not entries:
-            err("no_entries", detail="No entries match the filter", exit_code=EXIT_NOT_FOUND)
+            err(
+                "no_entries",
+                detail="No entries match the filter",
+                exit_code=EXIT_NOT_FOUND,
+            )
         entry_ids = [e["entry_id"] for e in entries]
         fetched = {r.id: r.properties for r in session.vector_db.get_by_ids(entry_ids)}
         export_data = []
@@ -727,14 +930,19 @@ def review_cmd(session: Session, topic: str | None, status: str, limit: int, off
                 item.update(fetched[e["entry_id"]])
             export_data.append(item)
         from pathlib import Path
-        Path(export_path).write_text(json.dumps(export_data, indent=2, ensure_ascii=False))
+
+        Path(export_path).write_text(
+            json.dumps(export_data, indent=2, ensure_ascii=False)
+        )
         output({"exported": len(export_data), "file": export_path})
         return
 
     if count:
         output(review_count(db_path, topic=topic))
     else:
-        entries = review_list(db_path, status=status, topic=topic, limit=limit, offset=offset)
+        entries = review_list(
+            db_path, status=status, topic=topic, limit=limit, offset=offset
+        )
         output(entries)
 
 
@@ -745,7 +953,11 @@ def approve(session: Session, entry_id: str):
     """Mark entry as approved in the review queue."""
     updated = review_update(session.db_path, [entry_id], "approved")
     if updated == 0:
-        err("not_found", detail=f"Entry '{entry_id}' not in review queue", exit_code=EXIT_NOT_FOUND)
+        err(
+            "not_found",
+            detail=f"Entry '{entry_id}' not in review queue",
+            exit_code=EXIT_NOT_FOUND,
+        )
     output({"id": entry_id, "status": "approved"})
 
 
@@ -756,7 +968,11 @@ def reject(session: Session, entry_id: str):
     """Mark entry as rejected in the review queue."""
     updated = review_update(session.db_path, [entry_id], "rejected")
     if updated == 0:
-        err("not_found", detail=f"Entry '{entry_id}' not in review queue", exit_code=EXIT_NOT_FOUND)
+        err(
+            "not_found",
+            detail=f"Entry '{entry_id}' not in review queue",
+            exit_code=EXIT_NOT_FOUND,
+        )
     output({"id": entry_id, "status": "rejected"})
 
 
@@ -766,22 +982,44 @@ def reject(session: Session, entry_id: str):
 @click.option("--before", default=None, help="Show entries before this ISO timestamp.")
 @click.option("--limit", default=20, show_default=True, help="Max entries to return.")
 @click.option("--offset", default=0, help="Skip first N entries.")
-@click.option("--count", is_flag=True, default=False, help="Show counts instead of entries. Groups by topic if no --topic.")
+@click.option(
+    "--count",
+    is_flag=True,
+    default=False,
+    help="Show counts instead of entries. Groups by topic if no --topic.",
+)
 @click.pass_obj
-def log_cmd(session: Session, topic: str | None, after: str | None, before: str | None, limit: int, offset: int, count: bool):
+def log_cmd(
+    session: Session,
+    topic: str | None,
+    after: str | None,
+    before: str | None,
+    limit: int,
+    offset: int,
+    count: bool,
+):
     """Query the submission log."""
     from datetime import datetime, timezone
 
     db_path = session.db_path
     if not db_path.exists():
-        err("no_db", detail="okgv.db not found — no submissions yet", exit_code=EXIT_NOT_FOUND)
+        err(
+            "no_db",
+            detail="okgv.db not found — no submissions yet",
+            exit_code=EXIT_NOT_FOUND,
+        )
 
     def _parse_ts(val: str, name: str) -> datetime:
         """Parse user input as local time, convert to UTC for querying."""
         try:
             ts = datetime.fromisoformat(val)
         except ValueError:
-            err("invalid_timestamp", detail=f"Bad --{name} value: {val}", suggestion="Use ISO 8601 format", exit_code=EXIT_USAGE)
+            err(
+                "invalid_timestamp",
+                detail=f"Bad --{name} value: {val}",
+                suggestion="Use ISO 8601 format",
+                exit_code=EXIT_USAGE,
+            )
         if ts.tzinfo is None:
             ts = ts.replace(tzinfo=datetime.now().astimezone().tzinfo)
         return ts.astimezone(timezone.utc)
@@ -797,7 +1035,14 @@ def log_cmd(session: Session, topic: str | None, after: str | None, before: str 
     if count:
         output(log_count(db_path, topic=topic, group_by_topic=topic is None))
     else:
-        entries = log_query(db_path, topic=topic, after=after_dt, before=before_dt, limit=limit, offset=offset)
+        entries = log_query(
+            db_path,
+            topic=topic,
+            after=after_dt,
+            before=before_dt,
+            limit=limit,
+            offset=offset,
+        )
         for e in entries:
             e["timestamp"] = _to_local(e["timestamp"])
         output(entries)
@@ -805,7 +1050,12 @@ def log_cmd(session: Session, topic: str | None, after: str | None, before: str 
 
 @cli.command()
 @click.argument("timestamp")
-@click.option("--dry-run", is_flag=True, default=False, help="Preview entries that would be deleted.")
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Preview entries that would be deleted.",
+)
 @click.pass_obj
 def undo(session: Session, timestamp: str, dry_run: bool):
     """Delete all entries submitted after TIMESTAMP from both DBs and log."""
@@ -836,7 +1086,13 @@ def undo(session: Session, timestamp: str, dry_run: bool):
         return
 
     if dry_run:
-        output({"dry_run": True, "would_delete": ids_to_delete, "count": len(ids_to_delete)})
+        output(
+            {
+                "dry_run": True,
+                "would_delete": ids_to_delete,
+                "count": len(ids_to_delete),
+            }
+        )
         return
 
     log(f"Deleting {len(ids_to_delete)} entries...")
@@ -849,8 +1105,15 @@ def undo(session: Session, timestamp: str, dry_run: bool):
 
 
 @cli.command()
-@click.option("--dry-run", is_flag=True, default=False, help="Preview without deleting orphans.")
-@click.option("--batch-size", default=1000, show_default=True, help="Chunk size for iterating entry IDs.")
+@click.option(
+    "--dry-run", is_flag=True, default=False, help="Preview without deleting orphans."
+)
+@click.option(
+    "--batch-size",
+    default=1000,
+    show_default=True,
+    help="Chunk size for iterating entry IDs.",
+)
 @click.pass_obj
 def reconcile(session: Session, dry_run: bool, batch_size: int):
     """Find and fix entries that exist in graph but not vector, or vice versa."""
@@ -876,12 +1139,14 @@ def reconcile(session: Session, dry_run: bool, batch_size: int):
         return
 
     if dry_run:
-        output({
-            "dry_run": True,
-            "graph_only": sorted(graph_only),
-            "vector_only": sorted(vector_only),
-            "orphans": len(graph_only) + len(vector_only),
-        })
+        output(
+            {
+                "dry_run": True,
+                "graph_only": sorted(graph_only),
+                "vector_only": sorted(vector_only),
+                "orphans": len(graph_only) + len(vector_only),
+            }
+        )
         return
 
     if graph_only:
@@ -891,22 +1156,30 @@ def reconcile(session: Session, dry_run: bool, batch_size: int):
         log(f"Deleting {len(vector_only)} orphan(s) from vector DB...")
         vector_db.delete_by_ids(vector_only)
 
-    output({
-        "consistent": True,
-        "deleted_from_graph": sorted(graph_only),
-        "deleted_from_vector": sorted(vector_only),
-        "orphans": len(graph_only) + len(vector_only),
-    })
+    output(
+        {
+            "consistent": True,
+            "deleted_from_graph": sorted(graph_only),
+            "deleted_from_vector": sorted(vector_only),
+            "orphans": len(graph_only) + len(vector_only),
+        }
+    )
 
 
 @cli.command(hidden=True)
 @click.option("--confirm", default=None, help="Type 'delete all' to confirm.")
-@click.option("--dry-run", is_flag=True, default=False, help="Preview what would be deleted.")
+@click.option(
+    "--dry-run", is_flag=True, default=False, help="Preview what would be deleted."
+)
 @click.pass_obj
 def purge(session: Session, confirm: str | None, dry_run: bool):
     """Delete ALL entries from graph DB, vector DB, and log. Hidden command."""
     if not dry_run and confirm != "delete all":
-        err("bad_confirm", detail="Pass --confirm 'delete all' to proceed", exit_code=EXIT_USAGE)
+        err(
+            "bad_confirm",
+            detail="Pass --confirm 'delete all' to proceed",
+            exit_code=EXIT_USAGE,
+        )
 
     graph_db = session.graph_db
     vector_db = session.vector_db
@@ -916,14 +1189,16 @@ def purge(session: Session, confirm: str | None, dry_run: bool):
         vector_count = sum(len(chunk) for chunk in vector_db.iter_entry_ids())
         graph_count = sum(len(chunk) for chunk in graph_db.iter_entry_ids())
         topic_count = graph_db.count_topics()
-        output({
-            "dry_run": True,
-            "db_path": str(db_path),
-            "graph_entries": graph_count,
-            "graph_topics": topic_count,
-            "vector_entries": vector_count,
-            "db_exists": db_path.exists(),
-        })
+        output(
+            {
+                "dry_run": True,
+                "db_path": str(db_path),
+                "graph_entries": graph_count,
+                "graph_topics": topic_count,
+                "vector_entries": vector_count,
+                "db_exists": db_path.exists(),
+            }
+        )
         return
 
     log("Deleting all entries from vector DB...")
@@ -934,6 +1209,7 @@ def purge(session: Session, confirm: str | None, dry_run: bool):
     graph_db.delete_all()
 
     import os
+
     if db_path.exists():
         log("Clearing log + review DB...")
         os.remove(db_path)
@@ -942,7 +1218,9 @@ def purge(session: Session, confirm: str | None, dry_run: bool):
 
 
 @cli.command(name="export")
-@click.option("--output", "output_path", required=True, help="Path to output .jsonl file.")
+@click.option(
+    "--output", "output_path", required=True, help="Path to output .jsonl file."
+)
 @click.option(
     "--fields",
     default=None,
@@ -954,8 +1232,15 @@ def purge(session: Session, confirm: str | None, dry_run: bool):
     default=False,
     help="Exclude entries currently pending in the review queue.",
 )
-@click.option("--batch-size", default=500, show_default=True, help="Batch size for DB reads.")
-@click.option("--dry-run", is_flag=True, default=False, help="Print count of entries to export, no file written.")
+@click.option(
+    "--batch-size", default=500, show_default=True, help="Batch size for DB reads."
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Print count of entries to export, no file written.",
+)
 @click.pass_obj
 def export_cmd(
     session: Session,
@@ -969,7 +1254,9 @@ def export_cmd(
     import os
 
     field_set = {f.strip() for f in fields.split(",")} if fields else None
-    pending_ids = review_get_pending_ids(session.db_path) if exclude_in_review else set()
+    pending_ids = (
+        review_get_pending_ids(session.db_path) if exclude_in_review else set()
+    )
 
     vector_db = session.vector_db
     graph_db = session.graph_db
@@ -979,10 +1266,20 @@ def export_cmd(
         for chunk in vector_db.iter_entry_ids(batch_size):
             filtered = [eid for eid in chunk if eid not in pending_ids]
             total += len(filtered)
-        output({"dry_run": True, "would_export": total, "exclude_in_review": exclude_in_review})
+        output(
+            {
+                "dry_run": True,
+                "would_export": total,
+                "exclude_in_review": exclude_in_review,
+            }
+        )
         return
 
-    out_path = output_path if os.path.isabs(output_path) else os.path.join(os.getcwd(), output_path)
+    out_path = (
+        output_path
+        if os.path.isabs(output_path)
+        else os.path.join(os.getcwd(), output_path)
+    )
     written = 0
     with open(out_path, "w", encoding="utf-8") as fh:
         for chunk in vector_db.iter_entry_ids(batch_size):

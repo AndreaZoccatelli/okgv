@@ -420,9 +420,14 @@ class BrowseApp(App):
         tree_widget.show_root = self._root is not None
         if self._root:
             tree_widget.root.label = self._root
+            tree_widget.root.data = self._root
 
         tree_data = self._graph_db.get_topic_tree(root=self._root)
         counts = self._graph_db.get_topic_entry_counts(parent=self._root)
+
+        if self._root:
+            root_name = self._root.rsplit("/", 1)[-1]
+            tree_data = tree_data.get(root_name, {})
 
         self._build_tree(tree_widget.root, tree_data, counts, prefix=self._root)
         tree_widget.root.expand()
