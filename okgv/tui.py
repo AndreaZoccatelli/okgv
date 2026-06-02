@@ -12,7 +12,14 @@ from textual.widgets import DataTable, Footer, Header, Static, Tree
 
 from rich.text import Text
 
-from okgv.core import review_count, review_list, review_update
+from okgv.core import (
+    log_remove_entries,
+    review_count,
+    review_get_rejected,
+    review_list,
+    review_purge_rejected,
+    review_update,
+)
 from okgv.protocols import GraphDB, VectorDB
 
 
@@ -67,18 +74,22 @@ class ReviewApp(App):
         Binding("s", "skip", "Skip/Next", priority=True),
         Binding("n", "load_more", "More", priority=True),
         Binding("c", "commit", "Commit", priority=True),
+        Binding("p", "purge_rejected", "Purge rejected", priority=True),
+        Binding("v", "recover_rejected", "Recover rejected", priority=True),
         Binding("q", "quit_discard", "Quit", priority=True),
     ]
 
     def __init__(
         self,
         db_path: Path,
+        graph_db: GraphDB,
         vector_db: VectorDB,
         topic: str | None = None,
         limit: int = 100,
     ):
         super().__init__()
         self._db_path = db_path
+        self._graph_db = graph_db
         self._vector_db = vector_db
         self._topic = topic
         self._limit = limit
@@ -89,6 +100,7 @@ class ReviewApp(App):
         # Staged changes: entry_id -> new status
         self._staged: dict[str, str] = {}
         self._quit_pending = False
+        self._purge_pending = False
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -165,8 +177,12 @@ class ReviewApp(App):
         row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
         return str(row_key.value)
 
-    def _mark_entry(self, status: str) -> None:
+    def _reset_confirmations(self) -> None:
         self._quit_pending = False
+        self._purge_pending = False
+
+    def _mark_entry(self, status: str) -> None:
+        self._reset_confirmations()
         entry_id = self._current_entry_id()
         if entry_id is None:
             return
@@ -186,7 +202,7 @@ class ReviewApp(App):
         self._mark_entry("rejected")
 
     def action_undo_mark(self) -> None:
-        self._quit_pending = False
+        self._reset_confirmations()
         entry_id = self._current_entry_id()
         if entry_id is None:
             return
@@ -196,7 +212,7 @@ class ReviewApp(App):
             self._update_status()
 
     def action_skip(self) -> None:
-        self._quit_pending = False
+        self._reset_confirmations()
         table = self.query_one("#table", DataTable)
         if table.row_count == 0:
             return
@@ -206,7 +222,7 @@ class ReviewApp(App):
         self._show_detail(self._entries[new_row]["entry_id"])
 
     def action_load_more(self) -> None:
-        self._quit_pending = False
+        self._reset_confirmations()
         if self._offset >= self._total:
             self.notify("All entries loaded", severity="information")
             return
@@ -225,7 +241,7 @@ class ReviewApp(App):
         self.notify(f"Loaded {new_count} more ({len(self._entries)} of {self._total})")
 
     def action_commit(self) -> None:
-        self._quit_pending = False
+        self._reset_confirmations()
         if not self._staged:
             self.notify("Nothing to commit", severity="warning")
             return
@@ -246,6 +262,54 @@ class ReviewApp(App):
         if not self._entries:
             self.query_one("#detail", DetailPanel).update("[dim]All entries reviewed[/dim]")
 
+    def action_purge_rejected(self) -> None:
+        """Delete rejected entries from all DBs. First press shows dry run, second confirms."""
+        rejected_ids = review_get_rejected(self._db_path)
+        if not rejected_ids:
+            self.notify("No rejected entries to purge", severity="warning")
+            return
+        if not getattr(self, "_purge_pending", False):
+            self._purge_pending = True
+            self.notify(
+                f"{len(rejected_ids)} rejected entries will be deleted — press p again to confirm",
+                severity="warning",
+            )
+            return
+        self._purge_pending = False
+        self._vector_db.delete_by_ids(rejected_ids)
+        self._graph_db.delete_entries(rejected_ids)
+        log_remove_entries(self._db_path, rejected_ids)
+        review_purge_rejected(self._db_path)
+        # Remove purged entries from local list
+        purged = set(rejected_ids)
+        self._entries = [e for e in self._entries if e["entry_id"] not in purged]
+        self._staged = {k: v for k, v in self._staged.items() if k not in purged}
+        self._refresh_table()
+        self._update_status()
+        self.notify(f"Purged {len(rejected_ids)} rejected entries from all DBs")
+
+    def action_recover_rejected(self) -> None:
+        """Set all rejected entries back to pending."""
+        rejected_ids = review_get_rejected(self._db_path)
+        if not rejected_ids:
+            self.notify("No rejected entries to recover", severity="warning")
+            return
+        review_update(self._db_path, rejected_ids, "pending")
+        # Update local state: unstage any that were rejected, reload
+        for eid in rejected_ids:
+            self._staged.pop(eid, None)
+        self.notify(f"Recovered {len(rejected_ids)} entries back to pending")
+        # Reload from scratch to include recovered entries
+        self._entries.clear()
+        self._content.clear()
+        self._staged.clear()
+        self._offset = 0
+        counts = review_count(self._db_path, topic=self._topic)
+        self._total = counts.get("pending", 0)
+        self._load_entries()
+        self._refresh_table()
+        self._update_status()
+
     def action_quit_discard(self) -> None:
         if self._staged and not self._quit_pending:
             self._quit_pending = True
@@ -262,8 +326,8 @@ class ReviewApp(App):
             self._show_detail(str(event.row_key.value))
 
 
-def run_tui(db_path: Path, vector_db: VectorDB, topic: str | None = None, limit: int = 100) -> None:
-    app = ReviewApp(db_path=db_path, vector_db=vector_db, topic=topic, limit=limit)
+def run_tui(db_path: Path, graph_db: GraphDB, vector_db: VectorDB, topic: str | None = None, limit: int = 100) -> None:
+    app = ReviewApp(db_path=db_path, graph_db=graph_db, vector_db=vector_db, topic=topic, limit=limit)
     app.run()
 
 

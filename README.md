@@ -83,7 +83,7 @@ All output is JSON to stdout. Logs go to stderr.
 | `get-by-topic` | Fetch sample entries for a topic |
 | `get-vector` | Fetch entry from vector DB by ID |
 | `get-graph` | Fetch entry from graph DB by ID |
-| `review` | Query review queue. `--tui` for interactive UI, `--export`/`--import` for batch |
+| `review` | Query review queue. `--tui` for interactive UI, `--export`/`--import` for batch, `--purge-rejected`/`--recover-rejected` |
 | `approve` | Mark entry as approved in review queue |
 | `reject` | Mark entry as rejected in review queue |
 | `log` | Query submission log. `--topic`, `--after`, `--before`, `--count` |
@@ -133,6 +133,8 @@ okgv approve --id <uuid>                   # approve single entry
 okgv reject --id <uuid>                    # reject single entry
 okgv review --purge-rejected --dry-run     # preview rejected cleanup
 okgv review --purge-rejected               # delete rejected from all DBs
+okgv review --recover-rejected --dry-run   # preview recovery
+okgv review --recover-rejected             # set rejected back to pending
 
 # Query submission log
 okgv log
@@ -261,6 +263,7 @@ okgv review --topic algebra              # list pending entries
 okgv approve --id <uuid>
 okgv reject --id <uuid>
 okgv review --purge-rejected             # delete rejected from all DBs
+okgv review --recover-rejected           # set rejected back to pending
 ```
 
 **For humans** — interactive TUI or export/import:
@@ -283,6 +286,8 @@ okgv review --import review.json
 | `u` | Undo mark (revert to pending) |
 | `s` | Skip / next entry |
 | `c` | Commit all staged decisions to DB |
+| `p` | Purge rejected entries from all DBs (press twice to confirm) |
+| `v` | Recover rejected entries (set back to pending) |
 | `q` | Quit and discard unsaved changes |
 
 Decisions are staged locally — nothing is written until `c` is pressed. Entries stay visible in the table with colored status indicators. The status bar shows pending/approved/rejected counts and unsaved changes.
@@ -295,7 +300,7 @@ Decisions are staged locally — nothing is written until `c` is pressed. Entrie
 | `approved` | Reviewed and kept |
 | `rejected` | Reviewed and marked for deletion |
 
-Rejected entries remain in DBs until `okgv review --purge-rejected` is run. `undo` and `purge` also clean up review state.
+Rejected entries remain in DBs until `okgv review --purge-rejected` is run. Use `okgv review --recover-rejected` to set them back to pending instead. `undo` and `purge` also clean up review state.
 
 ## Error Handling
 

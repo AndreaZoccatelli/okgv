@@ -47,6 +47,7 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 - `okgv approve --id <uuid>` — mark entry as approved.
 - `okgv reject --id <uuid>` — mark entry as rejected.
 - `okgv review --purge-rejected [--dry-run]` — delete rejected entries from all DBs.
+- `okgv review --recover-rejected [--dry-run]` — set rejected entries back to pending.
 
 ### Log
 - `okgv log [--limit N] [--offset N]` — list recent submissions (default: last 20).

@@ -639,15 +639,16 @@ def get_graph(session: Session, entry_id: str):
 @click.option("--import", "import_path", default=None, help="Import review decisions from JSON file.")
 @click.option("--tui", is_flag=True, default=False, help="Launch interactive terminal UI for review.")
 @click.option("--purge-rejected", is_flag=True, default=False, help="Delete rejected entries from all DBs.")
-@click.option("--dry-run", is_flag=True, default=False, help="Preview purge without deleting.")
+@click.option("--recover-rejected", is_flag=True, default=False, help="Set rejected entries back to pending.")
+@click.option("--dry-run", is_flag=True, default=False, help="Preview purge/recover without applying.")
 @click.pass_obj
-def review_cmd(session: Session, topic: str | None, status: str, limit: int, offset: int, count: bool, export_path: str | None, import_path: str | None, tui: bool, purge_rejected: bool, dry_run: bool):
-    """Query the review queue, export/import decisions, or purge rejected entries."""
+def review_cmd(session: Session, topic: str | None, status: str, limit: int, offset: int, count: bool, export_path: str | None, import_path: str | None, tui: bool, purge_rejected: bool, recover_rejected: bool, dry_run: bool):
+    """Query the review queue, export/import decisions, purge or recover rejected entries."""
     db_path = session.db_path
 
     if tui:
         from okgv.tui import run_tui
-        run_tui(db_path=db_path, vector_db=session.vector_db, topic=topic, limit=limit)
+        run_tui(db_path=db_path, graph_db=session.graph_db, vector_db=session.vector_db, topic=topic, limit=limit)
         return
 
     if import_path:
@@ -691,6 +692,18 @@ def review_cmd(session: Session, topic: str | None, status: str, limit: int, off
         log_remove_entries(db_path, rejected_ids)
         review_purge_rejected(db_path)
         output({"purged": len(rejected_ids), "ids": rejected_ids})
+        return
+
+    if recover_rejected:
+        rejected_ids = review_get_rejected(db_path)
+        if not rejected_ids:
+            output({"recovered": 0})
+            return
+        if dry_run:
+            output({"dry_run": True, "would_recover": rejected_ids, "count": len(rejected_ids)})
+            return
+        review_update(db_path, rejected_ids, "pending")
+        output({"recovered": len(rejected_ids), "ids": rejected_ids})
         return
 
     if export_path:
