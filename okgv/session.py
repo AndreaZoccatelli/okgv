@@ -13,6 +13,8 @@ class Session:
     """Holds DB connections, schema, embedder, and database path.
 
     All properties are lazily initialized on first access.
+    graph_db only needs a connection (no model loading).
+    vector_db additionally needs embed_dim (may trigger model loading on first run).
     For testing, pass pre-built objects to __init__ to skip real connections.
     """
 
@@ -40,33 +42,62 @@ class Session:
             self._schema = load_schema()
         return self._schema
 
-    def _ensure_db(self) -> None:
-        """Create shared connection and both DB layers on first access."""
+    def _ensure_conn(self) -> None:
+        """Create shared connection + graph DB. No model loading."""
         if self._conn is not None:
             return
-        from okgv.connections import get_embed_dim
-        from okgv.db import create_db
+        from okgv.db import create_conn
 
-        embed_dim = get_embed_dim() or self._detect_embed_dim()
-        self._conn, self._graph_db, self._vector_db = create_db(
-            self.db_path, embed_dim
-        )
+        self._conn = create_conn(self.db_path)
+
+        from okgv.graph.sqlite_client import SQLiteGraphDB
+
+        self._graph_db = SQLiteGraphDB(self._conn)
+
+    def _ensure_vector_db(self) -> None:
+        """Create vector DB layer. Loads model only if dim not yet stored."""
+        self._ensure_conn()
+        if self._vector_db is not None:
+            return
+        from okgv.connections import get_embed_dim
+        from okgv.db import _store_dim, get_stored_dim
+        from okgv.vector.sqlite_client import SQLiteVectorDB
+
+        env_dim = get_embed_dim()
+        stored_dim = get_stored_dim(self._conn)
+
+        if env_dim and stored_dim and env_dim != stored_dim:
+            from okgv.helpers import err, EXIT_USAGE
+
+            err(
+                "embed_dim_mismatch",
+                detail=f"EMBED_DIM={env_dim} but DB was created with dim={stored_dim}",
+                suggestion="Remove EMBED_DIM to use stored value, or purge and recreate the DB",
+                exit_code=EXIT_USAGE,
+            )
+
+        embed_dim = env_dim or stored_dim
+        if embed_dim is None:
+            embed_dim = self._detect_embed_dim()
+
+        _store_dim(self._conn, embed_dim)
+        self._vector_db = SQLiteVectorDB(self._conn, embed_dim=embed_dim)
 
     def _detect_embed_dim(self) -> int:
-        """Auto-detect embedding dimension from model."""
+        """Auto-detect embedding dimension from model. Only called on first run."""
         test_vec = self.embedder(["test"])
         return len(test_vec[0])
 
     @property
     def graph_db(self):
         if self._graph_db is None:
-            self._ensure_db()
+            self._ensure_conn()
         return self._graph_db
 
     @property
     def vector_db(self):
         if self._vector_db is None:
-            self._ensure_db()
+            self._ensure_vector_db()
         return self._vector_db
 
     @property
