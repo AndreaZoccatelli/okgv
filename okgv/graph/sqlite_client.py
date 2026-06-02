@@ -318,9 +318,5 @@ class SQLiteGraphDB:
         )
         self._commit()
 
-    def ensure_indexes(self) -> None:
-        # Indexes created in schema init
-        pass
-
     def close(self) -> None:
         self._conn.close()

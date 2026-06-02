@@ -123,7 +123,10 @@ def tree(
 ):
     """Display the topic tree visually in the terminal."""
     if interactive:
-        from okgv.tui import run_browse
+        try:
+            from okgv.tui import run_browse
+        except ImportError:
+            err("missing_dependency", "textual is required for interactive mode: pip install okgv[tui]", exit_code=1)
 
         run_browse(
             graph_db=session.graph_db,
@@ -787,7 +790,10 @@ def review_cmd(
     db_path = session.db_path
 
     if interactive:
-        from okgv.tui import run_tui
+        try:
+            from okgv.tui import run_tui
+        except ImportError:
+            err("missing_dependency", "textual is required for interactive mode: pip install okgv[tui]", exit_code=1)
 
         run_tui(
             db_path=db_path,

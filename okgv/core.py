@@ -152,7 +152,8 @@ def upsert_entries_batch(
     if entries is None:
         entries = [build_entry(schema, raw) for raw in raws]
 
-    # Validate schema once using first entry
+    # Validate schema structure once (key collisions, property definitions).
+    # Entry-level validation (missing fields) happens in build_entry() above.
     first = entries[0]
     validate_schema(
         schema,

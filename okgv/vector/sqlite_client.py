@@ -148,7 +148,7 @@ class SQLiteVectorDB:
                     "INSERT INTO vec_entries (id, embedding, topic) VALUES (?, ?, ?)",
                     (eid, blob, topic),
                 )
-            except Exception:
+            except (sqlite3.Error, ValueError):
                 failed.append(eid)
         self._conn.commit()
         return failed
@@ -228,10 +228,6 @@ class SQLiteVectorDB:
             tuple(entry_ids),
         )
         self._conn.commit()
-
-    def ensure_collection(self) -> None:
-        # Tables created in __init__
-        pass
 
     def close(self) -> None:
         # Connection owned externally

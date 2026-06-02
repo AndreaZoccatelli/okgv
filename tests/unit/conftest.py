@@ -222,9 +222,6 @@ class MockVectorDB:
             self.topics.pop(eid, None)
             self.vectors.pop(eid, None)
 
-    def ensure_collection(self) -> None:
-        pass
-
     def close(self) -> None:
         pass
 
