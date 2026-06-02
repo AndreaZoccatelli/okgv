@@ -12,17 +12,18 @@ Example entry:
 """
 
 from okgv.protocols import PropertyDefinition
+from okgv.validators import NotEmpty, OneOf
+
+difficulty = OneOf("difficulty", {"easy", "medium", "hard"})
+utterance = NotEmpty("utterance")
+intent = NotEmpty("intent")
 
 
 class IntentEntry:
-    VALID_DIFFICULTIES = {"easy", "medium", "hard"}
-
     def __init__(self, raw: dict):
-        self.utterance = raw["utterance"]
-        self.intent = raw["intent"]
-        self.difficulty = raw.get("difficulty", "medium")
-        if self.difficulty not in self.VALID_DIFFICULTIES:
-            raise ValueError(f"difficulty must be one of {self.VALID_DIFFICULTIES}, got '{self.difficulty}'")
+        self.utterance = utterance.validate(raw["utterance"])
+        self.intent = intent.validate(raw["intent"])
+        self.difficulty = difficulty.validate(raw.get("difficulty", "medium"))
 
     def char_length(self) -> int:
         return len(self.utterance)
@@ -30,6 +31,19 @@ class IntentEntry:
 
 class IntentSchema:
     entry_class = IntentEntry
+    validators = [utterance, intent, difficulty]
+    field_descriptions = {
+        "utterance": "a realistic user message, 5-30 words, natural tone",
+        "intent": "the user's intent category, matching the topic structure",
+        "difficulty": (
+            "how hard it is to classify the utterance correctly",
+            {
+                "easy": "clear keyword match, unambiguous intent",
+                "medium": "requires context or mild ambiguity",
+                "hard": "ambiguous phrasing, multiple possible intents, sarcasm or implicit meaning",
+            },
+        ),
+    }
 
     @staticmethod
     def metadata(entry: IntentEntry) -> dict:

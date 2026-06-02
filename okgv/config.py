@@ -1,13 +1,11 @@
 """
 Schema discovery.
 
-Resolution:
-  1. OKGV_SCHEMA env var  →  "module:ClassName"
-  2. Built-in QAEntrySchema (fallback)
+Reads OKGV_SCHEMA env var in "module:ClassName" format.
+The module is resolved relative to cwd. Example: "schema:MyEntrySchema"
+imports schema.py from cwd and uses MyEntrySchema class.
 
-The "module:ClassName" format imports `module` (relative to cwd) and
-gets `ClassName` from it. Example: "schema:MyEntrySchema" imports
-schema.py from cwd and uses MyEntrySchema class.
+Run `okgv init` to scaffold a schema.py template.
 """
 
 from __future__ import annotations
@@ -54,11 +52,15 @@ def _import_schema(specifier: str) -> EntrySchema:
 
 
 def load_schema() -> EntrySchema:
-    """Discover and load the active EntrySchema."""
+    """Load the active EntrySchema from OKGV_SCHEMA env var."""
     env_specifier = os.getenv("OKGV_SCHEMA")
-    if env_specifier:
-        return _import_schema(env_specifier)
+    if not env_specifier:
+        from okgv.helpers import EXIT_USAGE, err
 
-    from okgv.schemas.qa import QAEntrySchema
-
-    return QAEntrySchema()
+        err(
+            "no_schema",
+            detail="OKGV_SCHEMA environment variable is not set",
+            suggestion="Set OKGV_SCHEMA in .env (e.g. OKGV_SCHEMA=schema:MyEntrySchema). Run 'okgv init' to scaffold project files.",
+            exit_code=EXIT_USAGE,
+        )
+    return _import_schema(env_specifier)

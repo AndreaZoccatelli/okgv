@@ -4,14 +4,18 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 
 ## Workflow
 
-1. **Explore structure**: `okgv get-structure` → understand topic layout
-2. **Find underrepresented area**: `okgv least-topic --topic <parent>` → returns child with fewest entries
-3. **Generate** a candidate entry (your job)
-4. **Check similarity**: `okgv similar --topic <topic> --entry '<json>'` → top-N similar entries with full content
-5. **Decide**: if too similar (evaluate similarity score and compare the contents) → regenerate or edit. If novel → submit
-6. **Submit**: `okgv submit --topic <topic> --entry '<json>'`
+1. **Learn entry format**: `okgv entry-prompt` → field descriptions, constraints, and valid values
+2. **Explore structure**: `okgv get-structure` → understand topic layout
+3. **Find underrepresented area**: `okgv least-topic --topic <parent>` → returns child with fewest entries
+4. **Generate** a candidate entry following the field constraints (your job)
+5. **Check similarity**: `okgv similar --topic <topic> --entry '<json>'` → top-N similar entries with full content
+6. **Decide**: if too similar (evaluate similarity score and compare the contents) → regenerate or edit. If novel → submit
+7. **Submit**: `okgv submit --topic <topic> --entry '<json>'`
 
 ## Commands
+
+### Entry Format
+- `okgv entry-prompt` — field descriptions, constraints, and valid values for entries. Run this first to understand what fields to include.
 
 ### Discovery
 - `okgv get-structure [--root <path>] [--depth N]` — topic/subtopic tree as nested JSON. Use --root for subtree, --depth to limit levels.

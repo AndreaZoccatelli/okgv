@@ -13,7 +13,9 @@ Coding agents generate entries, okgv handles deduplication (via vector similarit
 pip install -e ".[embeddings]"
 cd my-dataset-project
 okgv init
-# edit .env, schema.py, topics.json
+# creates: .env, schema.py, topics.json, generation-guide.md, schema-guide.md
+# edit schema.py (or use schema-guide.md with an agent to generate it)
+# edit topics.json, .env
 okgv create-structure --file topics.json
 ```
 
@@ -44,19 +46,22 @@ Entries can live at any level. Queries on a topic are recursive, including all d
 ## Agent Workflow
 
 ```
-1. okgv get-structure
+1. okgv master-prompt + okgv entry-prompt
+   → learn CLI usage and entry field requirements
+
+2. okgv get-structure
    → understand topic layout
 
-2. okgv least-topic --topic <parent>
+3. okgv least-topic --topic <parent>
    → pick child topic with fewest entries
 
-3. Agent generates candidate entry (LLM call)
+4. Agent generates candidate entry (LLM call)
 
-4. okgv similar --topic <topic> --entry '<json>'
+5. okgv similar --topic <topic> --entry '<json>'
    → top-N most similar entries WITH FULL CONTENT
    → agent decides: novel enough → submit, too similar → regenerate
 
-5. okgv submit --topic <topic> --entry '<json>' [--review]
+6. okgv submit --topic <topic> --entry '<json>' [--review]
    → upserted into both DBs, logged to okgv.db
    → optionally flagged for review
 ```
@@ -67,8 +72,9 @@ All output is JSON to stdout. Logs go to stderr.
 
 | Command | Purpose |
 |---------|---------|
-| `init` | Scaffold project files (.env, schema.py, topics.json) |
+| `init` | Scaffold project files (.env, schema.py, topics.json, generation-guide.md, schema-guide.md) |
 | `master-prompt` | Print agent instructions for using the CLI |
+| `entry-prompt` | Print entry field descriptions and constraints for the agent |
 | `get-structure` | Topic/subtopic tree as nested JSON. `--root`, `--depth` to scope |
 | `get-depth` | Max depth of topic tree. `--root` to measure from specific topic |
 | `create-topic` | Create topic by path. `--parents` for mkdir -p behavior |
@@ -211,7 +217,7 @@ All via environment variables. A `.env` file in the working directory is **auto-
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `OKGV_SCHEMA` | built-in QA schema | `module:ClassName` schema specifier |
+| `OKGV_SCHEMA` | *required* | `module:ClassName` schema specifier |
 | `OKGV_DB` | `./okgv.db` | Path to SQLite database (graph + vectors + log + review) |
 | `EMBED_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model (`backend/model-name`) |
 | `EMBED_DIM` | auto-detect from model | Embedding dimension override |
@@ -277,6 +283,77 @@ OKGV_SCHEMA=schema:MySchema
 ```
 
 Format: `module:ClassName`, module resolved relative to cwd.
+
+### Validators
+
+okgv provides validators that serve dual purpose: runtime enforcement and agent prompt generation. Define them once, use in `Entry.__init__` for validation, list in `Schema.validators` for prompt output.
+
+```python
+from okgv.validators import OneOf, InRange, NotEmpty, Matches
+
+difficulty = OneOf("difficulty", {"easy", "medium", "hard"})
+score = InRange("score", 0, 100)
+text = NotEmpty("text")
+
+class MyEntry:
+    def __init__(self, raw: dict):
+        self.difficulty = difficulty.validate(raw["difficulty"])
+        self.score = score.validate(raw["score"])
+        self.text = text.validate(raw["text"])
+
+class MySchema:
+    entry_class = MyEntry
+    validators = [text, difficulty, score]
+    ...
+```
+
+Built-in validators:
+
+| Validator | Purpose | Prompt output |
+|-----------|---------|---------------|
+| `OneOf(field, values)` | Value in allowed set | `field: must be one of [...]` |
+| `InRange(field, lo, hi)` | Numeric range `[lo, hi]` | `field: number between lo and hi` |
+| `NotEmpty(field)` | Non-empty string | `field: non-empty string` |
+| `Matches(field, pattern)` | Regex match | `field: must match pattern '...'` |
+
+Custom validators can be created by implementing `validate(value)` and `prompt() -> str` methods with a `field` attribute.
+
+### Field Descriptions
+
+Add `field_descriptions` to your schema to tell agents what each field means. These are included in `okgv entry-prompt` output alongside validator constraints.
+
+```python
+class MySchema:
+    entry_class = MyEntry
+    validators = [text, difficulty, score]
+    field_descriptions = {
+        "text": "the main content of the entry, 1-3 sentences",
+        "score": "quality score based on clarity and correctness",
+        "difficulty": (
+            "cognitive difficulty for a graduate student",
+            {
+                "easy": "single concept, direct application",
+                "medium": "requires combining 2-3 concepts",
+                "hard": "multi-step reasoning, edge cases",
+            },
+        ),
+    }
+```
+
+Simple string descriptions and tuple descriptions (with per-option details) can be mixed. Running `okgv entry-prompt` outputs:
+
+```
+# Entry Fields
+
+Each entry in this knowledge base has the following fields:
+
+- text: the main content of the entry, 1-3 sentences. Non-empty string
+- score: quality score based on clarity and correctness. Number between 0 and 100
+- difficulty: cognitive difficulty for a graduate student. Must be one of ['easy', 'hard', 'medium']
+  - easy: single concept, direct application
+  - medium: requires combining 2-3 concepts
+  - hard: multi-step reasoning, edge cases
+```
 
 ### Schema Validation
 

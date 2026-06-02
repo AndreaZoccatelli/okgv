@@ -2,8 +2,7 @@
 CLI for AI agents to interact with the self-organized knowledge base.
 
 Schema discovery (see config.py):
-  1. OKGV_SCHEMA env var →  "module:ClassName"
-  2. Built-in QAEntrySchema fallback
+  OKGV_SCHEMA env var →  "module:ClassName"
 
 Exit codes:  0=ok  1=failure  2=usage  3=not_found  4=connection
 """
@@ -52,12 +51,50 @@ def cli(ctx):
 
 
 @cli.command(name="master-prompt")
-def master_prompt():
+@click.pass_context
+def master_prompt(ctx):
     """Print agent instructions for using the CLI."""
     from importlib.resources import files
 
     templates = files("okgv.templates")
-    click.echo(templates.joinpath("prompt.md").read_text())
+    text = templates.joinpath("prompt.md").read_text()
+
+    click.echo(text)
+
+
+@cli.command(name="entry-prompt")
+@click.pass_context
+def entry_prompt(ctx):
+    """Print entry field descriptions and constraints for the agent."""
+    validators = getattr(ctx.obj.schema, "validators", [])
+    validator_map = {v.field: v for v in validators}
+    descriptions = getattr(ctx.obj.schema, "field_descriptions", {})
+
+    fields = dict.fromkeys([*descriptions.keys(), *validator_map.keys()])
+    if not fields:
+        click.echo("No field descriptions or validators defined in schema.")
+        return
+
+    text = "# Entry Fields\n\nEach entry in this knowledge base has the following fields:\n\n"
+    for field in fields:
+        desc = descriptions.get(field)
+        validator = validator_map.get(field)
+
+        if isinstance(desc, tuple):
+            label, options = desc
+            constraint = f". {validator.prompt().split(': ', 1)[1]}" if validator else ""
+            text += f"- **{field}**: {label}{constraint}\n"
+            for opt, explanation in options.items():
+                text += f"  - {opt}: {explanation}\n"
+        else:
+            parts = []
+            if desc:
+                parts.append(desc)
+            if validator:
+                parts.append(validator.prompt().split(": ", 1)[1])
+            text += f"- **{field}**: {'. '.join(parts)}\n"
+
+    click.echo(text)
 
 
 @cli.command()
@@ -74,6 +111,8 @@ def init():
         ("env.txt", ".env"),
         ("schema.py.txt", "schema.py"),
         ("topics.json", "topics.json"),
+        ("generation-guide.md", "generation-guide.md"),
+        ("schema-guide.md", "schema-guide.md"),
     ]
 
     for template_name, target_name in scaffold:

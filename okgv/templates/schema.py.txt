@@ -5,22 +5,40 @@ Set OKGV_SCHEMA=schema:MyEntrySchema in .env.
 """
 
 from okgv.protocols import PropertyDefinition
+from okgv.validators import NotEmpty, OneOf
+
+# Define validators once, use in Entry.__init__ and Schema.validators
+text_validator = NotEmpty("text")
+category_validator = OneOf("category", {"fact", "definition", "example"})
 
 
 class MyEntry:
     """Your entry class. Accepts raw dict, exposes fields and computed properties."""
 
     def __init__(self, raw: dict):
-        self.text = raw["text"]  # replace with your fields
+        self.text = text_validator.validate(raw["text"])
+        self.category = category_validator.validate(raw["category"])
 
 
 class MyEntrySchema:
     entry_class = MyEntry
+    validators = [text_validator, category_validator]
+    field_descriptions = {
+        "text": "the main content of the entry",
+        "category": (
+            "what type of content this entry represents",
+            {
+                "fact": "a verifiable factual statement",
+                "definition": "a formal definition of a concept",
+                "example": "a concrete example illustrating a concept",
+            },
+        ),
+    }
 
     @staticmethod
     def metadata(entry: MyEntry) -> dict:
         """Stored in both graph and vector DBs."""
-        return {"length": len(entry.text)}
+        return {"length": len(entry.text), "category": entry.category}
 
     @staticmethod
     def graph_properties(entry: MyEntry) -> dict:
@@ -42,5 +60,6 @@ class MyEntrySchema:
         """Schema for vector DB collection. Must cover metadata + vector_properties keys."""
         return [
             PropertyDefinition(name="length", data_type="int"),
+            PropertyDefinition(name="category", data_type="text"),
             PropertyDefinition(name="text", data_type="text"),
         ]
