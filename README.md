@@ -79,7 +79,7 @@ All output is JSON to stdout. Logs go to stderr.
 | `submit-batch` | Batch upsert (single model load). `--review` to flag for review |
 | `move-topic` | Move topic/subtopic under different parent. `--dry-run` to preview |
 | `move-entry` | Move entry to different topic. `--dry-run` to preview |
-| `tree` | Visualize topic tree in terminal. `--counts`, `--export dot\|json` |
+| `tree` | Visualize topic tree. `--counts`, `-i` interactive browser, `--export dot\|json` |
 | `get-by-topic` | Fetch sample entries for a topic |
 | `get-vector` | Fetch entry from vector DB by ID |
 | `get-graph` | Fetch entry from graph DB by ID |

@@ -79,10 +79,17 @@ def init():
 @cli.command()
 @click.option("--root", default=None, help="Start from this topic path. Default: full tree.")
 @click.option("--counts", is_flag=True, default=False, help="Show entry counts per node.")
+@click.option("--interactive", "-i", is_flag=True, default=False, help="Interactive browser: navigate topics, view entries.")
+@click.option("--limit", default=20, show_default=True, help="Max entries per topic in interactive mode.")
 @click.option("--export", "export_fmt", type=click.Choice(["dot", "json"]), default=None, help="Export format: dot (Graphviz) or json.")
 @click.pass_obj
-def tree(session: Session, root: str | None, counts: bool, export_fmt: str | None):
+def tree(session: Session, root: str | None, counts: bool, interactive: bool, limit: int, export_fmt: str | None):
     """Display the topic tree visually in the terminal."""
+    if interactive:
+        from okgv.tui import run_browse
+        run_browse(graph_db=session.graph_db, vector_db=session.vector_db, root=root, entry_limit=limit)
+        return
+
     tree_data = session.graph_db.get_topic_tree(root=root)
     if not tree_data:
         if root:

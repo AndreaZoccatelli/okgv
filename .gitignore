@@ -7,3 +7,5 @@ __pycache__
 log.db
 review.db
 okgv.egg-info
+*.db-wal
+*.db-shm
