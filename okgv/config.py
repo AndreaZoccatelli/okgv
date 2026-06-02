@@ -60,7 +60,7 @@ def load_schema() -> EntrySchema:
         err(
             "no_schema",
             detail="OKGV_SCHEMA environment variable is not set",
-            suggestion="Set OKGV_SCHEMA in .env (e.g. OKGV_SCHEMA=schema:MyEntrySchema). Run 'okgv init' to scaffold project files.",
+            suggestion="Set OKGV_SCHEMA in .env (e.g. OKGV_SCHEMA=schema:MyEntrySchema). Run 'okgv init' to scaffold.",
             exit_code=EXIT_USAGE,
         )
     return _import_schema(env_specifier)
