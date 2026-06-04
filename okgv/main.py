@@ -1194,6 +1194,8 @@ def reconcile(session: Session, dry_run: bool, batch_size: int):
 @click.pass_obj
 def purge(session: Session, confirm: str | None, dry_run: bool):
     """Delete ALL entries from graph DB, vector DB, and log. Hidden command."""
+    db_path = session.db_path
+
     if not dry_run and confirm != "delete all":
         err(
             "bad_confirm",
@@ -1201,14 +1203,22 @@ def purge(session: Session, confirm: str | None, dry_run: bool):
             exit_code=EXIT_USAGE,
         )
 
-    graph_db = session.graph_db
-    vector_db = session.vector_db
-    db_path = session.db_path
+    if not db_path.exists():
+        output({"purged": True, "message": "No database found"})
+        return
+
+    import os
+    import sqlite3
 
     if dry_run:
-        vector_count = sum(len(chunk) for chunk in vector_db.iter_entry_ids())
-        graph_count = sum(len(chunk) for chunk in graph_db.iter_entry_ids())
-        topic_count = graph_db.count_topics()
+        try:
+            graph_db = session.graph_db
+            vector_db = session.vector_db
+            vector_count = sum(len(chunk) for chunk in vector_db.iter_entry_ids())
+            graph_count = sum(len(chunk) for chunk in graph_db.iter_entry_ids())
+            topic_count = graph_db.count_topics()
+        except sqlite3.OperationalError:
+            graph_count = vector_count = topic_count = -1
         output(
             {
                 "dry_run": True,
@@ -1216,23 +1226,18 @@ def purge(session: Session, confirm: str | None, dry_run: bool):
                 "graph_entries": graph_count,
                 "graph_topics": topic_count,
                 "vector_entries": vector_count,
-                "db_exists": db_path.exists(),
+                "db_corrupt": graph_count == -1,
             }
         )
         return
 
-    log("Deleting all entries from vector DB...")
-    for chunk in vector_db.iter_entry_ids():
-        vector_db.delete_by_ids(chunk)
+    log("Closing connection and removing database files...")
+    session.close()
 
-    log("Deleting all nodes from graph DB (entries + topics)...")
-    graph_db.delete_all()
-
-    import os
-
-    if db_path.exists():
-        log("Clearing log + review DB...")
-        os.remove(db_path)
+    for suffix in ("", "-shm", "-wal"):
+        f = db_path.parent / (db_path.name + suffix)
+        if f.exists():
+            os.remove(f)
 
     output({"purged": True})
 
