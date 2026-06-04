@@ -1,80 +1,73 @@
-"""Intent classification schema for LLM training data.
+"""Function calling schema for LLM tool-use training data.
 
-Each entry is a short user utterance with an intent label and difficulty.
-Designed for fine-tuning intent classifiers — compact entries, ~20 tokens each.
+Each entry is a user query paired with the correct function call.
+Compact entries (~30-50 tokens) designed for fine-tuning tool-use capabilities.
 
-Example entry:
-    {
-        "utterance": "I want my money back for order #4521",
-        "intent": "request_refund",
-        "difficulty": "easy"
-    }
+Set OKGV_SCHEMA=config.schema:ToolCallSchema in .env.
 """
 
 from okgv.protocols import PropertyDefinition
 from okgv.validators import NotEmpty, OneOf
 
+query = NotEmpty("query")
+function = NotEmpty("function")
+arguments = NotEmpty("arguments")
 difficulty = OneOf("difficulty", {"easy", "medium", "hard"})
-utterance = NotEmpty("utterance")
-intent = NotEmpty("intent")
 
 
-class IntentEntry:
+class ToolCallEntry:
     def __init__(self, raw: dict):
-        self.utterance = utterance.validate(raw["utterance"])
-        self.intent = intent.validate(raw["intent"])
+        self.query = query.validate(raw["query"])
+        self.function = function.validate(raw["function"])
+        self.arguments = arguments.validate(raw["arguments"])
         self.difficulty = difficulty.validate(raw.get("difficulty", "medium"))
 
-    def char_length(self) -> int:
-        return len(self.utterance)
 
-
-class IntentSchema:
-    entry_class = IntentEntry
-    validators = [utterance, intent, difficulty]
+class ToolCallSchema:
+    entry_class = ToolCallEntry
+    validators = [query, function, arguments, difficulty]
     balance_fields = ["difficulty"]
     field_descriptions = {
-        "utterance": "a realistic user message, 5-30 words, natural tone",
-        "intent": "the user's intent category, matching the topic structure",
+        "query": "natural user request that implies a function call, 5-25 words",
+        "function": "the function name to call, matching the topic's available functions",
+        "arguments": "JSON object with the function arguments extracted from the query",
         "difficulty": (
-            "how hard it is to classify the utterance correctly",
+            "how hard it is to identify the correct function and extract arguments",
             {
-                "easy": "clear keyword match, unambiguous intent",
-                "medium": "requires context or mild ambiguity",
-                "hard": "ambiguous phrasing, multiple possible intents, sarcasm or implicit meaning",
+                "easy": "explicit keywords, all arguments stated directly",
+                "medium": "requires inference or has optional arguments",
+                "hard": "ambiguous phrasing, implicit arguments, or could map to multiple functions",
             },
         ),
     }
 
     @staticmethod
-    def metadata(entry: IntentEntry) -> dict:
-        """Stored in both DBs. Used for grouping/filtering."""
+    def metadata(entry: ToolCallEntry) -> dict:
         return {
-            "intent": entry.intent,
+            "function": entry.function,
             "difficulty": entry.difficulty,
-            "char_length": entry.char_length(),
         }
 
     @staticmethod
-    def graph_properties(entry: IntentEntry) -> dict:
-        """Graph DB only. Full utterance for inspection."""
-        return {"utterance": entry.utterance}
+    def graph_properties(entry: ToolCallEntry) -> dict:
+        return {"query": entry.query}
 
     @staticmethod
-    def vector_properties(entry: IntentEntry) -> dict:
-        """Vector DB only. Text for retrieval."""
-        return {"utterance": entry.utterance}
+    def vector_properties(entry: ToolCallEntry) -> dict:
+        return {
+            "query": entry.query,
+            "arguments": str(entry.arguments),
+        }
 
     @staticmethod
-    def embedding_text(entry: IntentEntry) -> str:
-        """Embed the utterance for similarity search."""
-        return entry.utterance
+    def embedding_text(entry: ToolCallEntry) -> str:
+        return entry.query
 
     @staticmethod
     def vector_property_definitions() -> list[PropertyDefinition]:
         return [
-            PropertyDefinition(name="intent", data_type="text"),
+            PropertyDefinition(name="function", data_type="text"),
             PropertyDefinition(name="difficulty", data_type="text"),
-            PropertyDefinition(name="char_length", data_type="int"),
-            PropertyDefinition(name="utterance", data_type="text"),
+            PropertyDefinition(name="query", data_type="text"),
+            PropertyDefinition(name="arguments", data_type="text"),
         ]

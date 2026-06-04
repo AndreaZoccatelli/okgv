@@ -1,70 +1,61 @@
-# Example: Intent Classification Dataset
+# Example: Function Calling Dataset
 
-Synthetic training data for fine-tuning LLM intent classifiers. Each entry is a short user utterance (~20 tokens) with an intent label and difficulty level.
+Synthetic training data for fine-tuning LLM tool-use capabilities. Each entry pairs a natural user query with the correct function call — name and extracted arguments.
 
 ## Setup
 
 ```bash
 cd example
-# Edit .env with your connection details
-okgv create-structure --file structure.json
+pip install -e "..[embeddings]"
+okgv create-structure --file config/structure.json
 ```
 
 ## Entry format
 
 ```json
 {
-  "utterance": "I want my money back for order #4521",
-  "intent": "request_refund",
+  "query": "What's the weather in Tokyo?",
+  "function": "get_current_weather",
+  "arguments": {"location": "Tokyo"},
   "difficulty": "easy"
 }
 ```
 
 Fields:
-- `utterance` — short user message (required)
-- `intent` — intent label (required)
-- `difficulty` — `easy`, `medium`, or `hard` (default: `medium`)
-
-Easy = clear intent, no ambiguity. Hard = implicit intent, slang, typos, multi-intent.
-
-## Agent workflow
-
-```bash
-# 1. Find topic with fewest entries
-okgv least-topic --topic customer_support/billing
-# → {"topic": "customer_support/billing/refund", "count": 0, ...}
-
-# 2. Check what coverage gaps exist
-okgv topic-stats --topic customer_support/billing/refund --fields "difficulty,intent"
-
-# 3. Generate entry, check similarity
-okgv similar --topic customer_support/billing/refund \
-  --entry '{"utterance": "I need a refund please", "intent": "request_refund", "difficulty": "easy"}'
-
-# 4. Submit if novel enough
-okgv submit --topic customer_support/billing/refund \
-  --entry '{"utterance": "I need a refund please", "intent": "request_refund", "difficulty": "easy"}'
-
-# 5. Batch submit multiple entries
-okgv submit-batch --topic customer_support/billing/refund --entries '[
-  {"utterance": "Can I get my money back?", "intent": "request_refund", "difficulty": "easy"},
-  {"utterance": "ugh this thing broke already smh want refund", "intent": "request_refund", "difficulty": "hard"},
-  {"utterance": "I would like to inquire about the possibility of reversing my recent transaction", "intent": "request_refund", "difficulty": "medium"}
-]'
-```
+- `query` — natural user request, 5-25 words
+- `function` — function name matching the topic structure
+- `arguments` — JSON object with extracted parameters
+- `difficulty` — `easy` (explicit), `medium` (requires inference), `hard` (ambiguous/implicit)
 
 ## Topic hierarchy
 
 ```
-customer_support/
-├── billing/          (refund, payment_issue, subscription)
-├── account/          (login_problem, profile_update, delete_account)
-└── product/          (bug_report, feature_request, how_to)
-
-commerce/
-├── order/            (track_order, cancel_order, change_order)
-├── shipping/         (delivery_time, shipping_cost, international)
-└── returns/          (return_policy, exchange, damaged_item)
+weather/          (current_conditions, forecast, alerts)
+calendar/         (create_event, list_events, modify_event)
+search/           (web_search, file_search, contact_lookup)
+messaging/        (send_message, read_messages, manage_threads)
+math/             (arithmetic, unit_conversion, statistics)
 ```
 
-24 leaf topics. Agent fills each with diverse utterances across difficulty levels.
+15 leaf topics × 3 difficulty levels = 45 cells to fill with diverse entries.
+
+## Generate
+
+Point a coding agent (e.g. Claude Code) at `generation-guide.md` and let it work:
+
+```bash
+claude "read generation-guide.md and start generating"
+```
+
+The agent will use `okgv` commands to explore the structure, generate entries, check for duplicates, and submit — all autonomously.
+
+## Explore the dataset
+
+After generation:
+
+```bash
+okgv get-structure                                    # topic tree
+okgv topic-stats --topic weather --fields "difficulty" # coverage per difficulty
+okgv log --count                                       # entries per topic
+okgv review --count                                    # review queue status
+```
