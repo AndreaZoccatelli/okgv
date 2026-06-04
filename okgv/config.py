@@ -25,7 +25,8 @@ def _import_schema(specifier: str) -> EntrySchema:
     """
     if ":" not in specifier:
         raise ValueError(
-            f"Invalid schema specifier '{specifier}'. Expected format: 'module:ClassName' (e.g. 'config.schema:MyEntrySchema')"
+            f"Invalid schema specifier '{specifier}'. "
+            f"Expected format: 'module:ClassName' (e.g. 'config.schema:MyEntrySchema')"
         )
     module_path, class_name = specifier.rsplit(":", 1)
 
@@ -60,7 +61,8 @@ def load_schema() -> EntrySchema:
         err(
             "no_schema",
             detail="OKGV_SCHEMA environment variable is not set",
-            suggestion="Set OKGV_SCHEMA in .env (e.g. OKGV_SCHEMA=config.schema:MyEntrySchema). Run 'okgv init' to scaffold.",
+            suggestion="Set OKGV_SCHEMA in .env (e.g. OKGV_SCHEMA=config.schema:MyEntrySchema)."
+            " Run 'okgv init' to scaffold.",
             exit_code=EXIT_USAGE,
         )
     return _import_schema(env_specifier)
