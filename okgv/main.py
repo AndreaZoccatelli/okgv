@@ -50,14 +50,14 @@ def cli(ctx):
     ctx.call_on_close(ctx.obj.close)
 
 
-@cli.command(name="master-prompt")
+@cli.command(name="cli-prompt")
 @click.pass_context
-def master_prompt(ctx):
+def cli_prompt(ctx):
     """Print agent instructions for using the CLI."""
     from importlib.resources import files
 
     templates = files("okgv.templates")
-    text = templates.joinpath("prompt.md").read_text()
+    text = templates.joinpath("cli-prompt.md").read_text()
 
     click.echo(text)
 
@@ -115,18 +115,27 @@ def init():
 
     scaffold = [
         ("env.txt", ".env"),
-        ("schema.py.txt", "schema.py"),
-        ("topics.json", "topics.json"),
         ("generation-guide.md", "generation-guide.md"),
-        ("schema-guide.md", "schema-guide.md"),
+        ("schema.py.txt", "config/schema.py"),
+        ("structure.json", "config/structure.json"),
+        ("schema-guide.md", "prompts/schema-guide.md"),
+        ("reviewer-prompt.md", "prompts/reviewer-prompt.md"),
+        ("structure-prompt.md", "prompts/structure-prompt.md"),
     ]
 
     for template_name, target_name in scaffold:
         target = cwd / target_name
         if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
             content = templates.joinpath(template_name).read_text()
             target.write_text(content)
             created.append(target_name)
+
+    # Ensure config/ is importable as a Python package (needed for schema import)
+    init_py = cwd / "config" / "__init__.py"
+    if not init_py.exists() and (cwd / "config").exists():
+        init_py.write_text("")
+        created.append("config/__init__.py")
 
     if created:
         output({"initialized": True, "created": created})

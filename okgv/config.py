@@ -2,10 +2,10 @@
 Schema discovery.
 
 Reads OKGV_SCHEMA env var in "module:ClassName" format.
-The module is resolved relative to cwd. Example: "schema:MyEntrySchema"
-imports schema.py from cwd and uses MyEntrySchema class.
+The module is resolved relative to cwd. Example: "config.schema:MyEntrySchema"
+imports config/schema.py from cwd and uses MyEntrySchema class.
 
-Run `okgv init` to scaffold a schema.py template.
+Run `okgv init` to scaffold a config/schema.py template.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ def _import_schema(specifier: str) -> EntrySchema:
     """
     if ":" not in specifier:
         raise ValueError(
-            f"Invalid schema specifier '{specifier}'. Expected format: 'module:ClassName' (e.g. 'schema:MyEntrySchema')"
+            f"Invalid schema specifier '{specifier}'. Expected format: 'module:ClassName' (e.g. 'config.schema:MyEntrySchema')"
         )
     module_path, class_name = specifier.rsplit(":", 1)
 
@@ -60,7 +60,7 @@ def load_schema() -> EntrySchema:
         err(
             "no_schema",
             detail="OKGV_SCHEMA environment variable is not set",
-            suggestion="Set OKGV_SCHEMA in .env (e.g. OKGV_SCHEMA=schema:MyEntrySchema). Run 'okgv init' to scaffold.",
+            suggestion="Set OKGV_SCHEMA in .env (e.g. OKGV_SCHEMA=config.schema:MyEntrySchema). Run 'okgv init' to scaffold.",
             exit_code=EXIT_USAGE,
         )
     return _import_schema(env_specifier)

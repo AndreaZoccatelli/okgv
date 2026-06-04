@@ -1,7 +1,7 @@
 """Entry schema for this project.
 
 Define your entry class and schema class here.
-Set OKGV_SCHEMA=schema:MyEntrySchema in .env.
+Set OKGV_SCHEMA=config.schema:MyEntrySchema in .env.
 """
 
 from okgv.protocols import PropertyDefinition

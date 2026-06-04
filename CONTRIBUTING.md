@@ -31,7 +31,7 @@ pytest -v
 2. Write tests for new functionality.
 3. Ensure all tests pass before submitting a PR.
 4. Keep commits focused, one logical change per commit.
-5. If change impacts agent/user usage update README and templates/prompt. 
+5. If change impacts agent/user usage update README and templates/cli-prompt. 
 
 ## Code Style
 

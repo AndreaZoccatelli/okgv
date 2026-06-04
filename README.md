@@ -13,10 +13,13 @@ Coding agents generate entries, okgv handles deduplication (via vector similarit
 pip install -e ".[embeddings]"
 cd my-dataset-project
 okgv init
-# creates: .env, schema.py, topics.json, generation-guide.md, schema-guide.md
-# edit schema.py (or use schema-guide.md with an agent to generate it)
-# edit topics.json, .env
-okgv create-structure --file topics.json
+# creates:
+#   .env, generation-guide.md
+#   config/schema.py, config/structure.json
+#   prompts/schema-guide.md, prompts/reviewer-prompt.md, prompts/structure-prompt.md
+# edit config/schema.py (or use prompts/schema-guide.md with an agent to generate it)
+# edit config/structure.json, .env
+okgv create-structure --file config/structure.json
 ```
 
 ## Architecture
@@ -46,7 +49,7 @@ Entries can live at any level. Queries on a topic are recursive, including all d
 ## Agent Workflow
 
 ```
-1. okgv master-prompt + okgv entry-prompt
+1. okgv cli-prompt + okgv entry-prompt
    → learn CLI usage and entry field requirements
 
 2. okgv get-structure
@@ -72,8 +75,8 @@ All output is JSON to stdout. Logs go to stderr.
 
 | Command | Purpose |
 |---------|---------|
-| `init` | Scaffold project files (.env, schema.py, topics.json, generation-guide.md, schema-guide.md) |
-| `master-prompt` | Print agent instructions for using the CLI |
+| `init` | Scaffold project: `.env`, `generation-guide.md`, `config/` (schema.py, structure.json), `prompts/` (schema-guide, reviewer-prompt, structure-prompt) |
+| `cli-prompt` | Print agent instructions for using the CLI |
 | `entry-prompt` | Print entry field descriptions and constraints for the agent |
 | `get-structure` | Topic/subtopic tree as nested JSON. `--root`, `--depth` to scope |
 | `get-depth` | Max depth of topic tree. `--root` to measure from specific topic |
@@ -112,7 +115,7 @@ okgv get-depth
 okgv create-topic --name algebra/linear_algebra/basics --parents
 
 # Or from file
-okgv create-structure --file topics.json
+okgv create-structure --file config/structure.json
 
 # Find underrepresented area
 okgv least-topic --topic algebra

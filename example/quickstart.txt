@@ -1,1 +1,0 @@
-Look at current repo files, your goal is to create a balanced synthetic dataset. Use the okgv CLI, to understand how it works run: "uv run okgv master-prompt". Do NOT look at okgv source code. After you understood ask me what I want to do. 
