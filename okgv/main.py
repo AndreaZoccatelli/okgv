@@ -176,20 +176,6 @@ def tree(
     export_fmt: str | None,
 ):
     """Display the topic tree visually in the terminal."""
-    if interactive:
-        try:
-            from okgv.tui import run_browse
-        except ImportError:
-            err("missing_dependency", "textual is required for interactive mode: pip install okgv[tui]", exit_code=1)
-
-        run_browse(
-            graph_db=session.graph_db,
-            vector_db=session.vector_db,
-            root=root,
-            entry_limit=limit,
-        )
-        return
-
     tree_data = session.graph_db.get_topic_tree(root=root)
     if not tree_data:
         if root:
@@ -200,6 +186,22 @@ def tree(
             )
         else:
             err("no_topics", detail="No topics found", exit_code=EXIT_NOT_FOUND)
+
+    if interactive:
+        try:
+            from okgv.tui import run_browse
+        except ImportError:
+            err("missing_dependency", "textual is required for interactive mode: pip install okgv[tui]", exit_code=1)
+
+        # Pass vector_db lazily: browsing the tree must not trigger an embedding
+        # model load when the vector DB has no stored dimension yet.
+        run_browse(
+            graph_db=session.graph_db,
+            get_vector_db=lambda: session.vector_db,
+            root=root,
+            entry_limit=limit,
+        )
+        return
 
     if export_fmt == "json":
         output(tree_data)
@@ -247,7 +249,12 @@ def tree(
 
     label = root or "topics"
     rich_tree = RichTree(f"[bold]{label}[/bold]")
-    _build(tree_data, rich_tree)
+    # get_topic_tree includes the root itself as the top key; strip it so the
+    # root is not rendered twice (once as RichTree label, once as a child).
+    render_data = tree_data
+    if root:
+        render_data = tree_data.get(root.rsplit("/", 1)[-1], {})
+    _build(render_data, rich_tree)
     Console(stderr=True).print(rich_tree)
 
 

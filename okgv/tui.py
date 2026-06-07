@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from rich.text import Text
@@ -392,13 +393,15 @@ class BrowseApp(App):
     def __init__(
         self,
         graph_db: GraphDB,
-        vector_db: VectorDB,
+        get_vector_db: Callable[[], VectorDB],
         root: str | None = None,
         entry_limit: int = 20,
     ):
         super().__init__()
         self._graph_db = graph_db
-        self._vector_db = vector_db
+        # Lazy: only resolved when entries are actually fetched, so browsing a
+        # topic-only / empty DB never triggers an embedding model load.
+        self._get_vector_db = get_vector_db
         self._root = root
         self._entry_limit = entry_limit
         self._current_topic: str | None = None
@@ -406,6 +409,13 @@ class BrowseApp(App):
         self._topic_all_ids: dict[str, list[str]] = {}
         # Loaded records per topic
         self._entry_cache: dict[str, list] = {}
+        self._vector_db_cache: VectorDB | None = None
+
+    @property
+    def _vector_db(self) -> VectorDB:
+        if self._vector_db_cache is None:
+            self._vector_db_cache = self._get_vector_db()
+        return self._vector_db_cache
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -558,13 +568,13 @@ class BrowseApp(App):
 
 def run_browse(
     graph_db: GraphDB,
-    vector_db: VectorDB,
+    get_vector_db: Callable[[], VectorDB],
     root: str | None = None,
     entry_limit: int = 20,
 ) -> None:
     app = BrowseApp(
         graph_db=graph_db,
-        vector_db=vector_db,
+        get_vector_db=get_vector_db,
         root=root,
         entry_limit=entry_limit,
     )

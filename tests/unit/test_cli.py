@@ -377,3 +377,79 @@ class TestExport:
         assert "text" in row
         assert "extra" not in row
         assert "id" not in row
+
+
+def _seed_tree(graph_db):
+    """algebra/{linear,abstract}, geometry/euclidean."""
+    graph_db.create_topic("algebra")
+    graph_db.create_subtopic("algebra", "linear")
+    graph_db.create_subtopic("algebra", "abstract")
+    graph_db.create_topic("geometry")
+    graph_db.create_subtopic("geometry", "euclidean")
+
+
+class TestTree:
+    def test_root_not_found(self, runner, mock_session):
+        _seed_tree(mock_session.graph_db)
+        result = runner.invoke(cli, ["tree", "--root", "nope"], obj=mock_session)
+        assert result.exit_code == 3
+        assert "not_found" in result.stderr
+
+    def test_no_topics(self, runner, mock_session):
+        result = runner.invoke(cli, ["tree"], obj=mock_session)
+        assert result.exit_code == 3
+        assert "no_topics" in result.stderr
+
+    def test_export_json_includes_root(self, runner, mock_session):
+        _seed_tree(mock_session.graph_db)
+        result = runner.invoke(cli, ["tree", "--root", "algebra", "--export", "json"], obj=mock_session)
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        # get_topic_tree returns the root itself as the top key.
+        assert data == {"algebra": {"linear": {}, "abstract": {}}}
+
+    def test_export_dot(self, runner, mock_session):
+        _seed_tree(mock_session.graph_db)
+        result = runner.invoke(cli, ["tree", "--export", "dot"], obj=mock_session)
+        assert result.exit_code == 0
+        assert "digraph topics" in result.output
+        assert '"algebra"' in result.output
+        assert '"linear"' in result.output
+
+    def test_render_root_not_doubled(self, runner, mock_session):
+        """Rich render must show the root once, not duplicated under itself."""
+        _seed_tree(mock_session.graph_db)
+        result = runner.invoke(cli, ["tree", "--root", "algebra"], obj=mock_session)
+        assert result.exit_code == 0
+        # Tree is rendered to a stderr Console.
+        assert result.stderr.count("algebra") == 1
+        assert "linear" in result.stderr
+        assert "abstract" in result.stderr
+
+    def test_render_full_tree(self, runner, mock_session):
+        _seed_tree(mock_session.graph_db)
+        result = runner.invoke(cli, ["tree"], obj=mock_session)
+        assert result.exit_code == 0
+        for name in ("topics", "algebra", "geometry", "linear", "euclidean"):
+            assert name in result.stderr
+
+
+class TestBrowseLazyVectorDB:
+    def test_vector_db_resolved_lazily(self):
+        """Browsing must not resolve the vector DB (which can trigger an
+        embedding model load) until entries are actually fetched."""
+        pytest.importorskip("textual")
+        from okgv.tui import BrowseApp
+
+        calls = []
+
+        def get_vd():
+            calls.append(1)
+            return MockVectorDB()
+
+        app = BrowseApp(graph_db=MockGraphDB(), get_vector_db=get_vd)
+        assert calls == []  # not resolved at construction
+        _ = app._vector_db
+        assert len(calls) == 1  # resolved on first access
+        _ = app._vector_db
+        assert len(calls) == 1  # cached, not re-resolved

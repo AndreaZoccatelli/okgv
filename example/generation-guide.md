@@ -56,4 +56,4 @@ Hard — ambiguous, implicit:
 
 ## Action
 
-After you understood how to use the CLI, generate 5 entries per topic per difficulty level (easy, medium, hard). Use batch submission. Always check similarity before submitting. Ask me what I want to do.
+After you understood how to use the CLI ask me what I want to do.
