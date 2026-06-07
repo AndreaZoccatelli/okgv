@@ -3,9 +3,47 @@
 [![Tests](https://github.com/AndreaZoccatelli/okgv/actions/workflows/tests.yml/badge.svg)](https://github.com/AndreaZoccatelli/okgv/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-CLI for AI agents to build self-organized synthetic knowledge bases.
+LLMs are often used to generate synthetic text datasets for training other ML models. Two requirements make this hard at scale: the dataset has to stay balanced, and it has to avoid near-duplicate instances. Both get harder as the instance count grows.
 
-Coding agents generate entries, okgv handles deduplication (via vector similarity) and organization (via graph structure). The agent owns the decision loop, okgv provides the tools.
+The reason is context. Suppose you want questions about cats and dogs, each rated easy, medium, or hard, balanced both across categories (cats vs. dogs) and across difficulty levels. The naive approach, asking the LLM to "ensure diversity", forces it to hold every previously generated instance in context to know what is still missing. Deduplication hits the same wall: spotting a near-duplicate requires comparing the candidate against all prior instances, which again means keeping them in context. Past a few hundred instances this becomes infeasible.
+
+okgv moves that state out of the prompt and into storage. It models a dataset as a tree: each topic is a node, its sub-topics are its children, and every instance is an entry attached to a single topic node. Each entry is also stored as a vector embedding. The agent never has to remember what it generated, it queries the store instead.
+
+This makes the agent work one topic at a time. It checks which topics are underrepresented to pick what to generate next, and before adding a new entry it measures the candidate against the entries already under that same topic. The closest matches come back with their full content, so the agent can decide whether the candidate is too similar to keep. The dataset never lives in the prompt, and the result stays easy to inspect.
+
+Handing an agent full ownership of generation requires a degree of trust that isn't always warranted. For that reason, okgv also supports a review stage: entries can be inspected and approved or discarded, interactively through a TUI by a human, or via CLI commands by an agent prompted to act as the reviewer.
+
+## When to use okgv (and when not to)
+
+okgv is not a vector database and not a large-scale curation pipeline. It is a thin, agent-native layer for building a dataset incrementally, where the generating agent makes the novelty and balance decisions in the loop. The design choices follow from that niche.
+
+It is meant to be driven directly by a coding agent. You point the agent at the task; it reads `okgv cli-prompt`, then runs the generation loop itself through the CLI, finding gaps, checking novelty, submitting. You don't build an API-call pipeline, and the agent doesn't have to hold the growing dataset in its context to stay balanced and avoid duplicates, because that state lives in okgv and the agent queries it.
+
+**Use okgv when:**
+
+- An **agent drives generation** and you want it to decide, per candidate, whether a new entry is novel enough to keep, with the nearest existing entries surfaced as full-content context rather than reduced to a similarity score.
+- The dataset is naturally **hierarchical** and must stay **balanced** across that hierarchy. The topic tree doubles as the balance stratum and the dedup scope.
+- You want a **human or a second agent to review** generated entries before they ship.
+- You want **zero infrastructure**: one portable SQLite file, no server, JSON in and out.
+- You need the dataset to be an **auditable artifact**: inspectable, reviewable, traceable through the submission log, and reversible with `undo` and `reconcile`. Useful when you have to trust the data, such as eval sets or regulated domains.
+- Each **leaf topic stays bounded** (roughly up to a few thousand entries). Similarity is scoped to the exact topic, so its cost tracks the per-topic count, not the total. The overall dataset can be large as long as individual leaf topics stay small. Where possible, group entries into finer sub-topics to keep each leaf small.
+
+**Reach for something else when:**
+
+- You need **reproducible, deterministic** dedup over a fixed corpus. okgv puts the keep/discard call in the agent's hands (see [below](#why-a-guide-not-a-filter)), which is non-deterministic and costs an LLM call per candidate. If you want a repeatable cosine cutoff instead, a vector store with a metadata filter does that without okgv.
+- Individual **leaf topics grow very large** (tens of thousands of entries each). sqlite-vec scores vectors by brute force; the per-topic filter bounds how many it scores, but only down to the leaf-topic size, so a single huge topic wants a real ANN index. Splitting it into finer sub-topics is often enough to stay within okgv; if the entries genuinely can't be partitioned, reach for dedicated tooling.
+- The data has **no meaningful hierarchy** and balance doesn't matter (for example, a flat set of diverse paraphrases). The tree collapses to a single node, the balance machinery does nothing, and okgv degrades to a dedup wrapper you don't need.
+- You want a **full synthetic-data orchestration framework** with provided generation steps and integrations. okgv deliberately stays narrower than that.
+
+In short: okgv trades determinism and per-topic scale for agent-driven, in-the-loop control and zero setup. If that trade matches your workflow, it fits.
+
+### Why a guide, not a filter
+
+A similarity threshold can answer one question: is this candidate too close to something we already have? It returns a number, and a number can reject but it cannot steer. The agent learns only that its attempt failed, not why, so the next attempt is a blind retry that may land in the same crowded region again.
+
+okgv keeps the decision in the loop on purpose. Before a candidate is submitted, `similar` returns the nearest existing entries **with their full content**, not just a score. So "too similar" becomes "too similar *to this specific entry*," and the agent can generate deliberately away from it. A collision stops being a dead end and becomes direction for the next generation.
+
+This is a real trade-off. A threshold is cheaper and deterministic, and for filtering a fixed corpus it is the right tool. But when the goal is to *generate* a balanced, diverse dataset, what matters is filling the gaps, and that needs feedback the agent can act on. Showing it the nearest existing entry turns each near-miss into a more informed next attempt. That feedback is the point, and a bare threshold discards it.
 
 ## Quickstart
 
@@ -21,6 +59,8 @@ okgv init
 # edit config/structure.json, .env
 okgv create-structure --file config/structure.json
 ```
+
+See [`example/`](example/) for a complete worked project: schema, topic structure and generation guide.
 
 ## Architecture
 
@@ -44,7 +84,7 @@ algebra                          → path: "algebra"
 └── abstract_algebra             → path: "algebra/abstract_algebra"
 ```
 
-Entries can live at any level. Queries on a topic are recursive, including all descendant entries.
+Entries can live at any level. Topic queries (counts, listings, stats) are recursive: querying `algebra` includes entries under all its descendants. Similarity search is the exception, it is scoped to the exact target topic only (see [Similarity Scoping](#similarity-scoping)).
 
 ## Agent Workflow
 
@@ -65,7 +105,7 @@ Entries can live at any level. Queries on a topic are recursive, including all d
    → agent decides: novel enough → submit, too similar → regenerate
 
 6. okgv submit --topic <topic> --entry '<json>' [--review]
-   → upserted into both DBs, logged to okgv.db
+   → upserted into both tables, logged to okgv.db
    → optionally flagged for review
 ```
 
@@ -86,20 +126,20 @@ All output is JSON to stdout. Logs go to stderr.
 | `topic-stats` | Entry counts grouped by metadata fields |
 | `similar` | Top-N similar entries within a topic |
 | `similar-batch` | Batch similarity search (single model load) |
-| `submit` | Upsert entry into both DBs. `--review` to flag for review |
+| `submit` | Upsert entry into both tables. `--review` to flag for review |
 | `submit-batch` | Batch upsert (single model load). `--review` to flag for review |
 | `move-topic` | Move topic/subtopic under different parent. `--dry-run` to preview |
 | `move-entry` | Move entry to different topic. `--dry-run` to preview |
 | `tree` | Visualize topic tree. `--counts`, `-i` interactive browser, `--export dot\|json` |
 | `get-by-topic` | Fetch sample entries for a topic |
-| `get-vector` | Fetch entry from vector DB by ID |
-| `get-graph` | Fetch entry from graph DB by ID |
+| `get-vector` | Fetch entry from the vector table by ID |
+| `get-graph` | Fetch entry from the graph table by ID |
 | `review` | Query review queue. `--tui` for interactive UI, `--export`/`--import` for batch, `--purge-rejected`/`--recover-rejected` |
 | `approve` | Mark entry as approved in review queue |
 | `reject` | Mark entry as rejected in review queue |
 | `log` | Query submission log. `--topic`, `--after`, `--before`, `--count` |
 | `undo` | Delete entries submitted after a timestamp. `--dry-run` to preview |
-| `reconcile` | Find and fix orphan entries across DBs. `--dry-run` to preview |
+| `reconcile` | Find and fix orphan entries across the graph and vector tables. `--dry-run` to preview |
 | `export` | Export all entries to JSONL. `--fields`, `--exclude-in-review`, `--dry-run` |
 | `purge` | **Hidden.** Delete everything (entries, topics, log). Requires `--confirm "delete all"` |
 
@@ -144,7 +184,7 @@ okgv review --import review.json           # import decisions
 okgv approve --id <uuid>                   # approve single entry
 okgv reject --id <uuid>                    # reject single entry
 okgv review --purge-rejected --dry-run     # preview rejected cleanup
-okgv review --purge-rejected               # delete rejected from all DBs
+okgv review --purge-rejected               # delete rejected from all tables
 okgv review --recover-rejected --dry-run   # preview recovery
 okgv review --recover-rejected             # set rejected back to pending
 
@@ -253,7 +293,7 @@ class MySchema:
 
     @staticmethod
     def metadata(entry: MyEntry) -> dict:
-        """Stored in BOTH graph and vector DBs."""
+        """Stored in BOTH graph and vector tables."""
         return {"text_length": entry.text_length()}
 
     @staticmethod
@@ -378,7 +418,7 @@ At runtime, okgv validates:
 
 ## Review System
 
-Entries can be flagged for review at submit time. Review is an external tracking layer, it does not block entry insertion. Entries always go into both DBs immediately.
+Entries can be flagged for review at submit time. Review is an external tracking layer, it does not block entry insertion. Entries always go into both tables immediately.
 
 All review commands are CLI-based, so both humans and agents can drive review. This enables multi-agent pipelines: one agent generates entries, another reviews them for quality, consistency, or adherence to constraints.
 
@@ -395,8 +435,8 @@ okgv review --topic algebra              # list pending entries
 okgv review --topic algebra --count      # counts by status
 okgv approve --id <uuid>
 okgv reject --id <uuid>
-okgv review --purge-rejected             # delete rejected from all DBs
 okgv review --recover-rejected           # set rejected back to pending
+okgv review --purge-rejected             # delete rejected from all tables
 ```
 
 **Via interactive TUI** (humans only):
@@ -419,7 +459,7 @@ okgv review --import review.json
 | `u` | Undo mark (revert to pending) |
 | `s` | Skip / next entry |
 | `c` | Commit all staged decisions to DB |
-| `p` | Purge rejected entries from all DBs (press twice to confirm) |
+| `p` | Purge rejected entries from all tables (press twice to confirm) |
 | `v` | Recover rejected entries (set back to pending) |
 | `q` | Quit and discard unsaved changes |
 
