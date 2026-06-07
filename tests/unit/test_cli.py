@@ -433,6 +433,23 @@ class TestTree:
         for name in ("topics", "algebra", "geometry", "linear", "euclidean"):
             assert name in result.stderr
 
+    def test_render_missing_rich_errors_cleanly(self, runner, mock_session, monkeypatch):
+        """Without rich, the default render must emit a friendly error, not a traceback."""
+        import builtins
+
+        _seed_tree(mock_session.graph_db)
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name.startswith("rich"):
+                raise ImportError("No module named 'rich'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        result = runner.invoke(cli, ["tree", "--root", "algebra"], obj=mock_session)
+        assert result.exit_code == 1
+        assert "missing_dependency" in result.stderr
+
 
 class TestBrowseLazyVectorDB:
     def test_vector_db_resolved_lazily(self):

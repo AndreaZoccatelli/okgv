@@ -224,8 +224,15 @@ def tree(
         return
 
     # Terminal display with rich.tree
-    from rich.console import Console
-    from rich.tree import Tree as RichTree
+    try:
+        from rich.console import Console
+        from rich.tree import Tree as RichTree
+    except ImportError:
+        err(
+            "missing_dependency",
+            detail="rich is required for tree display: pip install rich (or use --export json/dot)",
+            exit_code=1,
+        )
 
     count_map = {}
     if counts:
