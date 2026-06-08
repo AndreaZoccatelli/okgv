@@ -1257,7 +1257,7 @@ def purge(session: Session, confirm: str | None, dry_run: bool):
 
 
 @cli.command(name="export")
-@click.option("--output", "output_path", required=True, help="Path to output .jsonl file.")
+@click.option("--output", "output_path", default=None, help="Path to output .jsonl file. Required unless --dry-run.")
 @click.option(
     "--fields",
     default=None,
@@ -1279,7 +1279,7 @@ def purge(session: Session, confirm: str | None, dry_run: bool):
 @click.pass_obj
 def export_cmd(
     session: Session,
-    output_path: str,
+    output_path: str | None,
     fields: str | None,
     exclude_in_review: bool,
     batch_size: int,
@@ -1287,6 +1287,9 @@ def export_cmd(
 ):
     """Export all entries to a JSONL file for model training."""
     import os
+
+    if not dry_run and not output_path:
+        err("usage", detail="--output is required unless --dry-run is set", exit_code=EXIT_USAGE)
 
     field_set = {f.strip() for f in fields.split(",")} if fields else None
     pending_ids = review_get_pending_ids(session.db_path) if exclude_in_review else set()
