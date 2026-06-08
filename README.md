@@ -72,6 +72,8 @@ Every entry is identified by a deterministic UUID5 (computed from canonical JSON
 
 Use `okgv tree` to visualize the topic hierarchy in the terminal.
 
+![Tree TUI](resources/tree_tui.svg)
+
 ### Topic Structure
 
 Topics form a tree with path-based identity:
@@ -440,6 +442,9 @@ okgv review --purge-rejected             # delete rejected from all tables
 ```
 
 **Via interactive TUI** (humans only):
+
+![Review TUI](resources/review_tui.svg)
+
 ```bash
 # Terminal UI with staged changes (requires: pip install okgv[tui])
 okgv review --tui --topic algebra
