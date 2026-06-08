@@ -70,7 +70,7 @@ The three `prompts/` files are the point of okgv: each hands one phase of the wo
 **1. Design the schema** (what every entry looks like):
 
 ```bash
-claude "read prompts/schema-guide.md and help me design my schema"
+"read prompts/schema-guide.md and help me design my schema" # prompt for the agent
 ```
 
 The agent interviews you about fields, constraints, and storage, then writes `config/schema.py`. Set `OKGV_SCHEMA=config.schema:YourSchema` in `.env`.
@@ -78,14 +78,14 @@ The agent interviews you about fields, constraints, and storage, then writes `co
 **2. Design the topic tree** (how entries are scoped and balanced):
 
 ```bash
-claude "read prompts/structure-prompt.md and help me design my topic structure"
+"read prompts/structure-prompt.md and help me design my topic structure"
 okgv create-structure --file config/structure.json   # load the agreed tree into okgv.db
 ```
 
 **3. Generate entries** (fill in `generation-guide.md`'s goal first):
 
 ```bash
-claude "read generation-guide.md and start generating"
+"read generation-guide.md and start generating"
 ```
 
 The agent runs the loop itself: `cli-prompt` to learn the CLI, find gaps, check novelty with `similar`, submit. The dataset never lives in its context.
@@ -93,7 +93,7 @@ The agent runs the loop itself: `cli-prompt` to learn the CLI, find gaps, check 
 **4. Review** (optional, if `OKGV_REVIEW=all` or `--review` was used):
 
 ```bash
-claude "read prompts/reviewer-prompt.md and review the pending queue"   # agent reviewer
+"read prompts/reviewer-prompt.md and review the pending queue"   # agent reviewer
 okgv review -i                                                          # or human TUI
 ```
 
