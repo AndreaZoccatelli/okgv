@@ -134,7 +134,7 @@ All output is JSON to stdout. Logs go to stderr.
 | `get-by-topic` | Fetch sample entries for a topic |
 | `get-vector` | Fetch entry from the vector table by ID |
 | `get-graph` | Fetch entry from the graph table by ID |
-| `review` | Query review queue. `--tui` for interactive UI, `--export`/`--import` for batch, `--purge-rejected`/`--recover-rejected` |
+| `review` | Query review queue. `-i` for interactive UI, `--export`/`--import` for batch, `--purge-rejected`/`--recover-rejected` |
 | `approve` | Mark entry as approved in review queue |
 | `reject` | Mark entry as rejected in review queue |
 | `log` | Query submission log. `--topic`, `--after`, `--before`, `--count` |
@@ -177,7 +177,7 @@ okgv submit-batch --topic algebra --entries '[{"text": "..."}, {"text": "..."}]'
 okgv move-topic --source algebra/basics --destination geometry
 
 # Review entries
-okgv review --tui --topic algebra          # interactive terminal UI
+okgv review -i --topic algebra          # interactive terminal UI
 okgv review --topic algebra --count        # counts by status
 okgv review --export review.json           # export for offline review
 okgv review --import review.json           # import decisions
@@ -442,7 +442,7 @@ okgv review --purge-rejected             # delete rejected from all tables
 **Via interactive TUI** (humans only):
 ```bash
 # Terminal UI with staged changes (requires: pip install okgv[tui])
-okgv review --tui --topic algebra
+okgv review -i --topic algebra
 
 # Or export → edit → import
 okgv review --export review.json --topic algebra
