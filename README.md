@@ -72,8 +72,6 @@ Every entry is identified by a deterministic UUID5 (computed from canonical JSON
 
 Use `okgv tree` to visualize the topic hierarchy in the terminal.
 
-![Tree TUI](resources/tree_tui.svg)
-
 ### Topic Structure
 
 Topics form a tree with path-based identity:
@@ -87,6 +85,13 @@ algebra                          → path: "algebra"
 ```
 
 Entries can live at any level. Topic queries (counts, listings, stats) are recursive: querying `algebra` includes entries under all its descendants. Similarity search is the exception, it is scoped to the exact target topic only (see [Similarity Scoping](#similarity-scoping)).
+
+### Tree TUI
+```bash
+# Terminal UI for tree structure (requires: pip install okgv[tui])
+okgv review -i
+```
+![Tree TUI](resources/tree_tui.svg)
 
 ## Agent Workflow
 
@@ -441,19 +446,20 @@ okgv review --recover-rejected           # set rejected back to pending
 okgv review --purge-rejected             # delete rejected from all tables
 ```
 
-**Via interactive TUI** (humans only):
-
-![Review TUI](resources/review_tui.svg)
-
 ```bash
-# Terminal UI with staged changes (requires: pip install okgv[tui])
-okgv review -i --topic algebra
-
 # Or export → edit → import
 okgv review --export review.json --topic algebra
 # edit status field in review.json
 okgv review --import review.json
 ```
+
+**Via interactive TUI** (humans only):
+
+```bash
+# Terminal UI with staged changes (requires: pip install okgv[tui])
+okgv review -i
+```
+![Review TUI](resources/review_tui.svg)
 
 **TUI keyboard shortcuts:**
 
