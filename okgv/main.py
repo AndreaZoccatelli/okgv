@@ -98,7 +98,7 @@ def entry_prompt(ctx):
     if balance_fields:
         text += "\n## Balancing\n\n"
         text += f"Ensure balanced coverage across these fields: {', '.join(balance_fields)}.\n"
-        text += "Use `okgv topic-stats` to check current distribution.\n"
+        text += "Use `okgv topic-stats` to check current distribution within a specific topic.\n"
 
     click.echo(text)
 
