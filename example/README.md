@@ -2,6 +2,8 @@
 
 Synthetic training data for fine-tuning LLM tool-use capabilities. Each entry pairs a natural user query with the correct function call — name and extracted arguments.
 
+![demo](media/demo.gif)
+
 ## Setup
 
 ```bash
