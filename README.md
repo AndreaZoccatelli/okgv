@@ -43,7 +43,7 @@ A similarity threshold can answer one question: is this candidate too close to s
 
 okgv keeps the decision in the loop on purpose. Before a candidate is submitted, `similar` returns the nearest existing entries **with their full content**, not just a score. So "too similar" becomes "too similar *to this specific entry*," and the agent can generate deliberately away from it. A collision stops being a dead end and becomes direction for the next generation.
 
-This is a real trade-off. A threshold is cheaper and deterministic, and for filtering a fixed corpus it is the right tool. But when the goal is to *generate* a balanced, diverse dataset, what matters is filling the gaps, and that needs feedback the agent can act on. Showing it the nearest existing entry turns each near-miss into a more informed next attempt. That feedback is the point, and a bare threshold discards it.
+A threshold is cheaper and deterministic, and for filtering a fixed corpus it is the right tool. But when the goal is to *generate* a balanced, diverse dataset, what matters is filling the gaps, and that needs feedback the agent can act on. Showing it the nearest existing entry turns each near-miss into a more informed next attempt.
 
 ## Quickstart
 
