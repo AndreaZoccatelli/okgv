@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 
 import sqlite_vec
@@ -15,9 +16,41 @@ CREATE TABLE IF NOT EXISTS vec_meta (
 """
 
 
-def create_conn(db_path: str | Path) -> sqlite3.Connection:
+class ManagedConnection(sqlite3.Connection):
+    """Connection whose commit() can be deferred to group multi-table writes.
+
+    The graph and vector clients each commit after their own writes. Inside
+    transaction(), those commit() calls are suppressed so both clients' writes
+    land in one SQLite transaction: committed together on exit, rolled back
+    together on error.
+    """
+
+    _defer = False
+
+    def commit(self) -> None:
+        if not self._defer:
+            super().commit()
+
+    @contextmanager
+    def transaction(self):
+        if self._defer:
+            # Nested: join the outer transaction.
+            yield
+            return
+        self._defer = True
+        try:
+            yield
+            super().commit()
+        except BaseException:
+            super().rollback()
+            raise
+        finally:
+            self._defer = False
+
+
+def create_conn(db_path: str | Path) -> ManagedConnection:
     """Create a shared connection with sqlite-vec loaded."""
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), factory=ManagedConnection)
     conn.enable_load_extension(True)
     sqlite_vec.load(conn)
     conn.enable_load_extension(False)

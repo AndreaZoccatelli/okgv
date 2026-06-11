@@ -106,6 +106,11 @@ def upsert_entry(
 
     validate_schema(schema, meta, graph_props, vector_props)
 
+    # Embed before any DB write: an embedding failure must not leave a
+    # graph-only orphan behind.
+    if vector is None:
+        vector = embedder([schema.embedding_text(entry)])[0]
+
     graph_db.upload_entry(
         topic=topic,
         entry_id=eid,
@@ -113,8 +118,6 @@ def upsert_entry(
         overwrite=overwrite,
     )
 
-    if vector is None:
-        vector = embedder([schema.embedding_text(entry)])[0]
     vector_db.upload_entry(
         entry_id=eid,
         properties={**meta, **vector_props},

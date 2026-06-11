@@ -276,14 +276,19 @@ class SQLiteGraphDB:
         if conflict:
             raise ValueError(f"Destination '{destination}' already has subtopic '{name}'")
 
-        # Temporarily disable FK checks for bulk path update
-        self._execute("PRAGMA foreign_keys=OFF")
-
         # Fetch all affected topics (source + descendants)
         affected = self._execute(
             "SELECT path FROM topics WHERE path = ? OR path LIKE ? ORDER BY path",
             (source, source + "/%"),
         ).fetchall()
+
+        # Paths are rewritten parent-and-children in one pass, so intermediate
+        # states violate the parent FK. Defer FK checks to commit (unlike
+        # "PRAGMA foreign_keys", this also works inside an open transaction).
+        # The pragma auto-resets at every commit, including the statement-level
+        # autocommit of a bare SELECT, so it must be set after the reads above
+        # with no other statement before the first UPDATE.
+        self._execute("PRAGMA defer_foreign_keys=ON")
 
         for (old_path,) in affected:
             # Replace source prefix with new_path, keeping the suffix.
@@ -314,7 +319,6 @@ class SQLiteGraphDB:
                 (updated_topic, eid),
             )
 
-        self._execute("PRAGMA foreign_keys=ON")
         self._commit()
 
     def move_entry(self, entry_id: str, new_topic: str) -> None:

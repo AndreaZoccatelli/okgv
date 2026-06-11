@@ -506,15 +506,16 @@ def submit(session: Session, topic: str, entry: str, overwrite: bool, review: bo
 
     log("Loading embedding model...")
     log(f"Upserting entry into topic '{topic}'...")
-    eid = upsert_entry(
-        schema,
-        session.graph_db,
-        session.vector_db,
-        topic,
-        raw,
-        session.embedder,
-        overwrite=overwrite,
-    )
+    with session.transaction():
+        eid = upsert_entry(
+            schema,
+            session.graph_db,
+            session.vector_db,
+            topic,
+            raw,
+            session.embedder,
+            overwrite=overwrite,
+        )
     log_session(session.db_path, topic, [eid])
     needs_review = review if review is not None else session.review_enabled
     if needs_review:
@@ -646,16 +647,17 @@ def submit_batch(session: Session, topic: str, entries: str, overwrite: bool, re
         vectors = session.embedder(texts)
 
         log(f"Batch upserting {len(valid_raws)} entries into topic '{topic}'...")
-        inserted_ids, failures = upsert_entries_batch(
-            schema,
-            session.graph_db,
-            session.vector_db,
-            topic,
-            valid_raws,
-            valid_entries,
-            vectors,
-            overwrite=overwrite,
-        )
+        with session.transaction():
+            inserted_ids, failures = upsert_entries_batch(
+                schema,
+                session.graph_db,
+                session.vector_db,
+                topic,
+                valid_raws,
+                valid_entries,
+                vectors,
+                overwrite=overwrite,
+            )
         for eid in inserted_ids:
             results.append({"id": eid, "submitted": True})
         for f in failures:
@@ -751,10 +753,11 @@ def move_topic(session: Session, source: str, destination: str, dry_run: bool):
         output({"dry_run": True, "would_move": source, "new_path": new_path})
         return
     try:
-        graph_db.move_topic(source, destination)
+        with session.transaction():
+            graph_db.move_topic(source, destination)
+            session.vector_db.update_topics(source, new_path)
     except ValueError as e:
         err("name_conflict", detail=str(e), exit_code=EXIT_USAGE)
-    session.vector_db.update_topics(source, new_path)
     output({"moved": source, "new_path": new_path})
 
 
@@ -778,8 +781,9 @@ def move_entry(session: Session, entry_id: str, destination: str, dry_run: bool)
     if dry_run:
         output({"dry_run": True, "would_move": entry_id, "destination": destination})
         return
-    session.graph_db.move_entry(entry_id, destination)
-    session.vector_db.update_entry_topic(entry_id, destination)
+    with session.transaction():
+        session.graph_db.move_entry(entry_id, destination)
+        session.vector_db.update_entry_topic(entry_id, destination)
     output({"id": entry_id, "moved_to": destination})
 
 

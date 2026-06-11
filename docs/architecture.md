@@ -71,4 +71,6 @@ Query with `okgv log`. Timestamps are stored in UTC, displayed in local time. Us
 
 ### Consistency
 
-All data lives in a single SQLite database (`okgv.db`). Graph entries and vector entries share the same connection, so operations are atomic within a single command. Use `okgv reconcile` to detect and fix any inconsistencies between graph and vector tables.
+All data lives in a single SQLite database (`okgv.db`). Graph entries and vector entries share the same connection, and commands that write to both stores (`submit`, `submit-batch`, `move-topic`, `move-entry`) wrap their writes in a single SQLite transaction: either both land or neither does. Embeddings are computed before any write, so an embedding failure leaves the database untouched.
+
+The submission log and review queue use a separate connection, so they are updated after the entry transaction commits. `okgv reconcile` remains available to detect and fix inconsistencies between graph and vector tables (for example, from a database modified by external tools).

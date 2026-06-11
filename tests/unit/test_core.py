@@ -37,6 +37,17 @@ class TestUpsertEntry:
         assert props["text_length"] == 5
         assert vector_db.vectors[eid] == [0.1, 0.2, 0.3]
 
+    def test_embedding_failure_writes_nothing(self, graph_db, vector_db, schema):
+        """Embedding happens before any DB write, so a failure leaves no orphan."""
+
+        def bad_embedder(texts):
+            raise RuntimeError("model failed to load")
+
+        with pytest.raises(RuntimeError):
+            core.upsert_entry(schema, graph_db, vector_db, "t", {"text": "x"}, bad_embedder)
+        assert graph_db.entries == {}
+        assert vector_db.entries == {}
+
     def test_upsert_duplicate_raises_without_overwrite(self, graph_db, vector_db, schema):
         raw = {"text": "hello"}
         core.upsert_entry(schema, graph_db, vector_db, "t", raw, fake_embedder)

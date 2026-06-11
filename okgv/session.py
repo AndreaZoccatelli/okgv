@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
+from contextlib import contextmanager
 from pathlib import Path
 
 from okgv.protocols import EntrySchema
@@ -126,6 +127,21 @@ class Session:
             else:
                 self._db_path = Path.cwd() / "okgv.db"
         return self._db_path
+
+    @contextmanager
+    def transaction(self):
+        """Group graph and vector writes into one atomic SQLite transaction.
+
+        Commits on exit, rolls back on error. No-op when backends were
+        injected (they may not share a connection); atomicity is then the
+        backends' responsibility.
+        """
+        if not self._owns_connections:
+            yield
+            return
+        self._ensure_conn()
+        with self._conn.transaction():
+            yield
 
     @property
     def review_enabled(self) -> bool:

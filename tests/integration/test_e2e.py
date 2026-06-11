@@ -203,6 +203,129 @@ class TestMoveE2E:
         assert len(vector_db.get_by_topic("dst/child", limit=10)) == 1
 
 
+class TestTransactionE2E:
+    """Session.transaction() makes graph + vector writes atomic on the shared connection."""
+
+    def _make_session(self, tmp_path, schema):
+        from okgv.session import Session
+
+        return Session(embedder=fake_embedder, schema=schema, db_path=tmp_path / "okgv.db")
+
+    def test_vector_failure_rolls_back_graph_write(self, tmp_path, schema, monkeypatch):
+        from okgv.vector.sqlite_client import SQLiteVectorDB
+
+        session = self._make_session(tmp_path, schema)
+        session.graph_db.create_topic("t")
+        _ = session.vector_db  # resolve before patching so tables exist
+
+        def boom(self, *args, **kwargs):
+            raise RuntimeError("vector insert failed")
+
+        monkeypatch.setattr(SQLiteVectorDB, "upload_entry", boom)
+        raw = {"text": "doomed"}
+        with pytest.raises(RuntimeError):
+            with session.transaction():
+                upsert_entry(schema, session.graph_db, session.vector_db, "t", raw, session.embedder)
+
+        # The graph insert inside the transaction must have been rolled back.
+        assert session.graph_db.get_by_id(entry_id(raw)) is None
+        session.close()
+
+    def test_commit_persists_across_connections(self, tmp_path, schema):
+        session = self._make_session(tmp_path, schema)
+        session.graph_db.create_topic("t")
+        raw = {"text": "kept"}
+        with session.transaction():
+            eid = upsert_entry(schema, session.graph_db, session.vector_db, "t", raw, session.embedder)
+        session.close()
+
+        reopened = self._make_session(tmp_path, schema)
+        assert reopened.graph_db.get_by_id(eid) is not None
+        assert reopened.vector_db.get_by_id(eid) is not None
+        reopened.close()
+
+    def test_move_topic_failure_rolls_back(self, tmp_path, schema, monkeypatch):
+        """Vector failure during a move must leave the graph tree untouched.
+
+        Includes a grandchild topic so the path rewrite crosses FK-violating
+        intermediate states, exercising deferred FK checks inside the
+        transaction (foreign_keys=ON on the session connection).
+        """
+        from okgv.vector.sqlite_client import SQLiteVectorDB
+
+        session = self._make_session(tmp_path, schema)
+        graph = session.graph_db
+        graph.create_topic("src")
+        graph.create_subtopic("src", "child")
+        graph.create_subtopic("src/child", "grand")
+        graph.create_topic("dst")
+        raw = {"text": "nested"}
+        upsert_entry(schema, graph, session.vector_db, "src/child/grand", raw, session.embedder)
+
+        def boom(self, *args, **kwargs):
+            raise RuntimeError("vector update failed")
+
+        monkeypatch.setattr(SQLiteVectorDB, "update_topics", boom)
+        with pytest.raises(RuntimeError):
+            with session.transaction():
+                graph.move_topic("src/child", "dst")
+                session.vector_db.update_topics("src/child", "dst/child")
+
+        assert graph.topic_exists("src/child")
+        assert graph.topic_exists("src/child/grand")
+        assert not graph.topic_exists("dst/child")
+        assert graph.get_by_id(entry_id(raw)).topic == "src/child/grand"
+        session.close()
+
+    def test_move_topic_commits_atomically(self, tmp_path, schema):
+        session = self._make_session(tmp_path, schema)
+        graph = session.graph_db
+        graph.create_topic("src")
+        graph.create_subtopic("src", "child")
+        graph.create_subtopic("src/child", "grand")
+        graph.create_topic("dst")
+        raw = {"text": "moved"}
+        upsert_entry(schema, graph, session.vector_db, "src/child/grand", raw, session.embedder)
+
+        with session.transaction():
+            graph.move_topic("src/child", "dst")
+            session.vector_db.update_topics("src/child", "dst/child")
+
+        assert graph.topic_exists("dst/child/grand")
+        assert not graph.topic_exists("src/child")
+        assert len(session.vector_db.get_by_topic("dst/child", limit=10)) == 1
+        session.close()
+
+    def test_move_entry_failure_rolls_back(self, tmp_path, schema, monkeypatch):
+        from okgv.vector.sqlite_client import SQLiteVectorDB
+
+        session = self._make_session(tmp_path, schema)
+        graph = session.graph_db
+        graph.create_topic("old")
+        graph.create_topic("new")
+        raw = {"text": "stuck"}
+        eid = upsert_entry(schema, graph, session.vector_db, "old", raw, session.embedder)
+
+        def boom(self, *args, **kwargs):
+            raise RuntimeError("vector update failed")
+
+        monkeypatch.setattr(SQLiteVectorDB, "update_entry_topic", boom)
+        with pytest.raises(RuntimeError):
+            with session.transaction():
+                graph.move_entry(eid, "new")
+                session.vector_db.update_entry_topic(eid, "new")
+
+        assert graph.get_by_id(eid).topic == "old"
+        session.close()
+
+    def test_writes_outside_transaction_unaffected(self, tmp_path, schema):
+        session = self._make_session(tmp_path, schema)
+        session.graph_db.create_topic("t")
+        eid = upsert_entry(schema, session.graph_db, session.vector_db, "t", {"text": "plain"}, session.embedder)
+        assert session.graph_db.get_by_id(eid) is not None
+        session.close()
+
+
 class TestLogE2E:
     def test_log_and_query(self, graph_db, vector_db, schema, tmp_path):
         from datetime import datetime
