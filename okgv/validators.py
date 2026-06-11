@@ -20,7 +20,7 @@ Usage in schema:
         entry_class = MyEntry
         validators = [difficulty, score]
 
-The cli-prompt command auto-includes .prompt() output in agent instructions.
+The entry-prompt command auto-includes .prompt() output in agent instructions.
 """
 
 from __future__ import annotations

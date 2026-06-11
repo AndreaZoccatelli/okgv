@@ -11,7 +11,6 @@ config/structure.json   topic hierarchy (the 15 leaf topics)
 config/schema.py        entry schema (ToolCallSchema)
 .env                    wires schema, embedding model, review mode into okgv
 prompts/                agent guides, one per workflow phase
-okgv.db                 the populated knowledge base
 media/                  demo recording
 ```
 
@@ -25,7 +24,7 @@ EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2  # embeddings for similarity 
 OKGV_REVIEW=all                                     # every submission enters a review queue
 ```
 
-To reproduce the structure in a fresh DB:
+The database itself (`okgv.db`) is not checked in. To create it with the example's topic structure:
 
 ```bash
 cd example
@@ -95,7 +94,9 @@ okgv review --import review.json                   # apply approved/rejected dec
 okgv review --purge-rejected --dry-run             # preview cleanup, then drop --dry-run
 ```
 
-## Explore the populated dataset
+## Explore the dataset
+
+Once the database has been created and populated by a generation run:
 
 ```bash
 okgv get-structure                                     # topic tree

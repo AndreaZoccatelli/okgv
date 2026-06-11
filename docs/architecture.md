@@ -27,7 +27,7 @@ Entries can live at any level. Topic queries (counts, listings, stats) are recur
 ### Tree TUI
 ```bash
 # Terminal UI for tree structure (requires: pip install okgv[tui])
-okgv review -i
+okgv tree -i
 ```
 ![Tree TUI](../resources/tree_tui.svg)
 
