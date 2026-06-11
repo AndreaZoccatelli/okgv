@@ -28,6 +28,8 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 - `okgv similar --topic <path> --entry '<json>' [--top-k 5]` — top-N similar entries within topic.
 - `okgv similar-batch --topic <path> --entries '<json_array>' [--top-k 5]` — batch version.
 
+`--entry` takes the **complete candidate entry** (the same JSON you would submit), not a text snippet. Similarity is computed on the schema's embedding text, so the check only matches submit-time behavior when given the full entry; partial entries are rejected with `missing_field`.
+
 ### Submission
 - `okgv submit --topic <path> --entry '<json>' [--review]` — upsert single entry. `--review` flags for review.
 - `okgv submit-batch --topic <path> --entries '<json_array>' [--review]` — batch upsert.

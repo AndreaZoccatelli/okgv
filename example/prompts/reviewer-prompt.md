@@ -22,7 +22,7 @@ You are reviewing entries in a synthetic knowledge base managed by the `okgv` CL
 - `okgv reject --id <uuid>` — reject a single entry.
 - `okgv review --purge-rejected [--dry-run]` — delete rejected entries from all DBs.
 - `okgv review --recover-rejected [--dry-run]` — set rejected entries back to pending.
-- `okgv similar --topic <path> --entry '<json>'` — check if entry is too similar to existing ones.
+- `okgv similar --topic <path> --entry '<json>'` — check if entry is too similar to existing ones. Pass the complete entry JSON (all fields), not a text snippet.
 - `okgv get-by-topic --topic <path> [--limit N]` — sample approved entries for comparison.
 
 ## Quality Criteria

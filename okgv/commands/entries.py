@@ -21,11 +21,20 @@ from okgv.session import Session
 
 @click.command()
 @click.option("--topic", required=True, help="Topic to restrict similarity search to.")
-@click.option("--entry", required=True, help='Entry JSON string, or "-" to read from stdin.')
+@click.option(
+    "--entry",
+    required=True,
+    help='Complete candidate entry JSON (same shape as submit), or "-" to read from stdin.',
+)
 @click.option("--top-k", default=5, show_default=True, help="Number of similar entries to return.")
 @click.pass_obj
 def similar(session: Session, topic: str, entry: str, top_k: int):
-    """Get top-N most similar entries within a topic, with full content."""
+    """Get top-N most similar entries within a topic, with full content.
+
+    The entry must be the complete candidate (the same JSON you would
+    submit): similarity is computed on the schema's embedding text, so a
+    partial entry would not match submit-time behavior.
+    """
     raw = read_raw(entry)
     schema = session.schema
     entry_obj = build_entry(schema, raw)
@@ -55,7 +64,7 @@ def similar(session: Session, topic: str, entry: str, top_k: int):
 @click.option(
     "--entries",
     required=True,
-    help='JSON array of entry objects, or "-" to read from stdin.',
+    help='JSON array of complete entry objects (same shape as submit), or "-" to read from stdin.',
 )
 @click.option(
     "--top-k",

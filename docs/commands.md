@@ -53,7 +53,9 @@ okgv least-topic --topic algebra
 # Analyze coverage gaps
 okgv topic-stats --topic algebra --fields "difficulty,category"
 
-# Check similarity before submitting
+# Check similarity before submitting.
+# --entry takes the complete candidate entry (the same JSON you would submit),
+# so the check embeds exactly what submit would embed.
 okgv similar --topic algebra/linear_algebra --entry '{"text": "..."}' --top-k 5
 
 # Submit (with optional review flag)
