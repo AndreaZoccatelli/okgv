@@ -52,7 +52,14 @@ class TestSubmit:
         raw = json.dumps({"text": "hello"})
         runner.invoke(cli, ["submit", "--topic", "t", "--entry", raw], obj=mock_session)
         result = runner.invoke(cli, ["submit", "--topic", "t", "--entry", raw], obj=mock_session)
-        assert result.exit_code != 0
+        assert result.exit_code == 2
+        assert "duplicate_entry" in result.stderr
+        assert "--overwrite" in result.stderr
+
+    def test_submit_missing_field_structured_error(self, runner, mock_session):
+        result = runner.invoke(cli, ["submit", "--topic", "t", "--entry", '{"wrong": 1}'], obj=mock_session)
+        assert result.exit_code == 2
+        assert "missing_field" in result.stderr
 
     def test_submit_duplicate_with_overwrite(self, runner, mock_session):
         raw = json.dumps({"text": "hello"})
@@ -90,6 +97,10 @@ class TestSubmitBatch:
 
 class TestMoveTopic:
     def test_dry_run(self, runner, mock_session):
+        graph = mock_session.graph_db
+        graph.create_topic("a")
+        graph.create_subtopic("a", "b")
+        graph.create_topic("c")
         result = runner.invoke(
             cli,
             ["move-topic", "--source", "a/b", "--destination", "c", "--dry-run"],
@@ -99,6 +110,18 @@ class TestMoveTopic:
         data = parse_json_output(result.output)
         assert data["dry_run"] is True
         assert data["new_path"] == "c/b"
+
+    def test_source_not_found(self, runner, mock_session):
+        mock_session.graph_db.create_topic("c")
+        result = runner.invoke(cli, ["move-topic", "--source", "nope", "--destination", "c"], obj=mock_session)
+        assert result.exit_code == 3
+        assert "not_found" in result.stderr
+
+    def test_destination_not_found(self, runner, mock_session):
+        mock_session.graph_db.create_topic("a")
+        result = runner.invoke(cli, ["move-topic", "--source", "a", "--destination", "nope"], obj=mock_session)
+        assert result.exit_code == 3
+        assert "not_found" in result.stderr
 
     def test_move_topic(self, runner, mock_session):
         graph = mock_session.graph_db
@@ -114,11 +137,30 @@ class TestMoveTopic:
 
 
 class TestMoveEntry:
+    def _seed(self, mock_session):
+        graph = mock_session.graph_db
+        graph.create_topic("t")
+        graph.entries["abc"] = {"text": "hello"}
+        graph.entry_topics["abc"] = "t"
+
     def test_dry_run(self, runner, mock_session):
+        self._seed(mock_session)
         result = runner.invoke(cli, ["move-entry", "--id", "abc", "--destination", "t", "--dry-run"], obj=mock_session)
         assert result.exit_code == 0
         data = parse_json_output(result.output)
         assert data["dry_run"] is True
+
+    def test_entry_not_found(self, runner, mock_session):
+        mock_session.graph_db.create_topic("t")
+        result = runner.invoke(cli, ["move-entry", "--id", "ghost", "--destination", "t"], obj=mock_session)
+        assert result.exit_code == 3
+        assert "not_found" in result.stderr
+
+    def test_destination_not_found(self, runner, mock_session):
+        self._seed(mock_session)
+        result = runner.invoke(cli, ["move-entry", "--id", "abc", "--destination", "nope"], obj=mock_session)
+        assert result.exit_code == 3
+        assert "not_found" in result.stderr
 
 
 def _seed_log(db_path, timestamp, topic, entry_ids):
@@ -449,6 +491,26 @@ class TestTree:
         result = runner.invoke(cli, ["tree", "--root", "algebra"], obj=mock_session)
         assert result.exit_code == 1
         assert "missing_dependency" in result.stderr
+
+
+class TestUnexpectedErrors:
+    def test_uncaught_exception_becomes_structured_error(self, runner, mock_session, monkeypatch):
+        """Any unexpected exception must surface as JSON on stderr, not a traceback."""
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("kaboom")
+
+        monkeypatch.setattr(mock_session.vector_db, "get_by_topic", boom)
+        result = runner.invoke(cli, ["get-by-topic", "--topic", "t"], obj=mock_session)
+        assert result.exit_code == 1
+        assert "unexpected_error" in result.stderr
+        assert "RuntimeError" in result.stderr
+        assert "Traceback" not in result.stderr
+
+    def test_help_still_works(self, runner):
+        result = runner.invoke(cli, ["--help"])
+        assert result.exit_code == 0
+        assert "Knowledge base CLI" in result.output
 
 
 class TestBrowseLazyVectorDB:

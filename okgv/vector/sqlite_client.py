@@ -7,6 +7,7 @@ import sqlite3
 import struct
 from collections.abc import Iterator
 
+from okgv.errors import DuplicateEntryError
 from okgv.protocols import VectorRecord
 
 
@@ -104,7 +105,7 @@ class SQLiteVectorDB:
     ) -> None:
         existing = self._conn.execute("SELECT 1 FROM vector_entries WHERE id = ?", (entry_id,)).fetchone()
         if existing and not overwrite:
-            raise ValueError(f"Entry '{entry_id}' already exists in vector DB. Pass overwrite=True to replace.")
+            raise DuplicateEntryError(f"Entry '{entry_id}' already exists in vector DB")
         props_json = json.dumps(properties, sort_keys=True)
         blob = _vec_f32(vector)
         if existing and overwrite:

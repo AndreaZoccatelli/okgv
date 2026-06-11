@@ -8,13 +8,13 @@ Exit codes:  0=ok  1=failure  2=usage  3=not_found  4=connection
 """
 
 import json
+import sqlite3
 import sys
 from datetime import UTC
 
 import click
 
 from okgv.core import (
-    EntryError,
     build_entry,
     log_count,
     log_get_entries_after,
@@ -32,12 +32,36 @@ from okgv.core import (
     upsert_entries_batch,
     upsert_entry,
 )
-from okgv.helpers import EXIT_NOT_FOUND, EXIT_USAGE, err, log, output, read_raw
+from okgv.errors import EntryError, OkgvError
+from okgv.helpers import EXIT_FAILURE, EXIT_NOT_FOUND, EXIT_USAGE, err, log, output, read_raw
 from okgv.protocols import entry_id
 from okgv.session import Session
 
 
-@click.group(help="Knowledge base CLI for AI agents. All output is JSON to stdout, logs to stderr.")
+class OkgvGroup(click.Group):
+    """Click group that converts uncaught exceptions into structured JSON errors.
+
+    Keeps the CLI's contract: errors are always {error, detail, suggestion}
+    on stderr with a meaningful exit code, never a Python traceback.
+    """
+
+    def invoke(self, ctx):
+        try:
+            return super().invoke(ctx)
+        except (click.exceptions.Exit, click.ClickException, click.Abort):
+            raise
+        except OkgvError as e:
+            err(e.code, detail=str(e), suggestion=e.suggestion, exit_code=e.exit_code)
+        except sqlite3.IntegrityError as e:
+            err("constraint_violation", detail=str(e), exit_code=EXIT_USAGE)
+        except Exception as e:
+            err("unexpected_error", detail=f"{type(e).__name__}: {e}", exit_code=EXIT_FAILURE)
+
+
+@click.group(
+    cls=OkgvGroup,
+    help="Knowledge base CLI for AI agents. All output is JSON to stdout, logs to stderr.",
+)
 @click.pass_context
 def cli(ctx):
     from pathlib import Path
@@ -437,10 +461,7 @@ def similar(session: Session, topic: str, entry: str, top_k: int):
     """Get top-N most similar entries within a topic, with full content."""
     raw = read_raw(entry)
     schema = session.schema
-    try:
-        entry_obj = build_entry(schema, raw)
-    except EntryError as e:
-        return err("missing_field", detail=str(e), exit_code=EXIT_USAGE)
+    entry_obj = build_entry(schema, raw)
 
     vector_db = session.vector_db
     log("Loading embedding model...")
@@ -484,18 +505,15 @@ def submit(session: Session, topic: str, entry: str, overwrite: bool, review: bo
 
     log("Loading embedding model...")
     log(f"Upserting entry into topic '{topic}'...")
-    try:
-        eid = upsert_entry(
-            schema,
-            session.graph_db,
-            session.vector_db,
-            topic,
-            raw,
-            session.embedder,
-            overwrite=overwrite,
-        )
-    except EntryError as e:
-        return err("missing_field", detail=str(e), exit_code=EXIT_USAGE)
+    eid = upsert_entry(
+        schema,
+        session.graph_db,
+        session.vector_db,
+        topic,
+        raw,
+        session.embedder,
+        overwrite=overwrite,
+    )
     log_session(session.db_path, topic, [eid])
     needs_review = review if review is not None else session.review_enabled
     if needs_review:
@@ -716,12 +734,21 @@ def create_structure(session: Session, file_path: str):
 @click.pass_obj
 def move_topic(session: Session, source: str, destination: str, dry_run: bool):
     """Move a topic/subtopic under a different parent. Blocked if name conflict."""
+    graph_db = session.graph_db
+    if not graph_db.topic_exists(source):
+        err("not_found", detail=f"Topic '{source}' does not exist", exit_code=EXIT_NOT_FOUND)
+    if not graph_db.topic_exists(destination):
+        err(
+            "not_found",
+            detail=f"Topic '{destination}' does not exist",
+            suggestion="Create it first with create-topic",
+            exit_code=EXIT_NOT_FOUND,
+        )
     name = source.rsplit("/", 1)[-1]
     new_path = f"{destination}/{name}"
     if dry_run:
         output({"dry_run": True, "would_move": source, "new_path": new_path})
         return
-    graph_db = session.graph_db
     try:
         graph_db.move_topic(source, destination)
     except ValueError as e:
@@ -737,6 +764,16 @@ def move_topic(session: Session, source: str, destination: str, dry_run: bool):
 @click.pass_obj
 def move_entry(session: Session, entry_id: str, destination: str, dry_run: bool):
     """Move an entry to a different topic."""
+    graph_db = session.graph_db
+    if graph_db.get_by_id(entry_id) is None:
+        err("not_found", detail=f"No entry with id '{entry_id}'", exit_code=EXIT_NOT_FOUND)
+    if not graph_db.topic_exists(destination):
+        err(
+            "not_found",
+            detail=f"Topic '{destination}' does not exist",
+            suggestion="Create it first with create-topic",
+            exit_code=EXIT_NOT_FOUND,
+        )
     if dry_run:
         output({"dry_run": True, "would_move": entry_id, "destination": destination})
         return

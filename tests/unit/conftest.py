@@ -4,6 +4,7 @@ from collections import Counter
 
 import pytest
 
+from okgv.errors import DuplicateEntryError
 from okgv.protocols import GraphRecord, PropertyDefinition, VectorRecord
 
 
@@ -129,7 +130,7 @@ class MockGraphDB:
 
     def upload_entry(self, topic: str, entry_id: str, properties: dict, overwrite: bool = False) -> None:
         if entry_id in self.entries and not overwrite:
-            raise ValueError(f"Entry '{entry_id}' already exists in graph DB. Pass overwrite=True to replace.")
+            raise DuplicateEntryError(f"Entry '{entry_id}' already exists in graph DB")
         self.entries[entry_id] = properties
         self.entry_topics[entry_id] = topic
 
@@ -218,7 +219,7 @@ class MockVectorDB:
         if self.fail_on_upload:
             raise ConnectionError("Vector DB unavailable")
         if entry_id in self.entries and not overwrite:
-            raise ValueError(f"Entry '{entry_id}' already exists in vector DB. Pass overwrite=True to replace.")
+            raise DuplicateEntryError(f"Entry '{entry_id}' already exists in vector DB")
         self.entries[entry_id] = properties
         self.topics[entry_id] = topic
         self.vectors[entry_id] = vector

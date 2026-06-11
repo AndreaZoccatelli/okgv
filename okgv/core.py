@@ -5,6 +5,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
+from okgv.errors import EntryError
 from okgv.helpers import EXIT_USAGE, err
 from okgv.protocols import EntrySchema, GraphDB, VectorDB, entry_id
 
@@ -69,12 +70,6 @@ def validate_schema(schema: EntrySchema, meta: dict, graph_props: dict, vector_p
             suggestion="Remove these PropertyDefinition entries or add them to metadata()/vector_properties()",
             exit_code=EXIT_USAGE,
         )
-
-
-class EntryError(Exception):
-    """Raised when a single entry fails to build or upsert."""
-
-    pass
 
 
 def build_entry(schema: EntrySchema, raw: dict):

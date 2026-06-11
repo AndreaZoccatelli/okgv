@@ -7,6 +7,7 @@ import re
 import sqlite3
 from collections.abc import Iterator
 
+from okgv.errors import DuplicateEntryError
 from okgv.protocols import GraphRecord
 
 _SCHEMA = """
@@ -197,7 +198,7 @@ class SQLiteGraphDB:
         if not overwrite:
             existing = self._execute("SELECT 1 FROM entries WHERE id = ?", (entry_id,)).fetchone()
             if existing is not None:
-                raise ValueError(f"Entry '{entry_id}' already exists in graph DB. Pass overwrite=True to replace.")
+                raise DuplicateEntryError(f"Entry '{entry_id}' already exists in graph DB")
         props_json = json.dumps(properties, sort_keys=True)
         self._execute(
             "INSERT OR REPLACE INTO entries (id, topic, properties) VALUES (?, ?, ?)",
