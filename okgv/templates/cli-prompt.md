@@ -6,11 +6,12 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 
 1. **Learn entry format**: `okgv entry-prompt` → field descriptions, constraints, and valid values
 2. **Explore structure**: `okgv get-structure` → understand topic layout
-3. **Find underrepresented area**: `okgv least-topic --topic <parent>` → returns child with fewest entries
+3. **Plan targets**: `okgv report` → counts for every leaf topic and balance-field value; pick an empty or low-count cell. For a quick single answer at one tree level, `okgv least-topic --topic <parent>` returns the child with fewest entries (raw counts, ignores balance fields)
 4. **Generate** a candidate entry following the field constraints (your job)
 5. **Check similarity**: `okgv similar --topic <topic> --entry '<json>'` → top-N similar entries with full content
 6. **Decide**: if too similar (evaluate similarity score and compare the contents) → regenerate or edit. If novel → submit
 7. **Submit**: `okgv submit --topic <topic> --entry '<json>'`
+8. **Repeat** from step 4 until the target cell is filled, then re-run `okgv report` to pick the next one. Finish by verifying balance with a final `okgv report`
 
 ## Commands
 
@@ -81,9 +82,9 @@ You can review entries submitted by yourself or other agents. Use `okgv review` 
 
 - Start with `get-structure` to understand the knowledge base layout before generating entries.
 - Use `get-structure --root <topic> --depth 1` for incremental exploration of large trees.
-- Use `least-topic` to balance coverage across the knowledge base.
-- Use `topic-stats` to find underrepresented metadata combinations within a topic.
-- Use `report` periodically to see the full balance picture: its `empty_cells` list tells you exactly which leaf-topic/field-value combinations still need entries.
+- Use `report` to plan at the start of a run, re-check after filling a target, and verify balance at the end. Its `empty_cells` list tells you exactly which leaf-topic/field-value combinations still need entries. On large trees, scope with `--topic <path>` to keep the output small.
+- Use `least-topic` for a cheap mid-loop "where next": one answer, compares the direct children of one parent by raw recursive count. It ignores balance fields — a topic it skips may still be missing entries for specific field values, which only `report` (or `topic-stats`) reveals.
+- Use `topic-stats` to drill into the metadata distribution of a single topic.
 - Always check `similar` before submitting — avoid redundant entries. Similarity checks only see entries in the target topic — design your topic tree so each leaf has a clear, non-overlapping scope.
 - Use batch commands when processing multiple entries — single model load, much faster.
 - If a topic grows too large, suggest creating subtopics to the user.

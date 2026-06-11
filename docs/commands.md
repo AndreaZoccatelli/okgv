@@ -118,8 +118,11 @@ okgv purge --confirm "delete all"
 2. okgv get-structure
    → understand topic layout
 
-3. okgv least-topic --topic <parent>
-   → pick child topic with fewest entries
+3. okgv report
+   → counts per leaf topic × balance-field value, empty cells included
+   → pick an empty or low-count cell as the target
+   (okgv least-topic --topic <parent> for a quick single answer at one
+    level — raw counts only, ignores balance fields)
 
 4. Agent generates candidate entry (LLM call)
 
@@ -130,6 +133,9 @@ okgv purge --confirm "delete all"
 6. okgv submit --topic <topic> --entry '<json>' [--review]
    → upserted into both tables, logged to okgv.db
    → optionally flagged for review
+
+7. Repeat 4-6 until the target cell is filled, re-run okgv report
+   to pick the next target; final okgv report verifies balance
 ```
 
 ## Error Handling
