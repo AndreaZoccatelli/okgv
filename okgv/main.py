@@ -51,6 +51,7 @@ class OkgvGroup(click.Group):
     cls=OkgvGroup,
     help="Knowledge base CLI for AI agents. All output is JSON to stdout, logs to stderr.",
 )
+@click.version_option(package_name="okgv")
 @click.pass_context
 def cli(ctx):
     from pathlib import Path

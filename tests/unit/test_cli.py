@@ -573,6 +573,14 @@ class TestUnexpectedErrors:
         assert result.exit_code == 0
         assert "Knowledge base CLI" in result.output
 
+    def test_version_flag(self, runner):
+        from importlib.metadata import version
+
+        result = runner.invoke(cli, ["--version"])
+        assert result.exit_code == 0
+        # prog name differs under the test runner; assert on the version itself
+        assert f"version {version('okgv')}" in result.output
+
 
 class TestBrowseLazyVectorDB:
     def test_vector_db_resolved_lazily(self):
