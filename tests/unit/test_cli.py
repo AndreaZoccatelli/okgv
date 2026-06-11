@@ -316,6 +316,14 @@ class TestCreateTopic:
         result = runner.invoke(cli, ["create-topic", "--name", "a/b"], obj=mock_session)
         assert result.exit_code != 0
 
+    def test_create_existing_topic_reports_existed(self, runner, mock_session):
+        mock_session.graph_db.create_topic("math")
+        result = runner.invoke(cli, ["create-topic", "--name", "math"], obj=mock_session)
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        assert data["created"] is False
+        assert data["existed"] is True
+
 
 class TestGetByTopic:
     def test_no_entries(self, runner, mock_session):
@@ -518,6 +526,32 @@ class TestTree:
         result = runner.invoke(cli, ["tree", "--root", "algebra"], obj=mock_session)
         assert result.exit_code == 1
         assert "missing_dependency" in result.stderr
+
+
+class TestOptionValidation:
+    def test_review_status_rejects_unknown_value(self, runner, mock_session):
+        result = runner.invoke(cli, ["review", "--status", "aproved"], obj=mock_session)
+        assert result.exit_code == 2
+        assert "pending" in result.stderr  # usage error lists valid choices
+
+    def test_review_status_accepts_valid_value(self, runner, mock_session):
+        result = runner.invoke(cli, ["review", "--status", "approved"], obj=mock_session)
+        assert result.exit_code == 0
+
+    def test_invalid_okgv_review_env_rejected(self, runner, mock_session, monkeypatch):
+        monkeypatch.setenv("OKGV_REVIEW", "yes")
+        raw = json.dumps({"text": "hello"})
+        result = runner.invoke(cli, ["submit", "--topic", "t", "--entry", raw], obj=mock_session)
+        assert result.exit_code == 2
+        assert "invalid_config" in result.stderr
+
+    def test_valid_okgv_review_env_accepted(self, runner, mock_session, monkeypatch):
+        monkeypatch.setenv("OKGV_REVIEW", "all")
+        raw = json.dumps({"text": "hello"})
+        result = runner.invoke(cli, ["submit", "--topic", "t", "--entry", raw], obj=mock_session)
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        assert data["review"] is True
 
 
 class TestUnexpectedErrors:

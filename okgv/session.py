@@ -146,7 +146,17 @@ class Session:
     @property
     def review_enabled(self) -> bool:
         """Check if review is enabled by default via OKGV_REVIEW env var."""
-        return os.getenv("OKGV_REVIEW", "none").lower() == "all"
+        value = os.getenv("OKGV_REVIEW", "none").lower()
+        if value not in ("none", "all"):
+            from okgv.helpers import EXIT_USAGE, err
+
+            err(
+                "invalid_config",
+                detail=f"Unknown OKGV_REVIEW value '{value}'",
+                suggestion="Use 'none' or 'all'",
+                exit_code=EXIT_USAGE,
+            )
+        return value == "all"
 
     def close(self) -> None:
         if not self._owns_connections:

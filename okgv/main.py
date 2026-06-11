@@ -351,6 +351,9 @@ def create_topic(session: Session, name: str, parents: bool):
     With --parents: creates all missing intermediate levels (like mkdir -p).
     """
     graph_db = session.graph_db
+    if graph_db.topic_exists(name):
+        output({"topic": name, "created": False, "existed": True})
+        return
     segments = name.split("/")
 
     if len(segments) == 1:
@@ -842,7 +845,8 @@ def get_graph(session: Session, entry_id: str):
     "--status",
     default="pending",
     show_default=True,
-    help="Filter by status: pending, approved, rejected.",
+    type=click.Choice(["pending", "approved", "rejected"]),
+    help="Filter by status.",
 )
 @click.option("--limit", default=20, show_default=True, help="Max entries to return.")
 @click.option("--offset", default=0, help="Skip first N entries.")
