@@ -528,6 +528,101 @@ class TestTree:
         assert "missing_dependency" in result.stderr
 
 
+class TestReport:
+    def _seed(self, mock_session):
+        graph = mock_session.graph_db
+        graph.create_topic("weather")
+        graph.create_subtopic("weather", "forecast")
+        graph.create_subtopic("weather", "alerts")
+        graph.entries["e1"] = {"difficulty": "easy"}
+        graph.entry_topics["e1"] = "weather/forecast"
+        graph.entries["e2"] = {"difficulty": "hard"}
+        graph.entry_topics["e2"] = "weather/forecast"
+
+    def test_counts_per_leaf(self, runner, mock_session):
+        self._seed(mock_session)
+        result = runner.invoke(cli, ["report"], obj=mock_session)
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        assert data["total_entries"] == 2
+        assert data["leaf_topics"] == 2
+        counts = {item["topic"]: item["count"] for item in data["leaves"]}
+        assert counts == {"weather/forecast": 2, "weather/alerts": 0}
+        assert data["least_filled_leaf"]["topic"] == "weather/alerts"
+        assert data["most_filled_leaf"]["topic"] == "weather/forecast"
+
+    def test_fields_produce_cells_with_empty_ones(self, runner, mock_session):
+        self._seed(mock_session)
+        result = runner.invoke(cli, ["report", "--fields", "difficulty"], obj=mock_session)
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        forecast = next(item for item in data["leaves"] if item["topic"] == "weather/forecast")
+        # Observed values: easy, hard. Both cells filled for forecast.
+        cell_counts = {c["fields"]["difficulty"]: c["count"] for c in forecast["cells"]}
+        assert cell_counts == {"easy": 1, "hard": 1}
+        # alerts leaf has both combinations empty.
+        empty = {(e["topic"], e["fields"]["difficulty"]) for e in data["empty_cells"]}
+        assert ("weather/alerts", "easy") in empty
+        assert ("weather/alerts", "hard") in empty
+
+    def test_declared_validator_values_show_missing_cells(self, tmp_path):
+        from okgv.validators import OneOf
+
+        class BalancedSchema(SimpleSchema):
+            balance_fields = ["difficulty"]
+            validators = [OneOf("difficulty", {"easy", "medium", "hard"})]
+
+        session = Session(
+            graph_db=MockGraphDB(),
+            vector_db=MockVectorDB(),
+            embedder=fake_embedder,
+            schema=BalancedSchema(),
+            db_path=tmp_path / "okgv.db",
+        )
+        graph = session.graph_db
+        graph.create_topic("t")
+        graph.entries["e1"] = {"difficulty": "easy"}
+        graph.entry_topics["e1"] = "t"
+
+        result = CliRunner().invoke(cli, ["report"], obj=session)
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        assert data["balance_fields"] == ["difficulty"]
+        leaf = data["leaves"][0]
+        cell_counts = {c["fields"]["difficulty"]: c["count"] for c in leaf["cells"]}
+        # "medium" and "hard" were never generated but are declared by the validator.
+        assert cell_counts == {"easy": 1, "hard": 0, "medium": 0}
+
+    def test_non_leaf_entries_reported(self, runner, mock_session):
+        graph = mock_session.graph_db
+        graph.create_topic("root")
+        graph.create_subtopic("root", "leaf")
+        graph.entries["e1"] = {"text": "on parent"}
+        graph.entry_topics["e1"] = "root"
+        result = runner.invoke(cli, ["report"], obj=mock_session)
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        assert data["total_entries"] == 1
+        assert data["non_leaf_entries"] == 1
+        assert data["leaves"][0]["count"] == 0
+
+    def test_scoped_to_subtree(self, runner, mock_session):
+        self._seed(mock_session)
+        graph = mock_session.graph_db
+        graph.create_topic("other")
+        graph.entries["e3"] = {"difficulty": "easy"}
+        graph.entry_topics["e3"] = "other"
+        result = runner.invoke(cli, ["report", "--topic", "weather"], obj=mock_session)
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        assert data["total_entries"] == 2
+        assert {item["topic"] for item in data["leaves"]} == {"weather/forecast", "weather/alerts"}
+
+    def test_no_topics(self, runner, mock_session):
+        result = runner.invoke(cli, ["report"], obj=mock_session)
+        assert result.exit_code == 3
+
+
 class TestOptionValidation:
     def test_review_status_rejects_unknown_value(self, runner, mock_session):
         result = runner.invoke(cli, ["review", "--status", "aproved"], obj=mock_session)

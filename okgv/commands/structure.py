@@ -357,6 +357,128 @@ def topic_stats(session: Session, topic: str, fields: str | None):
     )
 
 
+@click.command(name="report")
+@click.option("--topic", default=None, help="Scope report to this subtree. Default: full tree.")
+@click.option(
+    "--fields",
+    default=None,
+    help="Comma-separated balance fields. Default: schema balance_fields.",
+)
+@click.pass_obj
+def report(session: Session, topic: str | None, fields: str | None):
+    """Dataset-level balance report across leaf topics.
+
+    Shows entry counts for every leaf topic and, when balance fields are
+    available, counts for every leaf x field-value combination including
+    empty cells, so coverage gaps are visible in one command. Field values
+    come from OneOf validators when declared, otherwise from observed data.
+    """
+    from itertools import product
+
+    graph_db = session.graph_db
+    tree = graph_db.get_topic_tree(root=topic)
+    if not tree:
+        if topic:
+            err("not_found", detail=f"Topic '{topic}' not found", exit_code=EXIT_NOT_FOUND)
+        err("no_topics", detail="No topics found in graph", exit_code=EXIT_NOT_FOUND)
+
+    # Collect leaf topic paths. get_topic_tree includes the root itself as
+    # the top key when --topic is given; walk its children with the full path.
+    leaves: list[str] = []
+
+    def _walk(subtree: dict, prefix: str | None):
+        for name, children in subtree.items():
+            path = f"{prefix}/{name}" if prefix else name
+            if children:
+                _walk(children, path)
+            else:
+                leaves.append(path)
+
+    if topic:
+        sub = tree.get(topic.rsplit("/", 1)[-1], {})
+        if sub:
+            _walk(sub, topic)
+        else:
+            leaves.append(topic)
+    else:
+        _walk(tree, None)
+
+    if fields:
+        field_list = [f.strip() for f in fields.split(",")]
+    else:
+        field_list = list(getattr(session.schema, "balance_fields", None) or [])
+
+    # Declared value sets from OneOf-style validators (field + valid attrs),
+    # so values that were never generated still show up as empty cells.
+    declared: dict[str, list] = {}
+    for v in getattr(session.schema, "validators", []) or []:
+        valid = getattr(v, "valid", None)
+        if valid is not None and v.field in field_list:
+            declared[v.field] = sorted(valid)
+
+    leaf_stats = []
+    observed: dict[str, set] = {f: set() for f in field_list}
+    total_leaf_entries = 0
+    for leaf in leaves:
+        if field_list:
+            try:
+                count, _, groups = graph_db.get_topic_stats(leaf, field_list)
+            except ValueError as e:
+                err("invalid_field", detail=str(e), exit_code=EXIT_USAGE)
+        else:
+            count = len(graph_db.get_entry_ids_for_topic(leaf))
+            groups = []
+        total_leaf_entries += count
+        leaf_stats.append((leaf, count, groups))
+        for g in groups:
+            for f, val in g["fields"].items():
+                observed[f].add(val)
+
+    value_sets = []
+    for f in field_list:
+        vals = declared.get(f) or sorted(observed[f], key=lambda x: (x is None, str(x)))
+        value_sets.append(vals)
+
+    result_leaves = []
+    empty_cells = []
+    for leaf, count, groups in leaf_stats:
+        item: dict = {"topic": leaf, "count": count}
+        if field_list and all(value_sets):
+            observed_counts = {tuple(g["fields"][f] for f in field_list): g["count"] for g in groups}
+            cells = []
+            for combo in product(*value_sets):
+                cell_count = observed_counts.get(combo, 0)
+                cell_fields = dict(zip(field_list, combo))
+                cells.append({"fields": cell_fields, "count": cell_count})
+                if cell_count == 0:
+                    empty_cells.append({"topic": leaf, "fields": cell_fields})
+            item["cells"] = cells
+        result_leaves.append(item)
+
+    # Entries can live on non-leaf topics too; count them so nothing is hidden.
+    if topic:
+        total = len(graph_db.get_entry_ids_for_topic(topic))
+    else:
+        total = sum(len(graph_db.get_entry_ids_for_topic(t)) for t in tree)
+
+    result: dict = {
+        "total_entries": total,
+        "leaf_topics": len(leaves),
+        "balance_fields": field_list,
+        "leaves": result_leaves,
+    }
+    if total - total_leaf_entries:
+        result["non_leaf_entries"] = total - total_leaf_entries
+    if field_list:
+        result["empty_cells"] = empty_cells
+    if result_leaves:
+        least = min(result_leaves, key=lambda item: item["count"])
+        most = max(result_leaves, key=lambda item: item["count"])
+        result["least_filled_leaf"] = {"topic": least["topic"], "count": least["count"]}
+        result["most_filled_leaf"] = {"topic": most["topic"], "count": most["count"]}
+    output(result)
+
+
 @click.command(name="move-topic")
 @click.option("--source", required=True, help="Path of topic/subtopic to move.")
 @click.option("--destination", required=True, help="Path of new parent topic.")
@@ -422,6 +544,7 @@ commands = (
     create_structure,
     least_topic,
     topic_stats,
+    report,
     move_topic,
     move_entry,
 )

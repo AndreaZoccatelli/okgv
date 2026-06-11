@@ -22,6 +22,7 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 - `okgv get-depth [--root <path>]` — max depth of topic tree. Use --root to measure from a specific topic.
 - `okgv least-topic [--topic <parent>]` — child topic with fewest entries. No --topic = root level.
 - `okgv topic-stats --topic <path> [--fields "f1,f2"]` — entry counts grouped by metadata. Identify coverage gaps.
+- `okgv report [--topic <path>] [--fields "f1,f2"]` — dataset-wide balance report: counts for every leaf topic x balance-field value, **including empty cells**. The fastest way to see all coverage gaps at once.
 - `okgv get-by-topic --topic <path> [--limit N]` — sample entries from a topic.
 
 ### Similarity
@@ -82,6 +83,7 @@ You can review entries submitted by yourself or other agents. Use `okgv review` 
 - Use `get-structure --root <topic> --depth 1` for incremental exploration of large trees.
 - Use `least-topic` to balance coverage across the knowledge base.
 - Use `topic-stats` to find underrepresented metadata combinations within a topic.
+- Use `report` periodically to see the full balance picture: its `empty_cells` list tells you exactly which leaf-topic/field-value combinations still need entries.
 - Always check `similar` before submitting — avoid redundant entries. Similarity checks only see entries in the target topic — design your topic tree so each leaf has a clear, non-overlapping scope.
 - Use batch commands when processing multiple entries — single model load, much faster.
 - If a topic grows too large, suggest creating subtopics to the user.

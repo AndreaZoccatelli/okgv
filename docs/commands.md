@@ -13,6 +13,7 @@ All output is JSON to stdout. Logs go to stderr.
 | `create-structure` | Create topic tree from JSON file |
 | `least-topic` | Child topic with fewest entries. `--topic` scopes to parent |
 | `topic-stats` | Entry counts grouped by metadata fields |
+| `report` | Dataset-wide balance report: counts per leaf topic × balance-field value, including empty cells |
 | `similar` | Top-N similar entries within a topic |
 | `similar-batch` | Batch similarity search (single model load) |
 | `submit` | Upsert entry into both tables. `--review` to flag for review |
@@ -50,8 +51,14 @@ okgv create-structure --file config/structure.json
 okgv least-topic --topic algebra
 # {"topic": "algebra/linear_algebra/basics", "count": 3, "all_counts": {...}}
 
-# Analyze coverage gaps
+# Analyze coverage gaps within one topic
 okgv topic-stats --topic algebra --fields "difficulty,category"
+
+# Dataset-wide balance report: every leaf topic × balance-field value,
+# empty cells included (values declared by OneOf validators count even
+# if never generated). Scope with --topic, override fields with --fields.
+okgv report
+okgv report --topic algebra --fields "difficulty"
 
 # Check similarity before submitting.
 # --entry takes the complete candidate entry (the same JSON you would submit),
