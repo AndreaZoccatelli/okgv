@@ -468,6 +468,33 @@ class TestTree:
         assert "linear" in result.stderr
         assert "abstract" in result.stderr
 
+    def test_counts_same_name_different_parents(self, runner, mock_session):
+        """Sibling topics sharing a name must show their own counts, not collide."""
+        graph = mock_session.graph_db
+        graph.create_topic("algebra")
+        graph.create_subtopic("algebra", "basics")
+        graph.create_topic("geometry")
+        graph.create_subtopic("geometry", "basics")
+        for i in range(2):
+            graph.entries[f"e{i}"] = {"text": str(i)}
+            graph.entry_topics[f"e{i}"] = "algebra/basics"
+        result = runner.invoke(cli, ["tree", "--counts"], obj=mock_session)
+        assert result.exit_code == 0
+        assert "(2)" in result.stderr  # algebra/basics
+        assert "(0)" in result.stderr  # geometry/basics, not overwritten
+
+    def test_counts_with_nested_root(self, runner, mock_session):
+        """Counts under --root must be queried with full paths."""
+        graph = mock_session.graph_db
+        graph.create_topic("algebra")
+        graph.create_subtopic("algebra", "linear")
+        graph.create_subtopic("algebra/linear", "basics")
+        graph.entries["e1"] = {"text": "x"}
+        graph.entry_topics["e1"] = "algebra/linear/basics"
+        result = runner.invoke(cli, ["tree", "--root", "algebra/linear", "--counts"], obj=mock_session)
+        assert result.exit_code == 0
+        assert "(1)" in result.stderr
+
     def test_render_full_tree(self, runner, mock_session):
         _seed_tree(mock_session.graph_db)
         result = runner.invoke(cli, ["tree"], obj=mock_session)

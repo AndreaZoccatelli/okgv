@@ -258,24 +258,23 @@ def tree(
             exit_code=1,
         )
 
-    count_map = {}
-    if counts:
+    # Counts are keyed by full topic path: sibling topics may share a name
+    # (e.g. algebra/basics and geometry/basics) without colliding.
+    count_map: dict[str, int] = {}
 
-        def _collect_counts(subtree: dict, prefix: str | None = None):
-            for name, children in subtree.items():
-                path = f"{prefix}/{name}" if prefix else name
-                count_map[name] = len(session.graph_db.get_entry_ids_for_topic(path))
-                _collect_counts(children, path)
-
-        _collect_counts(tree_data)
+    def _collect_counts(subtree: dict, prefix: str | None = None):
+        for name, children in subtree.items():
+            path = f"{prefix}/{name}" if prefix else name
+            count_map[path] = len(session.graph_db.get_entry_ids_for_topic(path))
+            _collect_counts(children, path)
 
     def _build(subtree: dict, parent_tree: RichTree, prefix: str | None = None):
         for name, children in subtree.items():
-            label = name
-            if counts and name in count_map:
-                label = f"{name} [dim]({count_map[name]})[/dim]"
-            branch = parent_tree.add(label)
             path = f"{prefix}/{name}" if prefix else name
+            label = name
+            if counts and path in count_map:
+                label = f"{name} [dim]({count_map[path]})[/dim]"
+            branch = parent_tree.add(label)
             _build(children, branch, path)
 
     label = root or "topics"
@@ -285,7 +284,9 @@ def tree(
     render_data = tree_data
     if root:
         render_data = tree_data.get(root.rsplit("/", 1)[-1], {})
-    _build(render_data, rich_tree)
+    if counts:
+        _collect_counts(render_data, root)
+    _build(render_data, rich_tree, root)
     Console(stderr=True).print(rich_tree)
 
 
