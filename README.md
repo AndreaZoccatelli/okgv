@@ -97,6 +97,15 @@ The agent runs the loop itself: `cli-prompt` to learn the CLI, find gaps, check 
 okgv review -i                                                          # or human TUI
 ```
 
+**5. Export for training**:
+
+```bash
+okgv export --output dataset.jsonl --exclude-in-review
+okgv export --output dataset.jsonl --split "train=0.8,val=0.1,test=0.1"   # stratified splits
+```
+
+One JSONL file, or one per split. `--split` divides each topic × balance-field stratum by the given fractions, so train/val/test all keep the dataset's distribution. Preview with `--dry-run` to see per-split counts and balance before writing.
+
 See [`example/`](example/) for a complete worked project: a filled-in schema, topic structure, generation guide, and a populated database.
 
 ## How it works

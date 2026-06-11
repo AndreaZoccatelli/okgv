@@ -429,6 +429,161 @@ class TestExport:
         assert "id" not in row
 
 
+class TestExportSplit:
+    def _seed_entries(self, mock_session, n, topic="t", difficulty=None):
+        graph = mock_session.graph_db
+        vector = mock_session.vector_db
+        graph.create_topic(topic)
+        for i in range(n):
+            eid = f"{topic}-{difficulty or 'x'}-{i}"
+            props = {"text": f"entry {i}"}
+            if difficulty:
+                props["difficulty"] = difficulty
+            graph.entries[eid] = props
+            graph.entry_topics[eid] = topic
+            vector.entries[eid] = props
+            vector.topics[eid] = topic
+
+    def test_split_writes_one_file_per_split(self, runner, mock_session, tmp_path):
+        self._seed_entries(mock_session, 10)
+        out = str(tmp_path / "dataset.jsonl")
+        result = runner.invoke(
+            cli,
+            ["export", "--output", out, "--split", "train=0.8,test=0.2"],
+            obj=mock_session,
+        )
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        assert data["exported"] == 10
+        assert data["splits"]["train"]["count"] == 8
+        assert data["splits"]["test"]["count"] == 2
+        with open(tmp_path / "dataset-train.jsonl") as f:
+            assert len(f.readlines()) == 8
+        with open(tmp_path / "dataset-test.jsonl") as f:
+            assert len(f.readlines()) == 2
+
+    def test_split_stratifies_by_balance_fields(self, runner, tmp_path):
+        class BalancedSchema(SimpleSchema):
+            balance_fields = ["difficulty"]
+
+        session = Session(
+            graph_db=MockGraphDB(),
+            vector_db=MockVectorDB(),
+            embedder=fake_embedder,
+            schema=BalancedSchema(),
+            db_path=tmp_path / "okgv.db",
+        )
+        self._seed_entries(session, 4, difficulty="easy")
+        self._seed_entries(session, 4, difficulty="hard")
+        out = str(tmp_path / "dataset.jsonl")
+        result = runner.invoke(
+            cli,
+            ["export", "--output", out, "--split", "train=0.5,test=0.5"],
+            obj=session,
+        )
+        assert result.exit_code == 0
+        # Each stratum (easy, hard) must split 2/2, so both splits hold 2 of each.
+        for split in ("train", "test"):
+            with open(tmp_path / f"dataset-{split}.jsonl") as f:
+                rows = [json.loads(line) for line in f]
+            difficulties = [r["difficulty"] for r in rows]
+            assert difficulties.count("easy") == 2
+            assert difficulties.count("hard") == 2
+
+    def test_split_deterministic_for_seed(self, runner, mock_session, tmp_path):
+        self._seed_entries(mock_session, 10)
+        out1 = str(tmp_path / "a.jsonl")
+        out2 = str(tmp_path / "b.jsonl")
+        for out in (out1, out2):
+            result = runner.invoke(
+                cli,
+                ["export", "--output", out, "--split", "train=0.8,test=0.2", "--seed", "7"],
+                obj=mock_session,
+            )
+            assert result.exit_code == 0
+        for split in ("train", "test"):
+            with open(tmp_path / f"a-{split}.jsonl") as f1, open(tmp_path / f"b-{split}.jsonl") as f2:
+                assert f1.read() == f2.read()
+
+    def test_split_small_strata_respect_global_fractions(self, runner, mock_session, tmp_path):
+        """Many tiny strata must not starve small splits.
+
+        With per-stratum rounding, every 2-entry stratum would hand its
+        leftover to train and val/test would end up near zero. Leftovers are
+        allocated by global deficit instead, keeping overall fractions.
+        """
+        for i in range(20):
+            self._seed_entries(mock_session, 2, topic=f"topic{i}")
+        result = runner.invoke(
+            cli,
+            ["export", "--dry-run", "--split", "train=0.8,val=0.1,test=0.1"],
+            obj=mock_session,
+        )
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        assert sum(s["count"] for s in data["splits"].values()) == 40
+        assert data["splits"]["train"]["count"] == 32
+        assert data["splits"]["val"]["count"] == 4
+        assert data["splits"]["test"]["count"] == 4
+
+    def test_split_dry_run(self, runner, mock_session, tmp_path):
+        self._seed_entries(mock_session, 10)
+        result = runner.invoke(
+            cli,
+            ["export", "--dry-run", "--split", "train=0.8,test=0.2"],
+            obj=mock_session,
+        )
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        assert data["dry_run"] is True
+        assert data["splits"] == {"train": {"count": 8}, "test": {"count": 2}}
+        assert not list(tmp_path.iterdir())
+
+    def test_split_dry_run_shows_balance_counts(self, runner, tmp_path):
+        class BalancedSchema(SimpleSchema):
+            balance_fields = ["difficulty"]
+
+        session = Session(
+            graph_db=MockGraphDB(),
+            vector_db=MockVectorDB(),
+            embedder=fake_embedder,
+            schema=BalancedSchema(),
+            db_path=tmp_path / "okgv.db",
+        )
+        self._seed_entries(session, 4, difficulty="easy")
+        self._seed_entries(session, 4, difficulty="hard")
+        result = runner.invoke(
+            cli,
+            ["export", "--dry-run", "--split", "train=0.5,test=0.5"],
+            obj=session,
+        )
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        for split in ("train", "test"):
+            assert data["splits"][split]["count"] == 4
+            assert data["splits"][split]["balance"] == {"difficulty": {"easy": 2, "hard": 2}}
+
+    def test_split_bad_sum_rejected(self, runner, mock_session, tmp_path):
+        out = str(tmp_path / "dataset.jsonl")
+        result = runner.invoke(
+            cli,
+            ["export", "--output", out, "--split", "train=0.8,test=0.1"],
+            obj=mock_session,
+        )
+        assert result.exit_code == 2
+        assert "invalid_split" in result.stderr
+
+    def test_split_bad_fraction_rejected(self, runner, mock_session, tmp_path):
+        out = str(tmp_path / "dataset.jsonl")
+        result = runner.invoke(
+            cli,
+            ["export", "--output", out, "--split", "train=lots,test=0.2"],
+            obj=mock_session,
+        )
+        assert result.exit_code == 2
+        assert "invalid_split" in result.stderr
+
+
 def _seed_tree(graph_db):
     """algebra/{linear,abstract}, geometry/euclidean."""
     graph_db.create_topic("algebra")

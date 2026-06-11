@@ -30,7 +30,7 @@ All output is JSON to stdout. Logs go to stderr.
 | `log` | Query submission log. `--topic`, `--after`, `--before`, `--count` |
 | `undo` | Delete entries submitted after a timestamp. `--dry-run` to preview |
 | `reconcile` | Find and fix orphan entries across the graph and vector tables. `--dry-run` to preview |
-| `export` | Export all entries to JSONL. `--fields`, `--exclude-in-review`, `--dry-run` |
+| `export` | Export all entries to JSONL. `--fields`, `--exclude-in-review`, `--split` for stratified train/val/test, `--dry-run` |
 | `purge` | **Hidden.** Delete everything (entries, topics, log). Requires `--confirm "delete all"` |
 
 ## Examples
@@ -89,6 +89,15 @@ okgv review --recover-rejected             # set rejected back to pending
 # Export for training
 okgv export --output dataset.jsonl
 okgv export --output dataset.jsonl --fields "text,label" --exclude-in-review
+
+# Stratified train/val/test split: each split keeps the dataset's
+# topic × balance-field distribution. Deterministic for a given --seed.
+okgv export --output dataset.jsonl --split "train=0.8,val=0.1,test=0.1" --seed 42
+# → dataset-train.jsonl, dataset-val.jsonl, dataset-test.jsonl
+
+# Preview the split first: per-split counts and balance-field distribution
+okgv export --dry-run --split "train=0.8,val=0.1,test=0.1"
+# {"splits": {"train": {"count": 77, "balance": {"difficulty": {"easy": 26, ...}}}, ...}}
 
 # Query submission log
 okgv log

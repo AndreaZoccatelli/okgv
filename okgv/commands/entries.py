@@ -295,6 +295,105 @@ def get_graph(session: Session, entry_id: str):
     output({"id": matched.id, "topic": matched.topic, **matched.properties})
 
 
+def _parse_split_spec(spec: str) -> list[tuple[str, float]]:
+    """Parse 'train=0.8,val=0.1,test=0.1' into [(name, fraction), ...]."""
+    suggestion = 'Use e.g. "train=0.8,val=0.1,test=0.1" (fractions must sum to 1)'
+    splits: list[tuple[str, float]] = []
+    names: set[str] = set()
+    for part in spec.split(","):
+        name, _, frac_str = part.strip().partition("=")
+        name = name.strip()
+        try:
+            frac = float(frac_str)
+        except ValueError:
+            err(
+                "invalid_split",
+                detail=f"Bad fraction in '{part.strip()}'",
+                suggestion=suggestion,
+                exit_code=EXIT_USAGE,
+            )
+        if not name or name in names:
+            err("invalid_split", detail=f"Missing or duplicate split name in '{part.strip()}'", exit_code=EXIT_USAGE)
+        if not 0 < frac <= 1:
+            err("invalid_split", detail=f"Fraction for '{name}' must be in (0, 1]", exit_code=EXIT_USAGE)
+        names.add(name)
+        splits.append((name, frac))
+    total = sum(frac for _, frac in splits)
+    if abs(total - 1.0) > 1e-6:
+        err(
+            "invalid_split",
+            detail=f"Fractions sum to {total}, expected 1.0",
+            suggestion=suggestion,
+            exit_code=EXIT_USAGE,
+        )
+    return splits
+
+
+def _build_split_assignment(
+    session: Session,
+    splits: list[tuple[str, float]],
+    seed: int,
+    pending_ids: set[str],
+    batch_size: int,
+) -> tuple[dict[str, str], dict[str, int], dict[str, dict]]:
+    """Assign each entry ID to a split, stratified by topic and balance fields.
+
+    Each stratum (one topic x balance-field-value combination) is shuffled
+    deterministically and divided by the split fractions, so every split
+    keeps the dataset's topic and balance distribution. Returns
+    ({entry_id: split_name}, {split_name: count},
+    {split_name: {field: {value: count}}}).
+    """
+    import random
+
+    balance_fields = list(getattr(session.schema, "balance_fields", None) or [])
+    vector_db = session.vector_db
+    graph_db = session.graph_db
+
+    strata: dict[tuple, list[str]] = {}
+    for chunk in vector_db.iter_entry_ids(batch_size):
+        chunk = [eid for eid in chunk if eid not in pending_ids]
+        if not chunk:
+            continue
+        topic_map = graph_db.get_topics_for_ids(chunk)
+        props = {r.id: r.properties for r in vector_db.get_by_ids(chunk)} if balance_fields else {}
+        for eid in chunk:
+            key = (topic_map.get(eid),) + tuple(str(props.get(eid, {}).get(f)) for f in balance_fields)
+            strata.setdefault(key, []).append(eid)
+
+    rng = random.Random(seed)
+    assignment: dict[str, str] = {}
+    counts = {name: 0 for name, _ in splits}
+    balance_counts: dict[str, dict] = {name: {f: {} for f in balance_fields} for name, _ in splits}
+    seen = 0
+    for key in sorted(strata, key=str):
+        ids = sorted(strata[key])
+        rng.shuffle(ids)
+        n = len(ids)
+        seen += n
+        base = [int(frac * n) for _, frac in splits]
+        # Rounding leftovers go to the splits with the largest *global*
+        # deficit (running target minus assigned). Per-stratum rounding
+        # would hand every leftover to the largest split, starving small
+        # splits when strata are tiny (e.g. a few entries per cell).
+        leftover = n - sum(base)
+        deficits = [frac * seen - (counts[name] + b) for (name, frac), b in zip(splits, base)]
+        for i in sorted(range(len(splits)), key=lambda i: deficits[i], reverse=True)[:leftover]:
+            base[i] += 1
+        start = 0
+        for (name, _), c in zip(splits, base):
+            for eid in ids[start : start + c]:
+                assignment[eid] = name
+            counts[name] += c
+            if c:
+                for i, f in enumerate(balance_fields):
+                    value_counts = balance_counts[name][f]
+                    value = key[1 + i]
+                    value_counts[value] = value_counts.get(value, 0) + c
+            start += c
+    return assignment, counts, balance_counts
+
+
 @click.command(name="export")
 @click.option("--output", "output_path", default=None, help="Path to output .jsonl file. Required unless --dry-run.")
 @click.option(
@@ -308,6 +407,13 @@ def get_graph(session: Session, entry_id: str):
     default=False,
     help="Exclude entries currently pending in the review queue.",
 )
+@click.option(
+    "--split",
+    "split_spec",
+    default=None,
+    help='Stratified split spec, e.g. "train=0.8,val=0.1,test=0.1". Writes one JSONL file per split.',
+)
+@click.option("--seed", default=42, show_default=True, help="Shuffle seed for --split assignment.")
 @click.option("--batch-size", default=500, show_default=True, help="Batch size for DB reads.")
 @click.option(
     "--dry-run",
@@ -321,10 +427,17 @@ def export_cmd(
     output_path: str | None,
     fields: str | None,
     exclude_in_review: bool,
+    split_spec: str | None,
+    seed: int,
     batch_size: int,
     dry_run: bool,
 ):
-    """Export all entries to a JSONL file for model training."""
+    """Export all entries to JSONL for model training.
+
+    With --split, writes one file per split (e.g. dataset-train.jsonl),
+    stratified by topic and balance fields so each split keeps the
+    dataset's distribution. Assignment is deterministic for a given seed.
+    """
     import os
 
     if not dry_run and not output_path:
@@ -336,7 +449,33 @@ def export_cmd(
     vector_db = session.vector_db
     graph_db = session.graph_db
 
+    splits = _parse_split_spec(split_spec) if split_spec else None
+    assignment: dict[str, str] = {}
+    split_counts: dict[str, int] = {}
+    balance_counts: dict[str, dict] = {}
+    if splits:
+        assignment, split_counts, balance_counts = _build_split_assignment(
+            session, splits, seed, pending_ids, batch_size
+        )
+
+    def _split_summary(name: str) -> dict:
+        item: dict = {"count": split_counts[name]}
+        if balance_counts.get(name):
+            item["balance"] = balance_counts[name]
+        return item
+
     if dry_run:
+        if splits:
+            output(
+                {
+                    "dry_run": True,
+                    "would_export": sum(split_counts.values()),
+                    "splits": {name: _split_summary(name) for name, _ in splits},
+                    "seed": seed,
+                    "exclude_in_review": exclude_in_review,
+                }
+            )
+            return
         total = 0
         for chunk in vector_db.iter_entry_ids(batch_size):
             filtered = [eid for eid in chunk if eid not in pending_ids]
@@ -351,8 +490,15 @@ def export_cmd(
         return
 
     out_path = output_path if os.path.isabs(output_path) else os.path.join(os.getcwd(), output_path)
+    if splits:
+        stem, ext = os.path.splitext(out_path)
+        split_files = {name: f"{stem}-{name}{ext or '.jsonl'}" for name, _ in splits}
+        handles = {name: open(path, "w", encoding="utf-8") for name, path in split_files.items()}
+    else:
+        handles = {None: open(out_path, "w", encoding="utf-8")}
+
     written = 0
-    with open(out_path, "w", encoding="utf-8") as fh:
+    try:
         for chunk in vector_db.iter_entry_ids(batch_size):
             chunk = [eid for eid in chunk if eid not in pending_ids]
             if not chunk:
@@ -360,15 +506,31 @@ def export_cmd(
             records = vector_db.get_by_ids(chunk)
             topic_map = graph_db.get_topics_for_ids(chunk)
             for rec in records:
+                target = assignment.get(rec.id) if splits else None
+                if splits and target is None:
+                    continue
                 row: dict = {"id": rec.id, "topic": topic_map.get(rec.id)}
                 row.update(rec.properties)
                 if field_set is not None:
                     row = {k: v for k, v in row.items() if k in field_set}
-                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+                handles[target].write(json.dumps(row, ensure_ascii=False) + "\n")
                 written += 1
+    finally:
+        for fh in handles.values():
+            fh.close()
 
-    log(f"Exported {written} entries to {out_path}")
-    output({"exported": written, "file": out_path})
+    if splits:
+        log(f"Exported {written} entries across {len(splits)} splits")
+        output(
+            {
+                "exported": written,
+                "seed": seed,
+                "splits": {name: {"file": split_files[name], **_split_summary(name)} for name, _ in splits},
+            }
+        )
+    else:
+        log(f"Exported {written} entries to {out_path}")
+        output({"exported": written, "file": out_path})
 
 
 commands = (
