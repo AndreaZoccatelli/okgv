@@ -1,5 +1,6 @@
 <p align="center">
-  <img src="resources/okgv-logo.svg" alt="okgv logo" width="720">
+  <img src="resources/okgv-logo-light.svg#gh-light-mode-only" alt="okgv logo" width="720">
+  <img src="resources/okgv-logo-dark.svg#gh-dark-mode-only" alt="okgv logo" width="720">
 </p>
 
 # okgv - organizing knowledge: graphs and vectors
