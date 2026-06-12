@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo/okgv-logo.svg" alt="okgv logo" width="360">
+</p>
+
 # okgv - organizing knowledge: graphs and vectors
 
 [![Tests](https://github.com/AndreaZoccatelli/okgv/actions/workflows/tests.yml/badge.svg)](https://github.com/AndreaZoccatelli/okgv/actions/workflows/tests.yml)
