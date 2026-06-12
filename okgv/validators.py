@@ -86,6 +86,42 @@ class NotEmpty:
         return f"{self.field}: non-empty string"
 
 
+class IsType:
+    """Check that value is an instance of the expected type."""
+
+    _NAMES = {
+        dict: "JSON object",
+        list: "list",
+        str: "string",
+        int: "integer",
+        float: "number",
+        bool: "boolean",
+    }
+
+    def __init__(self, field: str, expected: type):
+        self.field = field
+        self.expected = expected
+
+    def _name(self) -> str:
+        return self._NAMES.get(self.expected, self.expected.__name__)
+
+    def validate(self, value):
+        # bool is a subclass of int; an integer check should not accept True/False
+        wrong_type = not isinstance(value, self.expected) or (
+            self.expected is int and isinstance(value, bool)
+        )
+        if wrong_type:
+            name = self._name()
+            article = "an" if name[0].lower() in "aeiou" else "a"
+            raise ValueError(
+                f"{self.field}: must be {article} {name}, got {type(value).__name__}"
+            )
+        return value
+
+    def prompt(self) -> str:
+        return f"{self.field}: {self._name()}"
+
+
 class Matches:
     """Check that a string matches a regex pattern."""
 

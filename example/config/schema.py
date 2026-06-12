@@ -7,11 +7,11 @@ Set OKGV_SCHEMA=config.schema:ToolCallSchema in .env.
 """
 
 from okgv.protocols import PropertyDefinition
-from okgv.validators import NotEmpty, OneOf
+from okgv.validators import IsType, NotEmpty, OneOf
 
 query = NotEmpty("query")
 function = NotEmpty("function")
-arguments = NotEmpty("arguments")
+arguments = IsType("arguments", dict)
 difficulty = OneOf("difficulty", {"easy", "medium", "hard"})
 
 
@@ -20,7 +20,7 @@ class ToolCallEntry:
         self.query = query.validate(raw["query"])
         self.function = function.validate(raw["function"])
         self.arguments = arguments.validate(raw["arguments"])
-        self.difficulty = difficulty.validate(raw.get("difficulty", "medium"))
+        self.difficulty = difficulty.validate(raw["difficulty"])
 
 
 class ToolCallSchema:
