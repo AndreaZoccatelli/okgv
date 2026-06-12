@@ -26,6 +26,11 @@ Validators also serialize: .to_json() emits a tagged dict, validator_from_json()
 rebuilds it through VALIDATOR_REGISTRY. Custom validators participate via the
 @register decorator (a unique `tag` class attribute, to_json, from_json);
 unknown tags and tag collisions fail loudly.
+
+narrow(a, b) computes the simplified conjunction of two validators on the same
+field, returning NEVER when provably unsatisfiable and None when no
+simplification is known. Custom validators may implement narrow(other) to opt
+in to this analysis.
 """
 
 from __future__ import annotations
@@ -56,6 +61,45 @@ def validator_from_json(d: dict):
 
 def _validator_eq(self, other):
     return type(other) is type(self) and self.__dict__ == other.__dict__
+
+
+class _Never:
+    """Sentinel: narrowing proved the conjunction unsatisfiable (no value passes both)."""
+
+    def __repr__(self) -> str:
+        return "NEVER"
+
+
+NEVER = _Never()
+
+
+def narrow(a, b):
+    """Simplified conjunction of two validators on the same field.
+
+    Returns one of:
+    - a validator equivalent to "a AND b"
+    - NEVER, when the conjunction is provably unsatisfiable
+    - None, when no simplification is known (callers fall back to running
+      both validators; partiality degrades analysis, never enforcement)
+
+    Tries a.narrow(b) first, then b.narrow(a). Validators without a narrow()
+    method are opaque, but can still be simplified against (e.g. OneOf filters
+    its finite values through the other validator's validate()).
+    """
+    for left, right in ((a, b), (b, a)):
+        method = getattr(left, "narrow", None)
+        if method is None:
+            continue
+        result = method(right)
+        if result is not None:
+            return result
+    return None
+
+
+def _check_same_field(a, b):
+    b_field = getattr(b, "field", None)
+    if a.field != b_field:
+        raise ValueError(f"cannot narrow validators on different fields: '{a.field}' vs '{b_field}'")
 
 
 @runtime_checkable
@@ -92,6 +136,21 @@ class OneOf:
     def from_json(cls, d: dict) -> OneOf:
         return cls(d["field"], set(d["valid"]))
 
+    def narrow(self, other):
+        # Exact for any other validator, opaque ones included: the valid set
+        # is finite, so filter it through the other's validate().
+        _check_same_field(self, other)
+        surviving = set()
+        for v in self.valid:
+            try:
+                other.validate(v)
+            except (ValueError, TypeError):
+                continue
+            surviving.add(v)
+        if not surviving:
+            return NEVER
+        return OneOf(self.field, surviving)
+
     __eq__ = _validator_eq
 
 
@@ -121,6 +180,18 @@ class InRange:
     def from_json(cls, d: dict) -> InRange:
         return cls(d["field"], d["lo"], d["hi"])
 
+    def narrow(self, other):
+        _check_same_field(self, other)
+        if isinstance(other, InRange):
+            lo, hi = max(self.lo, other.lo), min(self.hi, other.hi)
+            return InRange(self.field, lo, hi) if lo <= hi else NEVER
+        if isinstance(other, OneOf):
+            return other.narrow(self)
+        if isinstance(other, NotEmpty):
+            # no value is both a number in range and a non-empty string
+            return NEVER
+        return None
+
     __eq__ = _validator_eq
 
 
@@ -147,6 +218,16 @@ class NotEmpty:
     @classmethod
     def from_json(cls, d: dict) -> NotEmpty:
         return cls(d["field"])
+
+    def narrow(self, other):
+        _check_same_field(self, other)
+        if isinstance(other, NotEmpty):
+            return self
+        if isinstance(other, (OneOf, IsType)):
+            return other.narrow(self)
+        if isinstance(other, InRange):
+            return NEVER
+        return None
 
     __eq__ = _validator_eq
 
@@ -210,6 +291,18 @@ class IsType:
             raise ValueError(f"unknown type name(s) {unknown} in is_type validator, known: {sorted(cls._TAG_TYPES)}")
         return cls(d["field"], tuple(cls._TAG_TYPES[n] for n in d["expected"]))
 
+    def narrow(self, other):
+        _check_same_field(self, other)
+        if isinstance(other, IsType):
+            common = tuple(t for t in self.expected if t in other.expected)
+            return IsType(self.field, common) if common else NEVER
+        if isinstance(other, NotEmpty):
+            # NotEmpty already implies "is a string", so it is the stronger side
+            return other if str in self.expected else NEVER
+        if isinstance(other, OneOf):
+            return other.narrow(self)
+        return None
+
     __eq__ = _validator_eq
 
 
@@ -237,5 +330,71 @@ class Matches:
     @classmethod
     def from_json(cls, d: dict) -> Matches:
         return cls(d["field"], d["pattern"])
+
+    def narrow(self, other):
+        # regex intersection has no sane simplification; only the trivial cases
+        _check_same_field(self, other)
+        if isinstance(other, Matches):
+            return self if self.pattern == other.pattern else None
+        if isinstance(other, OneOf):
+            return other.narrow(self)
+        return None
+
+    __eq__ = _validator_eq
+
+
+@register
+class Items:
+    """Apply an inner validator to every element of a list, with optional length bounds."""
+
+    tag = "items"
+
+    def __init__(self, field: str, inner, min_len: int = 0, max_len: int | None = None):
+        self.field = field
+        self.inner = inner
+        self.min_len = min_len
+        self.max_len = max_len
+
+    def validate(self, value):
+        if not isinstance(value, list):
+            raise ValueError(f"{self.field}: must be a list, got {type(value).__name__}")
+        if len(value) < self.min_len:
+            raise ValueError(f"{self.field}: must have at least {self.min_len} items, got {len(value)}")
+        if self.max_len is not None and len(value) > self.max_len:
+            raise ValueError(f"{self.field}: must have at most {self.max_len} items, got {len(value)}")
+        for i, item in enumerate(value):
+            try:
+                self.inner.validate(item)
+            except ValueError as e:
+                raise ValueError(f"{self.field}[{i}]: {e}") from None
+        return value
+
+    def prompt(self) -> str:
+        inner_desc = self.inner.prompt().removeprefix(f"{self.inner.field}: ")
+        if self.min_len and self.max_len is not None:
+            shape = f"list of {self.min_len} to {self.max_len} items"
+        elif self.min_len:
+            shape = f"list of at least {self.min_len} items"
+        elif self.max_len is not None:
+            shape = f"list of at most {self.max_len} items"
+        else:
+            shape = "list"
+        return f"{self.field}: {shape}, each: {inner_desc}"
+
+    def to_json(self) -> dict:
+        d = {"type": self.tag, "field": self.field, "inner": self.inner.to_json()}
+        if self.min_len:
+            d["min_len"] = self.min_len
+        if self.max_len is not None:
+            d["max_len"] = self.max_len
+        return d
+
+    @classmethod
+    def from_json(cls, d: dict) -> Items:
+        return cls(d["field"], validator_from_json(d["inner"]), d.get("min_len", 0), d.get("max_len"))
+
+    # No narrow(): Items ∧ Items is subtle (a contradictory inner validator
+    # still admits the empty list when min_len is 0), so conjunctions stay
+    # stacked rather than risking an unsound simplification.
 
     __eq__ = _validator_eq
