@@ -107,15 +107,11 @@ class IsType:
 
     def validate(self, value):
         # bool is a subclass of int; an integer check should not accept True/False
-        wrong_type = not isinstance(value, self.expected) or (
-            self.expected is int and isinstance(value, bool)
-        )
+        wrong_type = not isinstance(value, self.expected) or (self.expected is int and isinstance(value, bool))
         if wrong_type:
             name = self._name()
             article = "an" if name[0].lower() in "aeiou" else "a"
-            raise ValueError(
-                f"{self.field}: must be {article} {name}, got {type(value).__name__}"
-            )
+            raise ValueError(f"{self.field}: must be {article} {name}, got {type(value).__name__}")
         return value
 
     def prompt(self) -> str:
