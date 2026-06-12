@@ -1,8 +1,19 @@
 """Tests for entry field validators."""
 
+import json
+
 import pytest
 
-from okgv.validators import IsType
+from okgv.validators import (
+    VALIDATOR_REGISTRY,
+    InRange,
+    IsType,
+    Matches,
+    NotEmpty,
+    OneOf,
+    register,
+    validator_from_json,
+)
 
 
 class TestIsType:
@@ -46,3 +57,55 @@ class TestIsType:
         assert v.prompt() == "x: Custom"
         with pytest.raises(ValueError, match="x: must be a Custom"):
             v.validate(1)
+
+
+ROUND_TRIP_SAMPLES = [
+    OneOf("difficulty", {"easy", "medium", "hard"}),
+    InRange("score", 0, 100),
+    NotEmpty("query"),
+    Matches("code", r"[A-Z]{3}-\d+"),
+    IsType("arguments", dict),
+    IsType("value", (int, float)),
+]
+
+
+class TestValidatorSerde:
+    @pytest.mark.parametrize("v", ROUND_TRIP_SAMPLES, ids=lambda v: v.to_json()["type"])
+    def test_round_trip(self, v):
+        # through actual JSON text, not just the dict
+        d = json.loads(json.dumps(v.to_json()))
+        assert validator_from_json(d) == v
+
+    def test_every_registered_tag_has_round_trip_sample(self):
+        sampled = {type(v).tag for v in ROUND_TRIP_SAMPLES}
+        assert set(VALIDATOR_REGISTRY) <= sampled, "new validator registered without a round-trip sample above"
+
+    def test_unknown_tag_fails_loudly_naming_known_tags(self):
+        with pytest.raises(ValueError, match="unknown validator type 'one_off'.*one_of"):
+            validator_from_json({"type": "one_off", "field": "x", "valid": ["a"]})
+
+    def test_tag_collision_raises(self):
+        with pytest.raises(ValueError, match="tag 'one_of' already registered"):
+
+            @register
+            class Impostor:
+                tag = "one_of"
+
+    def test_reregistering_same_class_is_idempotent(self):
+        assert register(OneOf) is OneOf
+
+    def test_equality_is_by_value(self):
+        assert OneOf("f", {"a", "b"}) == OneOf("f", {"b", "a"})
+        assert OneOf("f", {"a"}) != OneOf("f", {"b"})
+        assert NotEmpty("f") != Matches("f", ".*")
+
+    def test_is_type_custom_type_not_serializable(self):
+        class Custom:
+            pass
+
+        with pytest.raises(ValueError, match=r"cannot serialize custom type\(s\) \['Custom'\]"):
+            IsType("x", Custom).to_json()
+
+    def test_is_type_unknown_type_name_rejected(self):
+        with pytest.raises(ValueError, match=r"unknown type name\(s\) \['number'\]"):
+            validator_from_json({"type": "is_type", "field": "x", "expected": ["number"]})
