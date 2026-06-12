@@ -67,6 +67,14 @@ class EntrySchema(Protocol):
 
     Methods receive an instance of entry_class (not raw dict),
     so computed properties are available as methods/attributes.
+
+    Optional hook (not part of the protocol, detected at runtime):
+
+    validate_for_topic(entry, topic) — called on upsert with the built entry
+        and the destination topic path, before any DB write. Raise ValueError
+        to reject the entry for that topic (relational constraints the raw
+        dict alone cannot express, e.g. "entries under a function topic must
+        call that function"). Schemas without the hook are unaffected.
     """
 
     entry_class: type

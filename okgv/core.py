@@ -83,6 +83,21 @@ def build_entry(schema: EntrySchema, raw: dict):
         raise EntryError(f"Entry JSON missing required key: {e}") from e
 
 
+def validate_entry_topic(schema: EntrySchema, entry, topic: str) -> None:
+    """Run the schema's optional validate_for_topic hook.
+
+    Schemas without the hook are unaffected. A ValueError from the hook is
+    wrapped as EntryError (catchable in batch operations).
+    """
+    hook = getattr(schema, "validate_for_topic", None)
+    if hook is None:
+        return
+    try:
+        hook(entry, topic)
+    except ValueError as e:
+        raise EntryError(f"Entry rejected for topic '{topic}': {e}") from e
+
+
 def upsert_entry(
     schema: EntrySchema,
     graph_db: GraphDB,
@@ -100,6 +115,7 @@ def upsert_entry(
     """
     eid = entry_id(raw)
     entry = build_entry(schema, raw)
+    validate_entry_topic(schema, entry, topic)
     meta = schema.metadata(entry)
     graph_props = schema.graph_properties(entry)
     vector_props = schema.vector_properties(entry)
@@ -169,6 +185,7 @@ def upsert_entries_batch(
         graph_props = schema.graph_properties(entry)
         vector_props = schema.vector_properties(entry)
         try:
+            validate_entry_topic(schema, entry, topic)
             graph_db.upload_entry(
                 topic=topic,
                 entry_id=eid,

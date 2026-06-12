@@ -153,6 +153,71 @@ class TestBuildEntry:
             core.build_entry(schema, {"wrong_key": "value"})
 
 
+class TestValidateForTopic:
+    def hooked_schema(self, schema, fail_for: str | None = None):
+        """Wrap the fixture schema with a validate_for_topic hook that records calls."""
+        calls = []
+
+        class HookedSchema(type(schema)):
+            @staticmethod
+            def validate_for_topic(entry, topic):
+                calls.append((entry, topic))
+                if topic == fail_for:
+                    raise ValueError(f"entry not allowed under '{topic}'")
+
+        return HookedSchema(), calls
+
+    def test_schema_without_hook_unaffected(self, graph_db, vector_db, schema):
+        eid = core.upsert_entry(schema, graph_db, vector_db, "t", {"text": "x"}, fake_embedder)
+        assert eid in graph_db.entries
+
+    def test_hook_called_with_entry_and_topic(self, graph_db, vector_db, schema):
+        hooked, calls = self.hooked_schema(schema)
+        core.upsert_entry(hooked, graph_db, vector_db, "topic_a", {"text": "x"}, fake_embedder)
+
+        assert len(calls) == 1
+        entry, topic = calls[0]
+        assert entry.text == "x"
+        assert topic == "topic_a"
+
+    def test_hook_rejection_raises_and_writes_nothing(self, graph_db, vector_db, schema):
+        hooked, _ = self.hooked_schema(schema, fail_for="t")
+        with pytest.raises(EntryError, match="Entry rejected for topic 't'"):
+            core.upsert_entry(hooked, graph_db, vector_db, "t", {"text": "x"}, fake_embedder)
+
+        assert graph_db.entries == {}
+        assert vector_db.entries == {}
+
+    def test_batch_hook_rejection_collected_as_failure(self, graph_db, vector_db, schema):
+        hooked, _ = self.hooked_schema(schema, fail_for="bad")
+        raws = [{"text": "a"}, {"text": "b"}]
+        entries = [core.build_entry(hooked, raw) for raw in raws]
+        vectors = [fake_embedder(["a"])[0], fake_embedder(["b"])[0]]
+
+        inserted, failures = core.upsert_entries_batch(
+            hooked, graph_db, vector_db, "bad", raws, entries=entries, vectors=vectors
+        )
+
+        assert inserted == []
+        assert len(failures) == 2
+        assert all("Entry rejected for topic 'bad'" in f["error"] for f in failures)
+        assert graph_db.entries == {}
+
+    def test_batch_hook_pass_inserts_all(self, graph_db, vector_db, schema):
+        hooked, calls = self.hooked_schema(schema)
+        raws = [{"text": "a"}, {"text": "b"}]
+        entries = [core.build_entry(hooked, raw) for raw in raws]
+        vectors = [fake_embedder(["a"])[0], fake_embedder(["b"])[0]]
+
+        inserted, failures = core.upsert_entries_batch(
+            hooked, graph_db, vector_db, "t", raws, entries=entries, vectors=vectors
+        )
+
+        assert len(inserted) == 2
+        assert failures == []
+        assert len(calls) == 2
+
+
 class TestLogSession:
     def test_log_creates_db_and_inserts(self, tmp_path):
         db_path = tmp_path / "okgv.db"
