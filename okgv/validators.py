@@ -87,7 +87,7 @@ class NotEmpty:
 
 
 class IsType:
-    """Check that value is an instance of the expected type."""
+    """Check that value is an instance of the expected type (or one of several)."""
 
     _NAMES = {
         dict: "JSON object",
@@ -98,17 +98,20 @@ class IsType:
         bool: "boolean",
     }
 
-    def __init__(self, field: str, expected: type):
+    def __init__(self, field: str, expected: type | tuple[type, ...]):
         self.field = field
-        self.expected = expected
+        self.expected = expected if isinstance(expected, tuple) else (expected,)
 
     def _name(self) -> str:
-        return self._NAMES.get(self.expected, self.expected.__name__)
+        return " or ".join(self._NAMES.get(t, t.__name__) for t in self.expected)
 
     def validate(self, value):
-        # bool is a subclass of int; an integer check should not accept True/False
-        wrong_type = not isinstance(value, self.expected) or (self.expected is int and isinstance(value, bool))
-        if wrong_type:
+        ok = isinstance(value, self.expected)
+        # bool is a subclass of int; a numeric check should not accept True/False
+        # unless bool itself was asked for
+        if ok and isinstance(value, bool) and bool not in self.expected:
+            ok = False
+        if not ok:
             name = self._name()
             article = "an" if name[0].lower() in "aeiou" else "a"
             raise ValueError(f"{self.field}: must be {article} {name}, got {type(value).__name__}")

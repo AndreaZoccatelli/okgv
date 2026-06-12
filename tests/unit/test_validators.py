@@ -25,6 +25,19 @@ class TestIsType:
         assert IsType("arguments", dict).prompt() == "arguments: JSON object"
         assert IsType("days", int).prompt() == "days: integer"
 
+    def test_tuple_of_types_accepts_any_member(self):
+        v = IsType("value", (int, float))
+        assert v.validate(10) == 10
+        assert v.validate(2.5) == 2.5
+        with pytest.raises(ValueError, match="value: must be an integer or number, got str"):
+            v.validate("10")
+        with pytest.raises(ValueError, match="got bool"):
+            v.validate(True)
+
+    def test_bool_accepted_when_explicitly_expected(self):
+        v = IsType("unread_only", bool)
+        assert v.validate(True) is True
+
     def test_unknown_type_falls_back_to_class_name(self):
         class Custom:
             pass
