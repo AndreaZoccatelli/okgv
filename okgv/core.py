@@ -88,14 +88,21 @@ def enforce_entry_spec(spec, entry) -> None:
     """Run a topic's folded `entry`-namespace validators against the entry.
 
     This is the generic half of per-topic validation: each `entry` constraint
-    narrows a global entry-schema field, so the library can enforce it for any
-    schema without bespoke code.
-    Raises ValueError on the first violation.
+    narrows a global entry-schema field, resolved as an attribute on the entry
+    (`getattr`). The field must therefore be a stored attribute or a `@property`;
+    a value computed only inside `metadata()`/`graph_properties()` is not present
+    here, and a plain method is rejected rather than validated against. Raises
+    ValueError on the first problem.
     """
     for field_name, validators in spec.entry.items():
         if not hasattr(entry, field_name):
             raise ValueError(f"entry field '{field_name}' constrained by the topic spec is not present on the entry")
         value = getattr(entry, field_name)
+        if callable(value):
+            raise ValueError(
+                f"entry field '{field_name}' is a method, not a value; expose it as an attribute or "
+                f"@property to constrain it per topic"
+            )
         for validator in validators:
             validator.validate(value)
 

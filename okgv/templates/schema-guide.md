@@ -50,6 +50,8 @@ After gathering answers, create a `candidate_schema.py` with:
 Optionally, also define:
    - `validate_for_topic(entry, topic)` — a static method called on submission with the built entry and its destination topic. Raise `ValueError` to reject relational constraints the raw dict alone cannot express (e.g. "an entry under a function topic must call that function"). It typically reads the topic's folded effective spec from `structure.json` `_meta` blocks (see the Structure Design Guide). Schemas without this hook are unaffected.
 
+Per-topic `entry` constraints in `_meta` are resolved as **attributes** on the entry, so a field you want to narrow per topic must be a stored attribute or a `@property` — a value computed only inside `metadata()`/`graph_properties()`, or defined as a plain method, can't be used as a per-topic filter (expose it as a `@property` if you need to).
+
 Refer to `config/schema.py` for the template structure.
 
 ## Validation

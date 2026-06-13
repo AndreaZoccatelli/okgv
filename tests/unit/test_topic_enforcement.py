@@ -44,6 +44,32 @@ class TestEnforceEntrySpec:
         spec = parse_meta({"required": {"location": "not_empty"}}, "t")
         enforce_entry_spec(spec, _Obj())  # no 'location' attr, but not enforced → no raise
 
+    def test_attribute_and_property_work(self):
+        spec = parse_meta({"entry": {"bucket": {"one_of": ["big"]}}}, "t")
+
+        class P:
+            def __init__(self, v):
+                self._v = v
+
+            @property
+            def bucket(self):
+                return self._v
+
+        enforce_entry_spec(spec, _Obj(bucket="big"))  # attribute
+        enforce_entry_spec(spec, P("big"))  # property
+        with pytest.raises(ValueError, match="bucket"):
+            enforce_entry_spec(spec, P("small"))
+
+    def test_method_field_rejected_clearly(self):
+        spec = parse_meta({"entry": {"bucket": {"one_of": ["big"]}}}, "t")
+
+        class M:
+            def bucket(self):
+                return "big"
+
+        with pytest.raises(ValueError, match="is a method, not a value"):
+            enforce_entry_spec(spec, M())
+
 
 # ── E5/E6: validate_entry_topic ───────────────────────────────────────────
 

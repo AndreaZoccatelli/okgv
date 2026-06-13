@@ -220,6 +220,17 @@ For the common case — a topic narrows a scalar entry field via the `entry` nam
 
 The argument-object namespaces (`required`/`optional`/`forbidden`) are *not* auto-enforced — binding them to a compound entry field is dataset-specific.
 
+**`entry` constraints resolve to entry attributes** (via `getattr`), so a field you constrain must be a stored attribute or a `@property` on your entry class. A value computed only inside `metadata()`/`graph_properties()`/`vector_properties()` is not visible here (you get "field … not present on the entry"), and a plain method is rejected with a clear error ("is a method, not a value …"). To filter a topic on a *computed* value, expose it as an attribute or `@property`:
+
+```python
+class MyEntry:
+    def __init__(self, raw):
+        self.text = raw["text"]
+        self.length_bucket = "long" if len(self.text) > 200 else "short"  # now usable in _meta entry
+```
+
+Note this is distinct from `balance_fields`/`topic-stats`/`report`, which read `metadata()` output — so a derived metadata field can be balanced and reported on even when it is not an entry attribute, but it can only be used as a per-topic `entry` filter once exposed on the entry.
+
 ### The `validate_for_topic` hook (for the bespoke part)
 
 Add an optional static method for anything the default cannot express (e.g. matching a function name and its argument signature). It is called after the default enforcement, with the built entry and its topic, before any DB write; raise `ValueError` to reject. It may take an optional third parameter to receive the topic's folded effective spec, so it need not re-read the structure file (`(entry, topic)` hooks still work).
