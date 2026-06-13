@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "okgv"
 version = "0.1.0"
-description = "Organizing knowledge: graphs and vectors"
+description = "An agent-native CLI for building balanced, duplicate-free synthetic datasets."
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Andrea Zoccatelli", email = "a.zoccatelli.work@gmail.com"}]
