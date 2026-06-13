@@ -8,7 +8,7 @@
 [![Tests](https://github.com/AndreaZoccatelli/okgv/actions/workflows/tests.yml/badge.svg)](https://github.com/AndreaZoccatelli/okgv/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/AndreaZoccatelli/okgv/blob/main/LICENSE)
 
-LLMs are often used to generate synthetic text datasets for training other ML models. Two requirements make this hard at scale: the dataset has to stay balanced, and it has to avoid near-duplicate instances. Both get harder as the instance count grows.
+The standard way to generate synthetic datasets for training/fine-tuning ML models is to build a complex pipeline, which requires real design and engineering effort. A cheaper option is to drive an LLM through a coding harness or agents, but two requirements make this hard at scale: the dataset has to stay balanced, and it has to avoid near-duplicate instances. Both get harder as the instance count grows.
 
 The reason is context. Suppose you want math questions spanning algebra and calculus, each rated easy, medium, or hard, balanced both across subjects (algebra vs. calculus) and across difficulty levels. The naive approach, asking the LLM to "ensure diversity", forces it to hold every previously generated instance in context to know what is still missing. Deduplication hits the same wall: spotting a near-duplicate requires comparing the candidate against all prior instances, which again means keeping them in context. Past a few hundred instances this becomes infeasible.
 
