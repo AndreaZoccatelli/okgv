@@ -42,3 +42,18 @@ class DuplicateEntryError(OkgvError, ValueError):
     code = "duplicate_entry"
     exit_code = EXIT_USAGE
     suggestion = "Pass --overwrite to replace the existing entry"
+
+
+class RelocationError(OkgvError, ValueError):
+    """Raised when overwrite=True targets a topic different from the existing
+    entry's topic. Overwrite re-derives an entry in place; changing its topic is
+    a separate operation with different invariants (and would bypass the
+    destination-spec revalidation that move performs).
+
+    Subclasses ValueError so batch callers that catch backend ValueErrors
+    collect it as a per-entry failure rather than aborting the batch.
+    """
+
+    code = "overwrite_relocation"
+    exit_code = EXIT_USAGE
+    suggestion = "Use the move-entry command to change an entry's topic"

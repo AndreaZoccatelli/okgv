@@ -33,14 +33,15 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 `--entry` takes the **complete candidate entry** (the same JSON you would submit), not a text snippet. Similarity is computed on the schema's embedding text, so the check only matches submit-time behavior when given the full entry; partial entries are rejected with `missing_field`.
 
 ### Submission
-- `okgv submit --topic <path> --entry '<json>' [--review]` — upsert single entry. `--review` flags for review.
+- `okgv submit --topic <path> --entry '<json>' [--review]` — upsert single entry. `--review` flags for review. Submit only to **leaf** topics (a topic with children is rejected). `--overwrite` re-derives an entry in place and cannot move it to a different topic — use `move-entry` for that.
 - `okgv submit-batch --topic <path> --entries '<json_array>' [--review]` — batch upsert.
 
 ### Topic Management
 - `okgv create-topic --name <path> [--parents]` — create topic. Use --parents for mkdir -p.
-- `okgv create-structure --file <path>` — create tree from JSON file.
-- `okgv move-topic --source <path> --destination <path> [--dry-run]` — move topic under new parent.
-- `okgv move-entry --id <uuid> --destination <path> [--dry-run]` — move entry to different topic.
+- `okgv create-structure --file <path>` — create tree from JSON file. `_meta` blocks declare per-topic constraints; re-running over a populated DB warns you to `revalidate`.
+- `okgv move-topic --source <path> --destination <path> [--dry-run]` — move topic under new parent. Moved entries are revalidated against their new path; a violating move is rejected.
+- `okgv move-entry --id <uuid> --destination <path> [--dry-run]` — move entry to different topic. Revalidated against the destination spec.
+- `okgv revalidate [--topic <path>] [--no-queue]` — after tightening specs, report entries that now violate their topic's effective spec and queue them for review.
 
 ### Retrieval
 - `okgv get-vector --id <uuid>` — fetch entry from vector DB.

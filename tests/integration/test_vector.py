@@ -39,6 +39,16 @@ class TestUploadAndRetrieve:
         record = vector_db.get_by_id(E1)
         assert record.properties["text"] == "new"
 
+    def test_overwrite_into_different_topic_rejected(self, vector_db):
+        from okgv.errors import RelocationError
+
+        vec = make_vector()
+        vector_db.upload_entry(E1, {"text": "x", "text_length": 1}, vec, topic="a")
+        with pytest.raises(RelocationError, match="cannot overwrite into 'b'"):
+            vector_db.upload_entry(E1, {"text": "x", "text_length": 1}, vec, topic="b", overwrite=True)
+        # the original entry is untouched
+        assert vector_db.get_by_id(E1).properties["text"] == "x"
+
     def test_get_by_ids(self, vector_db):
         vec = make_vector()
         vector_db.upload_entry(E1, {"text": "a", "text_length": 1}, vec, topic="t")

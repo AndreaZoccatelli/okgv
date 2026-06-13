@@ -5,7 +5,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from okgv.errors import EntryError
+from okgv.errors import EntryError, RelocationError
 from okgv.helpers import EXIT_USAGE, err
 from okgv.protocols import EntrySchema, GraphDB, VectorDB, entry_id
 
@@ -115,6 +115,10 @@ def upsert_entry(
     """
     eid = entry_id(raw)
     entry = build_entry(schema, raw)
+    if overwrite:
+        existing = graph_db.get_by_id(eid)
+        if existing is not None and existing.topic != topic:
+            raise RelocationError(f"Entry '{eid}' exists in topic '{existing.topic}', cannot overwrite into '{topic}'")
     validate_entry_topic(schema, entry, topic)
     meta = schema.metadata(entry)
     graph_props = schema.graph_properties(entry)
@@ -185,6 +189,12 @@ def upsert_entries_batch(
         graph_props = schema.graph_properties(entry)
         vector_props = schema.vector_properties(entry)
         try:
+            if overwrite:
+                existing = graph_db.get_by_id(eid)
+                if existing is not None and existing.topic != topic:
+                    raise RelocationError(
+                        f"Entry '{eid}' exists in topic '{existing.topic}', cannot overwrite into '{topic}'"
+                    )
             validate_entry_topic(schema, entry, topic)
             graph_db.upload_entry(
                 topic=topic,

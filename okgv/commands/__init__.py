@@ -4,7 +4,7 @@ Each module exposes a `commands` tuple; `all_commands` aggregates them for
 registration on the CLI group in okgv.main.
 """
 
-from okgv.commands import entries, maintenance, prompts, review, structure
+from okgv.commands import entries, lifecycle, maintenance, prompts, review, structure
 
 all_commands = (
     *prompts.commands,
@@ -12,4 +12,5 @@ all_commands = (
     *entries.commands,
     *review.commands,
     *maintenance.commands,
+    *lifecycle.commands,
 )

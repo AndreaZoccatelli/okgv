@@ -19,6 +19,23 @@ from okgv.protocols import entry_id
 from okgv.session import Session
 
 
+def _reject_interior_topic(session: Session, topic: str) -> None:
+    """Block submission to a topic that has child topics.
+
+    Under a refinement hierarchy an entry on an interior node is unclassified
+    along the child dimension (no quota cell, no dedup cell), so submission must
+    target a leaf.
+    """
+    children = session.graph_db.get_subtopics(topic)
+    if children:
+        err(
+            "interior_topic",
+            detail=f"Topic '{topic}' has child topics {sorted(children)}; entries can only be submitted to a leaf",
+            suggestion="Submit to one of its leaf descendants instead",
+            exit_code=EXIT_USAGE,
+        )
+
+
 def _similar_results(session: Session, topic: str, matches: list[tuple[str, float]]) -> list[dict]:
     """Shape similarity matches for output, tagging each with its topic.
 
@@ -156,6 +173,7 @@ def submit(session: Session, topic: str, entry: str, overwrite: bool, review: bo
     """Upsert entry into both graph and vector DBs."""
     schema = session.schema
     raw = read_raw(entry)
+    _reject_interior_topic(session, topic)
 
     log("Loading embedding model...")
     log(f"Upserting entry into topic '{topic}'...")
@@ -198,6 +216,7 @@ def submit(session: Session, topic: str, entry: str, overwrite: bool, review: bo
 def submit_batch(session: Session, topic: str, entries: str, overwrite: bool, review: bool | None):
     """Upsert multiple entries into graph and vector DBs. Single model load."""
     schema = session.schema
+    _reject_interior_topic(session, topic)
     if entries == "-":
         raw_str = sys.stdin.read()
     else:

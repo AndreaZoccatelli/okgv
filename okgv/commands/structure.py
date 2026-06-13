@@ -6,7 +6,36 @@ import sys
 import click
 
 from okgv.helpers import EXIT_NOT_FOUND, EXIT_USAGE, err, log, output
+from okgv.protocols import GraphRecord
 from okgv.session import Session
+
+
+def _revalidate_entry(session: Session, record: GraphRecord, topic: str) -> str | None:
+    """Rebuild a stored entry and run the schema's `validate_for_topic` hook
+    against `topic` (the destination).
+
+    Returns an error message when the entry violates the destination spec, or
+    None when it is valid, the schema has no hook, or the entry cannot be
+    reconstructed from its stored properties (unverifiable, so the move is
+    allowed; monotone narrowing already keeps upward refiling safe).
+    """
+    schema = session.schema
+    hook = getattr(schema, "validate_for_topic", None)
+    if hook is None:
+        return None
+    props = dict(record.properties)
+    vrec = session.vector_db.get_by_id(record.id)
+    if vrec is not None:
+        props.update(vrec.properties)
+    try:
+        entry = schema.entry_class(props)
+    except Exception:
+        return None
+    try:
+        hook(entry, topic)
+    except ValueError as e:
+        return str(e)
+    return None
 
 
 @click.command()
@@ -280,6 +309,10 @@ def create_structure(session: Session, file_path: str):
     specs = build_specs(structure)
 
     graph_db = session.graph_db
+    # Re-running over a populated DB may tighten specs under existing entries;
+    # nothing revalidates them automatically, so flag it.
+    preexisting_entries = bool(graph_db.get_all_entry_ids())
+
     created = []
     stack: list[tuple[dict, str | None]] = [(structure, None)]
 
@@ -299,6 +332,14 @@ def create_structure(session: Session, file_path: str):
                 stack.append((children, path))
 
     warnings = collect_warnings(specs)
+    if preexisting_entries:
+        warnings.append(
+            {
+                "level": "warning",
+                "message": "structure (re)created over a DB that already has entries; "
+                "run `revalidate` to find entries that violate the updated specs",
+            }
+        )
     for w in warnings:
         log(f"{w['level']}: {w['message']}")
 
@@ -523,6 +564,25 @@ def move_topic(session: Session, source: str, destination: str, dry_run: bool):
         )
     name = source.rsplit("/", 1)[-1]
     new_path = f"{destination}/{name}"
+
+    # Sideways/downward moves can violate the destination spec, so revalidate
+    # every moved entry against its new path before applying anything.
+    violations = []
+    for rec in graph_db.get_entries_for_topic(source):
+        new_topic = new_path + rec.topic[len(source) :]
+        msg = _revalidate_entry(session, rec, new_topic)
+        if msg is not None:
+            violations.append({"id": rec.id, "new_topic": new_topic, "error": msg})
+    if violations:
+        ids = [v["id"] for v in violations]
+        err(
+            "invalid_for_topic",
+            detail=f"{len(violations)} entr{'y' if len(violations) == 1 else 'ies'} "
+            f"would violate the destination spec: {ids[:10]}",
+            suggestion="Fix or refile the offending entries, or move to a compatible topic",
+            exit_code=EXIT_USAGE,
+        )
+
     if dry_run:
         output({"dry_run": True, "would_move": source, "new_path": new_path})
         return
@@ -543,7 +603,8 @@ def move_topic(session: Session, source: str, destination: str, dry_run: bool):
 def move_entry(session: Session, entry_id: str, destination: str, dry_run: bool):
     """Move an entry to a different topic."""
     graph_db = session.graph_db
-    if graph_db.get_by_id(entry_id) is None:
+    record = graph_db.get_by_id(entry_id)
+    if record is None:
         err("not_found", detail=f"No entry with id '{entry_id}'", exit_code=EXIT_NOT_FOUND)
     if not graph_db.topic_exists(destination):
         err(
@@ -552,6 +613,16 @@ def move_entry(session: Session, entry_id: str, destination: str, dry_run: bool)
             suggestion="Create it first with create-topic",
             exit_code=EXIT_NOT_FOUND,
         )
+
+    msg = _revalidate_entry(session, record, destination)
+    if msg is not None:
+        err(
+            "invalid_for_topic",
+            detail=f"Entry '{entry_id}' is invalid for destination '{destination}': {msg}",
+            suggestion="Move to a topic whose spec the entry satisfies",
+            exit_code=EXIT_USAGE,
+        )
+
     if dry_run:
         output({"dry_run": True, "would_move": entry_id, "destination": destination})
         return

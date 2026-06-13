@@ -7,7 +7,7 @@ import sqlite3
 import struct
 from collections.abc import Iterator
 
-from okgv.errors import DuplicateEntryError
+from okgv.errors import DuplicateEntryError, RelocationError
 from okgv.protocols import VectorRecord
 
 
@@ -115,9 +115,16 @@ class SQLiteVectorDB:
         topic: str,
         overwrite: bool = False,
     ) -> None:
-        existing = self._conn.execute("SELECT 1 FROM vector_entries WHERE id = ?", (entry_id,)).fetchone()
+        existing = self._conn.execute("SELECT topic FROM vector_entries WHERE id = ?", (entry_id,)).fetchone()
         if existing and not overwrite:
             raise DuplicateEntryError(f"Entry '{entry_id}' already exists in vector DB")
+        if existing and overwrite and existing[0] != topic:
+            # Overwrite re-derives an entry in place; it must not silently
+            # relocate it (which would shrink the old topic's count and dodge
+            # the destination-spec check that move performs).
+            raise RelocationError(
+                f"Entry '{entry_id}' exists in topic '{existing[0]}', cannot overwrite into '{topic}'"
+            )
         props_json = json.dumps(properties, sort_keys=True)
         blob = _vec_f32(vector)
         if existing and overwrite:
