@@ -1,3 +1,8 @@
+<p align="center">
+    <img src="../resources/okgv-logo-light.svg#gh-light-mode-only" alt="okgv logo" width="400">
+    <img src="../resources/okgv-logo-dark.svg#gh-dark-mode-only" alt="okgv logo" width="400">
+</p>
+
 # Review System
 
 Entries can be flagged for review at submit time. Review is an external tracking layer, it does not block entry insertion. Entries always go into both tables immediately.
