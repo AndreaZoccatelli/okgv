@@ -71,6 +71,74 @@ class TestParseMeta:
             parse_meta({"forbidden": {"x": 1}}, "t")
 
 
+class TestAuthoringShorthands:
+    # E1: field defaults to the key
+    def test_field_defaults_to_key(self):
+        spec = parse_meta({"required": {"location": {"type": "not_empty"}}}, "t")
+        assert spec.required["location"][0].field == "location"
+
+    def test_explicit_field_mismatch_errors(self):
+        with pytest.raises(SpecError, match="must match the key 'location'"):
+            parse_meta({"required": {"location": {"type": "not_empty", "field": "loc"}}}, "t")
+
+    def test_explicit_field_matching_key_allowed(self):
+        spec = parse_meta({"required": {"location": {"type": "not_empty", "field": "location"}}}, "t")
+        assert spec.required["location"][0].field == "location"
+
+    # E2: bare-tag string and OneOf list
+    def test_bare_tag_string(self):
+        from okgv.validators import NotEmpty
+
+        spec = parse_meta({"required": {"location": "not_empty"}}, "t")
+        v = spec.required["location"][0]
+        assert isinstance(v, NotEmpty) and v.field == "location"
+
+    def test_string_list_becomes_oneof(self):
+        from okgv.validators import OneOf
+
+        spec = parse_meta({"optional": {"units": ["celsius", "fahrenheit"]}}, "t")
+        v = spec.optional["units"][0]
+        assert isinstance(v, OneOf) and v.valid == {"celsius", "fahrenheit"} and v.field == "units"
+
+    def test_list_with_dict_stays_conjunction(self):
+        meta = {"required": {"x": ["not_empty", {"type": "matches", "pattern": "a+"}]}}
+        spec = parse_meta(meta, "t")
+        kinds = [v.__class__.__name__ for v in spec.required["x"]]
+        assert kinds == ["NotEmpty", "Matches"]
+        # the matches dict omitted field; it defaulted to the key
+        assert spec.required["x"][1].field == "x"
+
+    def test_bad_shorthand_item_errors(self):
+        with pytest.raises(SpecError, match="must be a validator object, a tag string"):
+            parse_meta({"required": {"x": 5}}, "t")
+
+
+class TestSpecToJson:
+    def test_round_trips_through_parse_meta(self):
+        meta = {
+            "function": "f",
+            "required": {"location": "not_empty", "x": [_not_empty("x"), {"type": "matches", "pattern": "a+"}]},
+            "optional": {"units": ["celsius", "fahrenheit"]},
+            "entry": {"difficulty": _one_of("difficulty", "easy", "hard")},
+            "forbidden": ["z"],
+            "similarity_scope": "subtree",
+        }
+        spec = parse_meta(meta, "t")
+        assert parse_meta(spec.to_json(), "t") == spec
+
+    def test_emits_explicit_long_form(self):
+        spec = parse_meta({"required": {"location": "not_empty"}}, "t")
+        emitted = spec.to_json()
+        assert emitted["required"]["location"] == {"type": "not_empty", "field": "location"}
+
+    def test_single_validator_collapses_list_stays(self):
+        spec = parse_meta({"required": {"x": [_not_empty("x"), {"type": "matches", "pattern": "a+"}]}}, "t")
+        emitted = spec.to_json()
+        assert isinstance(emitted["required"]["x"], list) and len(emitted["required"]["x"]) == 2
+        single = parse_meta({"required": {"y": "not_empty"}}, "t").to_json()
+        assert isinstance(single["required"]["y"], dict)
+
+
 # ── Fold: merge-class semantics ───────────────────────────────────────────
 
 

@@ -39,14 +39,20 @@ A topic node may carry a reserved `_meta` key describing constraints on the entr
     "current_conditions": {
       "_meta": {
         "function": "get_current_weather",
-        "required": {"location": {"type": "not_empty", "field": "location"}},
-        "optional": {"units": {"type": "one_of", "field": "units", "valid": ["celsius", "fahrenheit"]}},
+        "required": {"location": "not_empty"},
+        "optional": {"units": ["celsius", "fahrenheit"]},
         "similarity_scope": "leaf"
       }
     }
   }
 }
 ```
+
+Authoring shorthands keep blocks terse (the explicit long form is always accepted too):
+
+- A bare tag string — `"location": "not_empty"` — is the validator with its `field` defaulted to the key.
+- A list of strings — `"units": ["celsius", "fahrenheit"]` — is a `OneOf` over those values.
+- The `field` inside any validator object defaults to its key, so `{"type": "is_type", "expected": ["int"]}` is enough; a list that contains a validator object is a conjunction (all run). The explicit `{"type": "not_empty", "field": "location"}` form still works.
 
 - `_meta` blocks **compose along a path**: a child's effective spec is the fold of every ancestor's `_meta` plus its own. A child may narrow an existing constraint, add a new one, or `forbid` a key — never relax one. A contradiction or a malformed validator fails at `create-structure`, before anything is written.
 - `entry` narrows global entry-schema fields (e.g. `difficulty`); `required`/`optional`/`forbidden` constrain a function's arguments; `function` sets the function identity (once per path).

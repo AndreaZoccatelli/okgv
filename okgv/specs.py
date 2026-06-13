@@ -34,7 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from okgv.errors import SpecError
-from okgv.validators import NEVER, narrow, validator_from_json
+from okgv.validators import NEVER, OneOf, narrow, validator_from_json
 
 # Keys recognized inside a `_meta` block. Constraint targets plus the policy and
 # identity keys. Anything else is a typo and fails at ingest.
@@ -84,25 +84,76 @@ class Spec:
                     blind.append(name)
         return sorted(set(blind))
 
+    def to_json(self) -> dict:
+        """Emit a ``_meta`` block (the inverse of :func:`parse_meta`).
+
+        Lets authors build specs as Python validator objects and serialize them
+        into ``structure.json`` rather than hand-writing the JSON. Emits the
+        explicit long form (each validator's ``to_json``); a single validator
+        per field collapses to one object, a conjunction stays a list.
+        ``parse_meta(spec.to_json())`` reproduces the spec.
+        """
+        meta: dict = {}
+        if self.function is not None:
+            meta["function"] = self.function
+        for target in _PARAM_TARGETS:
+            store = getattr(self, target)
+            if store:
+                meta[target] = {
+                    name: (validators[0].to_json() if len(validators) == 1 else [v.to_json() for v in validators])
+                    for name, validators in store.items()
+                }
+        if self.forbidden:
+            meta["forbidden"] = sorted(self.forbidden)
+        if self.similarity_scope is not None:
+            meta["similarity_scope"] = self.similarity_scope
+        return meta
+
 
 # ── Parsing one node's _meta block ────────────────────────────────────────
 
 
-def _parse_validators(value, topic: str, target: str, name: str) -> list:
-    """Parse a single validator dict or a list of them into validator objects."""
-    raw = value if isinstance(value, list) else [value]
-    parsed = []
-    for item in raw:
-        if not isinstance(item, dict):
+def _parse_one(item, topic: str, target: str, name: str):
+    """Parse one validator from its explicit dict or a bare-tag string.
+
+    A dict may omit ``field``; it defaults to the enclosing key ``name`` (a
+    validator constrains the parameter it is filed under). An explicit ``field``
+    that disagrees with the key is a bug and raises.
+    """
+    if isinstance(item, str):
+        payload = {"type": item, "field": name}  # bare-tag shorthand: "not_empty"
+    elif isinstance(item, dict):
+        payload = dict(item)
+        if "field" not in payload:
+            payload["field"] = name
+        elif payload["field"] != name:
             raise SpecError(
-                f"topic '{topic}': {target}.{name} must be a validator object or a list of them, "
-                f"got {type(item).__name__}"
+                f"topic '{topic}': {target}.{name}: validator field '{payload['field']}' must match "
+                f"the key '{name}' (omit 'field' to default it)"
             )
-        try:
-            parsed.append(validator_from_json(item))
-        except ValueError as e:
-            raise SpecError(f"topic '{topic}': {target}.{name}: {e}") from e
-    return parsed
+    else:
+        raise SpecError(
+            f"topic '{topic}': {target}.{name} must be a validator object, a tag string, or a list of them, "
+            f"got {type(item).__name__}"
+        )
+    try:
+        return validator_from_json(payload)
+    except ValueError as e:
+        raise SpecError(f"topic '{topic}': {target}.{name}: {e}") from e
+
+
+def _parse_validators(value, topic: str, target: str, name: str) -> list:
+    """Parse a field's validators into a list, with authoring shorthands.
+
+    Forms accepted:
+      - a single validator dict or bare-tag string;
+      - a list of plain strings -> a single ``OneOf`` over those values;
+      - a list containing any dict -> a conjunction (every validator runs).
+    """
+    if isinstance(value, list) and value and all(isinstance(x, str) for x in value):
+        return [OneOf(name, set(value))]  # OneOf shorthand: ["celsius", "fahrenheit"]
+    raw = value if isinstance(value, list) else [value]
+    return [_parse_one(item, topic, target, name) for item in raw]
 
 
 def parse_meta(meta, topic: str) -> Spec:

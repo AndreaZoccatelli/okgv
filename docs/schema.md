@@ -237,9 +237,9 @@ A topic node may carry a reserved `_meta` key declaring its constraints (any oth
     "current_conditions": {
       "_meta": {
         "function": "get_current_weather",
-        "required": {"location": {"type": "not_empty", "field": "location"}},
-        "optional": {"units": {"type": "one_of", "field": "units", "valid": ["celsius", "fahrenheit"]}},
-        "entry":    {"difficulty": {"type": "one_of", "field": "difficulty", "valid": ["easy", "medium", "hard"]}},
+        "required": {"location": "not_empty"},
+        "optional": {"units": ["celsius", "fahrenheit"]},
+        "entry":    {"difficulty": ["easy", "medium", "hard"]},
         "similarity_scope": "leaf"
       }
     }
@@ -248,7 +248,9 @@ A topic node may carry a reserved `_meta` key declaring its constraints (any oth
 ```
 
 - `required` / `optional` / `forbidden` constrain a function's arguments; `entry` narrows global entry-schema fields; `function` is the function identity (set once per path); `similarity_scope` is `"leaf"` (default) or `"subtree"`.
-- Validator values use the serializable form (`{"type": <tag>, "field": ..., ...}`), parsed through the validator registry. A malformed validator, a contradictory fold, or a redeclared function fails at `create-structure`, before anything is written.
+- **Authoring shorthands** (the explicit long form is always accepted): a bare tag string `"location": "not_empty"` is that validator with its `field` defaulted to the key; a list of strings `"units": ["celsius", "fahrenheit"]` is a `OneOf`; the `field` inside any validator object defaults to its key (`{"type": "is_type", "expected": ["int"]}` is enough). A list containing a validator object is a conjunction (all run).
+- Validators are parsed through the registry. A malformed validator, a contradictory fold, or a redeclared function fails at `create-structure`, before anything is written.
+- **Python-first authoring:** build a `Spec` from validator objects and call `spec.to_json()` to emit a `_meta` block, instead of hand-writing JSON. `parse_meta(spec.to_json())` round-trips.
 - `create-structure` warns about topics with no `_meta` on their path and about overlapping siblings with no explicit `similarity_scope`. Re-running over a populated DB suggests `revalidate`.
 - The schema reads the folded specs from the structure file. `okgv entry-prompt --topic <path>` renders the fields narrowed to a topic plus its function name and argument signature; `Session.effective_spec(topic)` exposes the fold programmatically.
 
