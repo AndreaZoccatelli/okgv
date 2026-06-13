@@ -5,6 +5,19 @@
 
 # Entry Schema & Configuration
 
+## At a glance
+
+A project is four pieces, wired by environment variables in `.env` (run `okgv init` to scaffold them):
+
+| File | Env var | Holds |
+|------|---------|-------|
+| `config/schema.py` | `OKGV_SCHEMA` | The **entry class** (parse raw JSON → entry object, computed properties) and the **schema class** (global validators, which fields go to which store, what to embed, descriptions, balance fields, and the optional `validate_for_topic` hook). |
+| `config/structure.json` | `OKGV_STRUCTURE` | The **topic tree**. Any node may carry an optional `_meta` block of per-topic constraints, folded along each root-to-leaf path. |
+| `config/validators.py` | `OKGV_VALIDATORS` | Optional. **Custom validators** (`@register`'d) whose tags are referenced from `_meta` or the schema. |
+| `.env` | — | Wires the above plus the embedding model and review mode. |
+
+The unifying thread is the **validator vocabulary**: the same `OneOf`/`InRange`/… objects appear in the schema's global `validators` (Python) and in `structure.json` `_meta` (JSON, via serde). Global validators are the baseline every entry meets; `_meta` narrows them per topic. The rest of this document builds each piece in turn.
+
 ## Install
 
 No external services required. Everything runs locally via SQLite and sqlite-vec.
@@ -80,8 +93,8 @@ class MyEntry:
         self.text = raw["text"]
         self.label = raw["label"]
 
-    def text_length(self) -> int:
-        return len(self.text)
+    def text_length(self) -> int:  # a method is fine for metadata(); to filter on
+        return len(self.text)      # a value per topic, expose it as an attribute/@property
 
 
 class MySchema:
@@ -158,7 +171,53 @@ Built-in validators:
 | `IsType(field, type)` | Instance of a type or tuple of types (bool is not int) | `field: <type name>` |
 | `Items(field, inner, [min_len], [max_len])` | List with a per-element validator and optional length bounds | `field: list ..., each: ...` |
 
+**Referencing built-ins in `_meta`** — each validator's JSON `tag` and forms (`field` defaults to the key, so it is omitted):
+
+| Validator | `tag` | Tagged form | Explicit form |
+|-----------|-------|-------------|---------------|
+| `OneOf` | `one_of` | `{"one_of": ["a", "b"]}` | `{"type": "one_of", "valid": ["a", "b"]}` |
+| `InRange` | `in_range` | `{"in_range": [0, 1]}` | `{"type": "in_range", "lo": 0, "hi": 1}` |
+| `NotEmpty` | `not_empty` | `"not_empty"` | `{"type": "not_empty"}` |
+| `Matches` | `matches` | `{"matches": "^a+$"}` | `{"type": "matches", "pattern": "^a+$"}` |
+| `IsType` | `is_type` | `{"is_type": ["int", "float"]}` | `{"type": "is_type", "expected": ["int", "float"]}` |
+| `Items` | `items` | *(no shorthand)* | `{"type": "items", "inner": {...}, "min_len": 1}` |
+
+`is_type` type names are `dict`, `list`, `str`, `int`, `float`, `bool` (a `bool` is not accepted as `int` unless `bool` is listed).
+
 Custom validators implement `validate(value)` and `prompt() -> str` with a `field` attribute. To participate in serialization (needed for use inside structure-file `_meta` blocks), add a unique `tag` class attribute plus `to_json()`/`from_json()` and apply the `@register` decorator from `okgv.validators`; `validator_from_json()` then rebuilds them and fails loudly on an unknown tag. Add an `args` tuple (the positional argument order) to opt into the tagged `{tag: args}` shorthand. A validator may also implement an optional `narrow(other)` returning the simplified conjunction of two validators on the same field — this powers contradiction detection, sibling-disjointness checks, and narrowed prompt rendering; validators without it are treated as opaque (enforcement is unaffected, only analysis degrades).
+
+A complete custom validator (put it in `config/validators.py`):
+
+```python
+from okgv.validators import register
+
+
+@register
+class MultipleOf:
+    tag = "multiple_of"
+    args = ("n",)  # enables the shorthand {"multiple_of": 5}
+
+    def __init__(self, field: str, n: int):
+        self.field = field
+        self.n = n
+
+    def validate(self, value):
+        if not isinstance(value, int) or value % self.n != 0:
+            raise ValueError(f"{self.field}: must be a multiple of {self.n}, got {value}")
+        return value
+
+    def prompt(self) -> str:
+        return f"{self.field}: multiple of {self.n}"
+
+    def to_json(self) -> dict:
+        return {"type": self.tag, "field": self.field, "n": self.n}
+
+    @classmethod
+    def from_json(cls, d: dict) -> "MultipleOf":
+        return cls(d["field"], d["n"])
+```
+
+It is then usable in Python (`MultipleOf("count", 5)`) and in `_meta` as `"count": {"multiple_of": 5}` or `{"type": "multiple_of", "field": "count", "n": 5}`. (`okgv init` scaffolds `config/validators.py` with this example.)
 
 A custom tag is only in the registry once the module holding its `@register` runs. The fold (`create-structure`, session start) does **not** import your schema module, so put custom validators in a module listed in `OKGV_VALIDATORS` (comma-separated, resolved relative to cwd, like `OKGV_SCHEMA`). okgv imports those modules before folding, so the tags resolve. `OKGV_VALIDATORS` is operator config: the structure file references tags, never code paths.
 
@@ -245,6 +304,72 @@ class MySchema:
 ```
 
 The hook also runs for every moved entry (against the destination) and is what the `revalidate` command uses to find entries left invalid by a tightened spec.
+
+### The effective `Spec`
+
+What the hook (and `Session.effective_spec(topic)`) receives is the topic's folded spec — every ancestor's `_meta` combined down the path:
+
+```python
+@dataclass
+class Spec:
+    function: str | None              # set once on the path; the function identity
+    required: dict[str, list]         # {param_name: [validators]}  — argument keys that must be present
+    optional: dict[str, list]         # {param_name: [validators]}  — argument keys that may be present
+    forbidden: set[str]               # argument keys that must be absent
+    entry: dict[str, list]            # {entry_field: [validators]}  — narrowed entry-schema fields
+    similarity_scope: str | None      # "leaf" (default) or "subtree"
+```
+
+Each `{name: [validators]}` maps a name to a **list** of validators (a conjunction — all run; the fold may leave several stacked). Helpers: `spec.scope()` (resolved scope, default `"leaf"`), `spec.is_empty()`, and `spec.to_json()` (emit a `_meta` block — the inverse of authoring it in JSON, so you can build specs in Python and serialize them).
+
+### Custom spec: enforcing an argument signature
+
+The `entry` namespace is enforced for you, but `required`/`optional`/`forbidden` describe the shape of a **compound** field (an arguments object), which is dataset-specific — so you bind them to your entry in the hook. The pattern is a small combinator fed from the folded `Spec`:
+
+```python
+class FunctionSpec:
+    """Check an entry's function name and arguments dict against a folded Spec."""
+
+    def __init__(self, function, required, optional, forbidden):
+        self.function = function
+        self.required = required      # {param: [validators]}
+        self.optional = optional
+        self.forbidden = forbidden
+
+    @classmethod
+    def from_effective(cls, spec):
+        return cls(spec.function, spec.required, spec.optional, spec.forbidden)
+
+    def validate(self, function, arguments):
+        if function != self.function:
+            raise ValueError(f"function: topic expects '{self.function}', got '{function}'")
+        if not isinstance(arguments, dict):
+            raise ValueError(f"arguments: must be a JSON object, got {type(arguments).__name__}")
+        keys = set(arguments)
+        missing = set(self.required) - keys
+        forbidden_present = keys & self.forbidden
+        unknown = keys - set(self.required) - set(self.optional) - self.forbidden
+        if missing:
+            raise ValueError(f"arguments: missing required keys {sorted(missing)}")
+        if forbidden_present:
+            raise ValueError(f"arguments: forbidden keys present {sorted(forbidden_present)}")
+        if unknown:
+            raise ValueError(f"arguments: unknown keys {sorted(unknown)}")
+        for name, value in arguments.items():
+            for validator in self.required.get(name) or self.optional.get(name) or []:
+                validator.validate(value)
+        return arguments
+
+
+class MySchema:
+    @staticmethod
+    def validate_for_topic(entry, topic, spec=None):
+        if spec is None or spec.function is None:
+            raise ValueError(f"topic '{topic}' declares no function on its path")
+        FunctionSpec.from_effective(spec).validate(entry.function, entry.arguments)
+```
+
+That is the whole mechanism behind the function-calling example: the `_meta` blocks declare the per-topic signature, the fold inherits and narrows it down each path, and this combinator enforces it against the entry's `function` + `arguments`. See `example/config/schema.py` for the full version.
 
 ### `_meta` blocks in `structure.json`
 
