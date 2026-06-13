@@ -27,7 +27,7 @@ algebra                          → path: "algebra"
 └── abstract_algebra             → path: "algebra/abstract_algebra"
 ```
 
-Entries attach to **leaf** topics only — submission to a node that has children is rejected, since an entry on an interior node is unclassified along the child dimension. Topic queries (counts, listings, stats) are recursive: querying `algebra` includes entries under all its descendants. Similarity search defaults to the exact target topic but can widen to the subtree per node (see [Similarity Scoping](#similarity-scoping)).
+Entries attach to **leaf** topics only, submission to a node that has children is rejected, since an entry on an interior node is unclassified along the child dimension. Topic queries (counts, listings, stats) are recursive: querying `algebra` includes entries under all its descendants. Similarity search defaults to the exact target topic but can widen to the subtree per node (see [Similarity Scoping](#similarity-scoping)).
 
 ### Tree TUI
 ```bash
@@ -40,7 +40,7 @@ okgv tree -i
 
 A structure-file node may carry a reserved `_meta` block describing constraints on the entries placed under it. `create-structure` parses each block through the validator registry and **folds** the blocks along every root-to-leaf path (`okgv/specs.py`) into one effective `Spec` per topic, with three merge classes: constraints by conjunction (narrowing only; a contradiction is an ingest error), policy (`similarity_scope`, nearest ancestor wins), and identity (`function`, set once). A malformed validator, a contradictory fold, or a redeclared function fails at ingest, before anything is written.
 
-Enforcement happens at every `submit`/`submit-batch`, the destination of every `move`, and every entry checked by `revalidate` — all routed through `validate_entry_topic` (`okgv/core.py`), which is handed the topic's folded `Spec` (resolved once by the command layer via `Session.effective_spec(topic)`). Two layers run: the library first enforces the spec's `entry`-namespace validators generically (`enforce_entry_spec`), so a schema that only narrows scalar entry fields needs no code; then the optional `validate_for_topic` hook handles anything dataset-specific (the example matches function identity and argument shape via its `FunctionSpec`). The hook receives the folded `Spec` as an optional third argument, so it never re-folds the structure file; `(entry, topic)` hooks still work. `entry-prompt --topic` renders fields narrowed through each validator's `narrow()`. 
+Enforcement happens at every `submit`/`submit-batch`, the destination of every `move`, and every entry checked by `revalidate`, all routed through `validate_entry_topic` (`okgv/core.py`), which is handed the topic's folded `Spec` (resolved once by the command layer via `Session.effective_spec(topic)`). Two layers run: the library first enforces the spec's `entry`-namespace validators generically (`enforce_entry_spec`), so a schema that only narrows scalar entry fields needs no code; then the optional `validate_for_topic` hook handles anything dataset-specific (the example matches function identity and argument shape via its `FunctionSpec`). The hook receives the folded `Spec` as an optional third argument, so it never re-folds the structure file; `(entry, topic)` hooks still work. `entry-prompt --topic` renders fields narrowed through each validator's `narrow()`. 
 
 ## Similarity Scoping
 
@@ -48,9 +48,9 @@ Enforcement happens at every `submit`/`submit-batch`, the destination of every `
 
 Leaf scope is by design for performance (native sqlite-vec pre-filtering) and correctness (each topic has its own semantic scope). It means:
 
-- **Same topic name, different parent = fine.** `dogs/legs` and `cats/legs` both contain "legs" entries but about different animals, no cross-dedup needed.
+- **Same topic name, different parent = fine.** `algebra/sequences` and `calculus/sequences` both contain "sequences" entries but about different subjects, no cross-dedup needed.
 - **The full path determines semantic scope.** A well-structured topic tree naturally avoids ambiguity.
-- **Overlapping siblings.** If `anatomy/limbs` and `dogs/legs` could contain similar entries, either design the tree so each leaf has a clear, non-overlapping scope, or set `similarity_scope: subtree` on their parent (`create-structure` warns about overlapping siblings with no explicit scope).
+- **Overlapping siblings.** If `algebra/word_problems` and `calculus/optimization` could contain similar entries, either design the tree so each leaf has a clear, non-overlapping scope, or set `similarity_scope: subtree` on their parent (`create-structure` warns about overlapping siblings with no explicit scope).
 
 ## Session Logging
 

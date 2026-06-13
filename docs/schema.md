@@ -14,7 +14,7 @@ A project is four pieces, wired by environment variables in `.env` (run `okgv in
 | `config/schema.py` | `OKGV_SCHEMA` | The **entry class** (parse raw JSON → entry object, computed properties) and the **schema class** (global validators, which fields go to which store, what to embed, descriptions, balance fields, and the optional `validate_for_topic` hook). |
 | `config/structure.json` | `OKGV_STRUCTURE` | The **topic tree**. Any node may carry an optional `_meta` block of per-topic constraints, folded along each root-to-leaf path. |
 | `config/validators.py` | `OKGV_VALIDATORS` | Optional. **Custom validators** (`@register`'d) whose tags are referenced from `_meta` or the schema. |
-| `.env` | — | Wires the above plus the embedding model and review mode. |
+| `.env` |, | Wires the above plus the embedding model and review mode. |
 
 The unifying thread is the **validator vocabulary**: the same `OneOf`/`InRange`/… objects appear in the schema's global `validators` (Python) and in `structure.json` `_meta` (JSON, via serde). Global validators are the baseline every entry meets; `_meta` narrows them per topic. The rest of this document builds each piece in turn.
 
@@ -171,7 +171,7 @@ Built-in validators:
 | `IsType(field, type)` | Instance of a type or tuple of types (bool is not int) | `field: <type name>` |
 | `Items(field, inner, [min_len], [max_len])` | List with a per-element validator and optional length bounds | `field: list ..., each: ...` |
 
-**Referencing built-ins in `_meta`** — each validator's JSON `tag` and forms (`field` defaults to the key, so it is omitted):
+**Referencing built-ins in `_meta`**, each validator's JSON `tag` and forms (`field` defaults to the key, so it is omitted):
 
 | Validator | `tag` | Tagged form | Explicit form |
 |-----------|-------|-------------|---------------|
@@ -182,9 +182,9 @@ Built-in validators:
 | `IsType` | `is_type` | `{"is_type": ["int", "float"]}` | `{"type": "is_type", "expected": ["int", "float"]}` |
 | `Items` | `items` | *(no shorthand)* | `{"type": "items", "inner": {...}, "min_len": 1}` |
 
-`is_type` type names are `dict`, `list`, `str`, `int`, `float`, `bool` (a `bool` is not accepted as `int` unless `bool` is listed). `items` has no tagged shorthand, but its `inner` is written like any other validator (a bare tag, a `{tag: args}`, or explicit) — e.g. `{"type": "items", "inner": "not_empty", "min_len": 1}` is a non-empty list of non-empty strings. Run `okgv validators` to see every available tag (built-in + custom) and the exact form to write for each.
+`is_type` type names are `dict`, `list`, `str`, `int`, `float`, `bool` (a `bool` is not accepted as `int` unless `bool` is listed). `items` has no tagged shorthand, but its `inner` is written like any other validator (a bare tag, a `{tag: args}`, or explicit), e.g. `{"type": "items", "inner": "not_empty", "min_len": 1}` is a non-empty list of non-empty strings. Run `okgv validators` to see every available tag (built-in + custom) and the exact form to write for each.
 
-Custom validators implement `validate(value)` and `prompt() -> str` with a `field` attribute. To participate in serialization (needed for use inside structure-file `_meta` blocks), add a unique `tag` class attribute plus `to_json()`/`from_json()` and apply the `@register` decorator from `okgv.validators`; `validator_from_json()` then rebuilds them and fails loudly on an unknown tag. Add an `args` tuple (the positional argument order) to opt into the tagged `{tag: args}` shorthand. A validator may also implement an optional `narrow(other)` returning the simplified conjunction of two validators on the same field — this powers contradiction detection, sibling-disjointness checks, and narrowed prompt rendering; validators without it are treated as opaque (enforcement is unaffected, only analysis degrades).
+Custom validators implement `validate(value)` and `prompt() -> str` with a `field` attribute. To participate in serialization (needed for use inside structure-file `_meta` blocks), add a unique `tag` class attribute plus `to_json()`/`from_json()` and apply the `@register` decorator from `okgv.validators`; `validator_from_json()` then rebuilds them and fails loudly on an unknown tag. Add an `args` tuple (the positional argument order) to opt into the tagged `{tag: args}` shorthand. A validator may also implement an optional `narrow(other)` returning the simplified conjunction of two validators on the same field, this powers contradiction detection, sibling-disjointness checks, and narrowed prompt rendering; validators without it are treated as opaque (enforcement is unaffected, only analysis degrades).
 
 A complete custom validator (put it in `config/validators.py`):
 
@@ -277,9 +277,9 @@ For *when* to reach for `_meta` versus a global validator or the tree shape, and
 
 ### Default enforcement (no code needed)
 
-For the common case — a topic narrows a scalar entry field via the `entry` namespace — okgv enforces it for you. On every submission (and move, and `revalidate`), the library runs each `entry`-namespace validator from the topic's folded spec against the entry, raising `EntryError` on a violation. A schema that only narrows entry fields per topic needs **no** hook at all.
+For the common case, a topic narrows a scalar entry field via the `entry` namespace, okgv enforces it for you. On every submission (and move, and `revalidate`), the library runs each `entry`-namespace validator from the topic's folded spec against the entry, raising `EntryError` on a violation. A schema that only narrows entry fields per topic needs **no** hook at all.
 
-The argument-object namespaces (`required`/`optional`/`forbidden`) are *not* auto-enforced — binding them to a compound entry field is dataset-specific.
+The argument-object namespaces (`required`/`optional`/`forbidden`) are *not* auto-enforced, binding them to a compound entry field is dataset-specific.
 
 **`entry` constraints resolve to entry attributes** (via `getattr`), so a field you constrain must be a stored attribute or a `@property` on your entry class. A value computed only inside `metadata()`/`graph_properties()`/`vector_properties()` is not visible here (you get "field … not present on the entry"), and a plain method is rejected with a clear error ("is a method, not a value …"). To filter a topic on a *computed* value, expose it as an attribute or `@property`:
 
@@ -290,7 +290,7 @@ class MyEntry:
         self.length_bucket = "long" if len(self.text) > 200 else "short"  # now usable in _meta entry
 ```
 
-Note this is distinct from `balance_fields`/`topic-stats`/`report`, which read `metadata()` output — so a derived metadata field can be balanced and reported on even when it is not an entry attribute, but it can only be used as a per-topic `entry` filter once exposed on the entry.
+Note this is distinct from `balance_fields`/`topic-stats`/`report`, which read `metadata()` output, so a derived metadata field can be balanced and reported on even when it is not an entry attribute, but it can only be used as a per-topic `entry` filter once exposed on the entry.
 
 ### The `validate_for_topic` hook (for the bespoke part)
 
@@ -309,24 +309,24 @@ The hook also runs for every moved entry (against the destination) and is what t
 
 ### The effective `Spec`
 
-What the hook (and `Session.effective_spec(topic)`) receives is the topic's folded spec — every ancestor's `_meta` combined down the path:
+What the hook (and `Session.effective_spec(topic)`) receives is the topic's folded spec, every ancestor's `_meta` combined down the path:
 
 ```python
 @dataclass
 class Spec:
     function: str | None              # set once on the path; the function identity
-    required: dict[str, list]         # {param_name: [validators]}  — argument keys that must be present
-    optional: dict[str, list]         # {param_name: [validators]}  — argument keys that may be present
+    required: dict[str, list]         # {param_name: [validators]}, argument keys that must be present
+    optional: dict[str, list]         # {param_name: [validators]}, argument keys that may be present
     forbidden: set[str]               # argument keys that must be absent
-    entry: dict[str, list]            # {entry_field: [validators]}  — narrowed entry-schema fields
+    entry: dict[str, list]            # {entry_field: [validators]}, narrowed entry-schema fields
     similarity_scope: str | None      # "leaf" (default) or "subtree"
 ```
 
-Each `{name: [validators]}` maps a name to a **list** of validators (a conjunction — all run; the fold may leave several stacked). Helpers: `spec.scope()` (resolved scope, default `"leaf"`), `spec.is_empty()`, and `spec.to_json()` (emit a `_meta` block — the inverse of authoring it in JSON, so you can build specs in Python and serialize them).
+Each `{name: [validators]}` maps a name to a **list** of validators (a conjunction, all run; the fold may leave several stacked). Helpers: `spec.scope()` (resolved scope, default `"leaf"`), `spec.is_empty()`, and `spec.to_json()` (emit a `_meta` block, the inverse of authoring it in JSON, so you can build specs in Python and serialize them).
 
 ### Custom spec: enforcing an argument signature
 
-The `entry` namespace is enforced for you, but `required`/`optional`/`forbidden` describe the shape of a **compound** field (an arguments object), which is dataset-specific — so you bind them to your entry in the hook. The pattern is a small combinator fed from the folded `Spec`:
+The `entry` namespace is enforced for you, but `required`/`optional`/`forbidden` describe the shape of a **compound** field (an arguments object), which is dataset-specific, so you bind them to your entry in the hook. The pattern is a small combinator fed from the folded `Spec`:
 
 ```python
 class FunctionSpec:
@@ -375,7 +375,7 @@ That is the whole mechanism behind the function-calling example: the `_meta` blo
 
 ### `_meta` blocks in `structure.json`
 
-A topic node may carry a reserved `_meta` key declaring its constraints (any other key is a child topic). Blocks **compose along a path** — a topic's effective spec is the fold of every ancestor's `_meta` plus its own — and a child may only narrow, add, or `forbid`, never relax.
+A topic node may carry a reserved `_meta` key declaring its constraints (any other key is a child topic). Blocks **compose along a path**, a topic's effective spec is the fold of every ancestor's `_meta` plus its own, and a child may only narrow, add, or `forbid`, never relax.
 
 ```json
 {
@@ -394,7 +394,7 @@ A topic node may carry a reserved `_meta` key declaring its constraints (any oth
 ```
 
 - `required` / `optional` / `forbidden` constrain a function's arguments; `entry` narrows global entry-schema fields; `function` is the function identity (set once per path); `similarity_scope` is `"leaf"` (default) or `"subtree"`.
-- **Validator forms** (`field` always defaults to the key): a bare tag string for a zero-arg validator (`"location": "not_empty"`); the tagged `{tag: args}` form (`{"one_of": ["celsius", "fahrenheit"]}`, `{"in_range": [0, 1]}`, `{"is_type": ["int"]}`); or the explicit `{"type": tag, ...}` form. The tag decides how the args are read — a single-argument validator takes the value whole, `in_range` takes `[lo, hi]`, a dict value is named args. A **list is always a conjunction** (`["not_empty", {"matches": "^[A-Z]"}]`).
+- **Validator forms** (`field` always defaults to the key): a bare tag string for a zero-arg validator (`"location": "not_empty"`); the tagged `{tag: args}` form (`{"one_of": ["celsius", "fahrenheit"]}`, `{"in_range": [0, 1]}`, `{"is_type": ["int"]}`); or the explicit `{"type": tag, ...}` form. The tag decides how the args are read, a single-argument validator takes the value whole, `in_range` takes `[lo, hi]`, a dict value is named args. A **list is always a conjunction** (`["not_empty", {"matches": "^[A-Z]"}]`).
 - Validators are parsed through the registry. A malformed validator, a contradictory fold, or a redeclared function fails at `create-structure`, before anything is written.
 - **Python-first authoring:** build a `Spec` from validator objects and call `spec.to_json()` to emit a `_meta` block, instead of hand-writing JSON. `parse_meta(spec.to_json())` round-trips.
 - `create-structure` warns about topics with no `_meta` on their path and about overlapping siblings with no explicit `similarity_scope`. Re-running over a populated DB suggests `revalidate`.

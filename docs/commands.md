@@ -59,7 +59,7 @@ okgv least-topic --topic algebra
 # {"topic": "algebra/linear_algebra/basics", "count": 3, "all_counts": {...}}
 
 # Analyze coverage gaps within one topic
-okgv topic-stats --topic algebra --fields "difficulty,category"
+okgv topic-stats --topic algebra --fields "difficulty"
 
 # Dataset-wide balance report: every leaf topic × balance-field value,
 # empty cells included (values declared by OneOf validators count even
@@ -70,13 +70,13 @@ okgv report --topic algebra --fields "difficulty"
 # Check similarity before submitting.
 # --entry takes the complete candidate entry (the same JSON you would submit),
 # so the check embeds exactly what submit would embed.
-okgv similar --topic algebra/linear_algebra --entry '{"text": "..."}' --top-k 5
+okgv similar --topic algebra/linear_algebra --entry '{"question": "...", "answer": "...", "difficulty": "medium"}' --top-k 5
 
 # Submit (with optional review flag)
-okgv submit --topic algebra/linear_algebra/basics --entry '{"text": "..."}' --review
+okgv submit --topic algebra/linear_algebra/basics --entry '{"question": "...", "answer": "...", "difficulty": "easy"}' --review
 
 # Batch operations (single model load)
-okgv submit-batch --topic algebra --entries '[{"text": "..."}, {"text": "..."}]'
+okgv submit-batch --topic algebra --entries '[{"question": "...", "answer": "...", "difficulty": "easy"}, {"question": "...", "answer": "...", "difficulty": "hard"}]'
 
 # Move a subtopic
 okgv move-topic --source algebra/basics --destination geometry
@@ -95,7 +95,7 @@ okgv review --recover-rejected             # set rejected back to pending
 
 # Export for training
 okgv export --output dataset.jsonl
-okgv export --output dataset.jsonl --fields "text,label" --exclude-in-review
+okgv export --output dataset.jsonl --fields "question,difficulty" --exclude-in-review
 
 # Stratified train/val/test split: each split keeps the dataset's
 # topic × balance-field distribution. Deterministic for a given --seed.
@@ -138,7 +138,7 @@ okgv purge --confirm "delete all"
    → counts per leaf topic × balance-field value, empty cells included
    → pick an empty or low-count cell as the target
    (okgv least-topic --topic <parent> for a quick single answer at one
-    level — raw counts only, ignores balance fields)
+    level, raw counts only, ignores balance fields)
 
 4. Agent generates candidate entry (LLM call)
 

@@ -10,7 +10,7 @@
 
 LLMs are often used to generate synthetic text datasets for training other ML models. Two requirements make this hard at scale: the dataset has to stay balanced, and it has to avoid near-duplicate instances. Both get harder as the instance count grows.
 
-The reason is context. Suppose you want questions about cats and dogs, each rated easy, medium, or hard, balanced both across categories (cats vs. dogs) and across difficulty levels. The naive approach, asking the LLM to "ensure diversity", forces it to hold every previously generated instance in context to know what is still missing. Deduplication hits the same wall: spotting a near-duplicate requires comparing the candidate against all prior instances, which again means keeping them in context. Past a few hundred instances this becomes infeasible.
+The reason is context. Suppose you want math questions spanning algebra and calculus, each rated easy, medium, or hard, balanced both across subjects (algebra vs. calculus) and across difficulty levels. The naive approach, asking the LLM to "ensure diversity", forces it to hold every previously generated instance in context to know what is still missing. Deduplication hits the same wall: spotting a near-duplicate requires comparing the candidate against all prior instances, which again means keeping them in context. Past a few hundred instances this becomes infeasible.
 
 okgv moves that state out of the prompt and into storage. It models a dataset as a tree: each topic is a node, its sub-topics are its children, and every instance is an entry attached to a single topic node. Each entry is also stored as a vector embedding. The agent never has to remember what it generated, it queries the store instead.
 
@@ -117,17 +117,26 @@ See [`example/`](example/) for a complete worked project: a filled-in schema, to
 
 Everything lives in one portable SQLite file (`okgv.db`): the topic tree, entries, their vector embeddings (via [sqlite-vec](https://github.com/asg017/sqlite-vec)), the submission log, and the review queue. No server, zero setup.
 
-Topics form a path-identified tree (`algebra/linear_algebra/basics`). The tree is both the **balance stratum** and the **dedup scope**: counts and stats are recursive across descendants, but similarity search is scoped to the exact target topic, so its cost tracks the per-topic count, not the dataset total. An agent works one topic at a time, queries `least-topic` to find gaps, and checks `similar` (full-content, not a score) before submitting.
+Topics form a path-identified tree (`algebra/linear_algebra/basics`). The tree is both the **balance stratum** and the **dedup scope**: counts and stats are recursive across descendants, but similarity search is scoped to the exact target topic, so its cost tracks the per-topic count, not the dataset total. An agent works one topic at a time, runs `report` (or `least-topic` for a quick single-level answer) to find gaps, and checks `similar` (full-content, not a score) before submitting.
 
 See [Architecture & Internals](docs/architecture.md) for the details: topic structure, similarity scoping, session logging, and reliability.
 
 ## Documentation
 
+If you are designing a dataset, read **Principles** then **Patterns** first, they cover how to shape the tree before you touch the CLI. If you are driving okgv (or pointing an agent at it), **Commands** and **Schema** are the reference. The agent itself learns the CLI from `okgv cli-prompt`, not from these docs.
+
+**Design, how to shape a dataset:**
+
 | Doc | Contents |
 |-----|----------|
-| [Commands](docs/commands.md) | Full command reference, examples, agent workflow, error handling |
-| [Entry Schema & Configuration](docs/schema.md) | Install, env vars, embedding backends, defining a schema, validators, field descriptions, balance fields |
 | [Design Principles](docs/principles.md) | How to think about structural choices: how deep the tree, what makes a good partition, when a dimension is a branch vs a field, sizing leaves, the depth/balance/dedup trade-offs |
 | [Dataset Patterns](docs/patterns.md) | Worked dataset shapes (classification, Q&A, tool-use, RAG eval, paraphrase), where each rule belongs, when to use `_meta` and when not, choosing similarity scope |
+
+**Reference, how to drive it:**
+
+| Doc | Contents |
+|-----|----------|
+| [Entry Schema & Configuration](docs/schema.md) | Install, env vars, embedding backends, defining a schema, validators, field descriptions, balance fields |
+| [Commands](docs/commands.md) | Full command reference, examples, agent workflow, error handling |
 | [Review System](docs/review.md) | Review modes, CLI and TUI workflows, review states |
 | [Architecture & Internals](docs/architecture.md) | Storage, topic structure, similarity scoping, session logging, reliability |
