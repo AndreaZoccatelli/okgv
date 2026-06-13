@@ -24,6 +24,14 @@ class EntryError(OkgvError):
     exit_code = EXIT_USAGE
 
 
+class ConfigError(OkgvError):
+    """Raised for a malformed or unresolvable okgv configuration value
+    (env vars such as OKGV_VALIDATORS)."""
+
+    code = "invalid_config"
+    exit_code = EXIT_USAGE
+
+
 class SpecError(OkgvError):
     """Raised when a structure file's `_meta` block is malformed or its
     folded effective spec is contradictory (an ingest-time error)."""

@@ -210,6 +210,7 @@ def init():
         ("env.txt", ".env"),
         ("generation-guide.md", "generation-guide.md"),
         ("schema.py.txt", "config/schema.py"),
+        ("validators.py.txt", "config/validators.py"),
         ("structure.json", "config/structure.json"),
         ("schema-guide.md", "prompts/schema-guide.md"),
         ("reviewer-prompt.md", "prompts/reviewer-prompt.md"),

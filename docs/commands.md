@@ -9,7 +9,7 @@ All output is JSON to stdout. Logs go to stderr.
 
 | Command | Purpose |
 |---------|---------|
-| `init` | Scaffold project: `.env`, `generation-guide.md`, `config/` (schema.py, structure.json), `prompts/` (schema-guide, reviewer-prompt, structure-prompt) |
+| `init` | Scaffold project: `.env`, `generation-guide.md`, `config/` (schema.py, validators.py, structure.json), `prompts/` (schema-guide, reviewer-prompt, structure-prompt) |
 | `cli-prompt` | Print agent instructions for using the CLI |
 | `entry-prompt` | Print entry field descriptions and constraints for the agent. `--topic <path>` narrows fields to a topic's effective spec and appends its function/argument signature |
 | `get-structure` | Topic/subtopic tree as nested JSON. `--root`, `--depth` to scope |

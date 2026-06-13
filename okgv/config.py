@@ -15,6 +15,7 @@ import os
 import sys
 from pathlib import Path
 
+from okgv.errors import ConfigError
 from okgv.protocols import EntrySchema
 
 
@@ -22,11 +23,13 @@ def _import_schema(specifier: str) -> EntrySchema:
     """Import schema class from 'module:ClassName' specifier.
 
     The module is resolved relative to cwd (added to sys.path if needed).
+    A malformed or unresolvable specifier raises ConfigError (a clean
+    `invalid_config` CLI error), matching OKGV_VALIDATORS.
     """
     if ":" not in specifier:
-        raise ValueError(
-            f"Invalid schema specifier '{specifier}'. "
-            f"Expected format: 'module:ClassName' (e.g. 'config.schema:MyEntrySchema')"
+        raise ConfigError(
+            f"Invalid OKGV_SCHEMA specifier '{specifier}'. "
+            f"Expected 'module:ClassName' (e.g. 'config.schema:MyEntrySchema')"
         )
     module_path, class_name = specifier.rsplit(":", 1)
 
@@ -37,17 +40,17 @@ def _import_schema(specifier: str) -> EntrySchema:
     try:
         module = importlib.import_module(module_path)
     except ModuleNotFoundError as e:
-        raise ImportError(
-            f"Cannot import schema module '{module_path}': {e}. Make sure the file exists in {cwd}"
+        raise ConfigError(
+            f"OKGV_SCHEMA module '{module_path}' could not be imported: {e}. Make sure the file exists in {cwd}"
         ) from e
 
     try:
         cls = getattr(module, class_name)
     except AttributeError:
-        raise ImportError(
-            f"Module '{module_path}' has no class '{class_name}'. "
+        raise ConfigError(
+            f"OKGV_SCHEMA module '{module_path}' has no class '{class_name}'. "
             f"Available: {[n for n in dir(module) if not n.startswith('_')]}"
-        )
+        ) from None
 
     return cls()
 
@@ -81,9 +84,10 @@ def load_validators() -> list[str]:
         try:
             importlib.import_module(module_path)
         except ModuleNotFoundError as e:
-            raise ImportError(
-                f"Cannot import validator module '{module_path}' from OKGV_VALIDATORS: {e}. "
-                f"Make sure the file exists in {cwd}"
+            raise ConfigError(
+                f"OKGV_VALIDATORS module '{module_path}' could not be imported: {e}. "
+                f"Create it (e.g. {module_path.replace('.', '/')}.py) or unset OKGV_VALIDATORS if you "
+                f"have no custom validators."
             ) from e
         imported.append(module_path)
     return imported

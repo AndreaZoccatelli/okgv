@@ -73,9 +73,34 @@ class TestLoadValidators:
         assert load_validators() == []
 
     def test_missing_module_errors(self, monkeypatch):
+        from okgv.errors import ConfigError
+
         monkeypatch.setenv("OKGV_VALIDATORS", "definitely_not_a_module_xyz")
-        with pytest.raises(ImportError, match="OKGV_VALIDATORS"):
+        with pytest.raises(ConfigError, match="OKGV_VALIDATORS"):
             load_validators()
+
+
+class TestSchemaConfigError:
+    def test_bad_specifier(self):
+        from okgv.config import _import_schema
+        from okgv.errors import ConfigError
+
+        with pytest.raises(ConfigError, match="Invalid OKGV_SCHEMA specifier"):
+            _import_schema("no_colon_here")
+
+    def test_missing_module(self):
+        from okgv.config import _import_schema
+        from okgv.errors import ConfigError
+
+        with pytest.raises(ConfigError, match="could not be imported"):
+            _import_schema("definitely_not_a_module_xyz:Schema")
+
+    def test_missing_class(self):
+        from okgv.config import _import_schema
+        from okgv.errors import ConfigError
+
+        with pytest.raises(ConfigError, match="has no class 'NoSuchClass'"):
+            _import_schema("okgv.validators:NoSuchClass")
 
 
 class TestCreateStructureWithCustomValidator:
@@ -104,3 +129,10 @@ class TestCreateStructureWithCustomValidator:
         result = runner.invoke(cli, ["create-structure", "--file", "-"], obj=session, input=self._structure())
         assert result.exit_code == 0
         assert "a" in session.graph_db.topics
+
+    def test_missing_validators_module_is_clean_config_error(self, runner, tmp_path, monkeypatch):
+        monkeypatch.setenv("OKGV_VALIDATORS", "config.validators")  # not created
+        session = self._session(tmp_path)
+        result = runner.invoke(cli, ["create-structure", "--file", "-"], obj=session, input=json.dumps({"t": {}}))
+        assert result.exit_code == 2
+        assert "invalid_config" in result.stderr and "OKGV_VALIDATORS" in result.stderr
