@@ -55,10 +55,12 @@ A threshold is cheaper and deterministic, and for filtering a fixed corpus it is
 ```bash
 pip install -e ".[embeddings]"
 cd my-dataset-project
-okgv init
+okgv init                      # generic scaffold to fill in
+okgv init --template qa        # or start from a worked preset
+okgv init --list               # see all presets
 ```
 
-`okgv init` scaffolds a project you fill in (existing files are never overwritten):
+`okgv init` scaffolds a project you fill in (existing files are never overwritten). `--template` picks a starting point: `default` is the blank scaffold below; `classification`, `qa`, `function-calling`, `rag`, and `paraphrase` are worked, documented projects, one per shape in [Dataset Patterns](docs/patterns.md), so you can start from the one closest to your problem and edit. The files are the same in every preset, only their contents differ:
 
 | File | What it is | You edit it… |
 |------|-----------|--------------|

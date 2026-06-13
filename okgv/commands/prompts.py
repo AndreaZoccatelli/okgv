@@ -251,34 +251,87 @@ def validators(session):
     )
 
 
+# Scaffold presets. `default` is the generic fill-in template; the others are
+# worked, documented starting points, one per dataset shape in docs/patterns.md.
+# Each name is a folder under okgv/templates/ holding the per-preset files
+# (env.txt, schema.py.txt, structure.json, generation-guide.md).
+TEMPLATES = {
+    "default": "Generic fill-in scaffold: blank schema and a placeholder tree.",
+    "classification": "Labeled text / intent classification (the leaf is the label).",
+    "qa": "Question-answer pairs over a subject tree, graded by difficulty.",
+    "function-calling": "Tool-use: query to function + arguments, per-topic signatures (_meta + hook).",
+    "rag": "Retrieval eval (query, passage) with subtree dedup over a document taxonomy.",
+    "paraphrase": "Flat diversity / paraphrase pool, dedup feedback only.",
+}
+
+# Process docs shared by every preset (pattern-independent), read from the
+# templates root rather than a preset folder.
+_SHARED_SCAFFOLD = [
+    ("validators.py.txt", "config/validators.py"),
+    ("schema-guide.md", "prompts/schema-guide.md"),
+    ("reviewer-prompt.md", "prompts/reviewer-prompt.md"),
+    ("structure-prompt.md", "prompts/structure-prompt.md"),
+]
+
+# Per-preset files, read from okgv/templates/<preset>/.
+_PRESET_SCAFFOLD = [
+    ("env.txt", ".env"),
+    ("generation-guide.md", "generation-guide.md"),
+    ("schema.py.txt", "config/schema.py"),
+    ("structure.json", "config/structure.json"),
+]
+
+
 @click.command()
-def init():
-    """Initialize current directory with okgv scaffold files."""
+@click.option(
+    "--template",
+    "-t",
+    default="default",
+    show_default=True,
+    help="Scaffold preset to use. Run `okgv init --list` to see all options.",
+)
+@click.option("--list", "list_templates", is_flag=True, help="List available scaffold presets and exit.")
+def init(template, list_templates):
+    """Initialize current directory with okgv scaffold files.
+
+    `--template` picks a preset: `default` is a blank fill-in scaffold; the
+    others (classification, qa, function-calling, rag, paraphrase) are worked,
+    documented starting points, one per dataset shape in docs/patterns.md.
+    Existing files are never overwritten.
+    """
     from importlib.resources import files
     from pathlib import Path
 
+    from okgv.helpers import EXIT_USAGE, err
+
+    if list_templates:
+        output({"templates": [{"name": n, "description": d} for n, d in TEMPLATES.items()]})
+        return
+
+    if template not in TEMPLATES:
+        err(
+            "unknown_template",
+            detail=f"Unknown template '{template}'. Available: {sorted(TEMPLATES)}",
+            suggestion="Run `okgv init --list` to see the presets",
+            exit_code=EXIT_USAGE,
+        )
+
     templates = files("okgv.templates")
+    preset = templates.joinpath(template)
     cwd = Path.cwd()
     created = []
 
-    scaffold = [
-        ("env.txt", ".env"),
-        ("generation-guide.md", "generation-guide.md"),
-        ("schema.py.txt", "config/schema.py"),
-        ("validators.py.txt", "config/validators.py"),
-        ("structure.json", "config/structure.json"),
-        ("schema-guide.md", "prompts/schema-guide.md"),
-        ("reviewer-prompt.md", "prompts/reviewer-prompt.md"),
-        ("structure-prompt.md", "prompts/structure-prompt.md"),
-    ]
-
-    for template_name, target_name in scaffold:
+    def copy(source, template_name: str, target_name: str) -> None:
         target = cwd / target_name
         if not target.exists():
             target.parent.mkdir(parents=True, exist_ok=True)
-            content = templates.joinpath(template_name).read_text()
-            target.write_text(content)
+            target.write_text(source.joinpath(template_name).read_text())
             created.append(target_name)
+
+    for template_name, target_name in _SHARED_SCAFFOLD:
+        copy(templates, template_name, target_name)
+    for template_name, target_name in _PRESET_SCAFFOLD:
+        copy(preset, template_name, target_name)
 
     # Ensure config/ is importable as a Python package (needed for schema import)
     init_py = cwd / "config" / "__init__.py"
@@ -287,9 +340,9 @@ def init():
         created.append("config/__init__.py")
 
     if created:
-        output({"initialized": True, "created": created})
+        output({"initialized": True, "template": template, "created": created})
     else:
-        output({"initialized": False, "message": "All files already exist", "created": []})
+        output({"initialized": False, "template": template, "message": "All files already exist", "created": []})
 
 
 commands = (cli_prompt, entry_prompt, validators, init)

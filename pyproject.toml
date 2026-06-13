@@ -50,6 +50,9 @@ okgv = [
     "templates/*.md",
     "templates/*.txt",
     "templates/*.json",
+    "templates/*/*.md",
+    "templates/*/*.txt",
+    "templates/*/*.json",
 ]
 
 [tool.pytest.ini_options]

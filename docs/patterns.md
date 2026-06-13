@@ -9,6 +9,8 @@ This document is a catalog of synthetic-dataset shapes and how each one maps ont
 
 For the reasoning *behind* these recipes, how deep to make the tree, when a dimension belongs in the structure versus a field, how to size a leaf, see [Design Principles](principles.md). This document is the applied counterpart: principles in, recipes out.
 
+Each shape below ships as a ready-made scaffold: `okgv init --template <name>` (`classification`, `qa`, `function-calling`, `rag`, `paraphrase`) writes a worked schema, structure, and generation guide for that pattern, so you can start from the closest one and edit rather than build from scratch. Run `okgv init --list` to see them.
+
 ## The three surfaces
 
 Every okgv project is configured through three surfaces, and almost every design decision is a choice about which surface carries a given rule.

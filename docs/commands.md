@@ -9,7 +9,7 @@ All output is JSON to stdout. Logs go to stderr.
 
 | Command | Purpose |
 |---------|---------|
-| `init` | Scaffold project: `.env`, `generation-guide.md`, `config/` (schema.py, validators.py, structure.json), `prompts/` (schema-guide, reviewer-prompt, structure-prompt) |
+| `init` | Scaffold project: `.env`, `generation-guide.md`, `config/` (schema.py, validators.py, structure.json), `prompts/` (schema-guide, reviewer-prompt, structure-prompt). `--template <preset>` picks a starting point (`default`, `classification`, `qa`, `function-calling`, `rag`, `paraphrase`), `--list` shows them. Existing files are never overwritten |
 | `cli-prompt` | Print agent instructions for using the CLI |
 | `entry-prompt` | Print entry field descriptions and constraints for the agent. `--topic <path>` narrows fields to a topic's effective spec and appends its function/argument signature |
 | `validators` | List validator tags available in `_meta` (built-in + custom from `OKGV_VALIDATORS`), with the exact form to write for each and whether it is analyzable |

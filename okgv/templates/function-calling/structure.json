@@ -1,0 +1,143 @@
+{
+  "weather": {
+    "current_conditions": {
+      "_meta": {
+        "function": "get_current_weather",
+        "required": {"location": "not_empty"},
+        "optional": {"units": {"one_of": ["celsius", "fahrenheit"]}}
+      },
+      "metric": {
+        "_meta": {"required": {"units": {"one_of": ["celsius"]}}}
+      },
+      "no_unit_stated": {
+        "_meta": {"forbidden": ["units"]}
+      }
+    },
+    "forecast": {
+      "_meta": {
+        "function": "get_forecast",
+        "required": {"location": "not_empty", "days": {"is_type": ["int"]}},
+        "optional": {"units": {"one_of": ["celsius", "fahrenheit"]}}
+      }
+    },
+    "alerts": {
+      "_meta": {
+        "function": "get_weather_alerts",
+        "required": {"location": "not_empty"},
+        "optional": {"severity": {"one_of": ["advisory", "watch", "warning"]}}
+      }
+    }
+  },
+  "calendar": {
+    "create_event": {
+      "_meta": {
+        "function": "create_event",
+        "required": {"title": "not_empty", "start_time": "not_empty"},
+        "optional": {
+          "end_time": "not_empty",
+          "location": "not_empty",
+          "attendees": {"is_type": ["list"]}
+        }
+      }
+    },
+    "list_events": {
+      "_meta": {
+        "function": "list_events",
+        "required": {"date": "not_empty"},
+        "optional": {"calendar": "not_empty", "query": "not_empty"}
+      }
+    },
+    "modify_event": {
+      "_meta": {
+        "function": "modify_event",
+        "required": {"event_id": "not_empty"},
+        "optional": {
+          "title": "not_empty",
+          "start_time": "not_empty",
+          "end_time": "not_empty",
+          "location": "not_empty"
+        }
+      }
+    }
+  },
+  "search": {
+    "web_search": {
+      "_meta": {
+        "function": "web_search",
+        "required": {"query": "not_empty"},
+        "optional": {"num_results": {"is_type": ["int"]}, "site": "not_empty"}
+      }
+    },
+    "file_search": {
+      "_meta": {
+        "function": "file_search",
+        "required": {"query": "not_empty"},
+        "optional": {"path": "not_empty", "file_type": "not_empty"}
+      }
+    },
+    "contact_lookup": {
+      "_meta": {
+        "function": "contact_lookup",
+        "required": {"name": "not_empty"},
+        "optional": {"field": {"one_of": ["phone", "email", "address"]}}
+      }
+    }
+  },
+  "messaging": {
+    "send_message": {
+      "_meta": {
+        "function": "send_message",
+        "required": {"to": "not_empty", "body": "not_empty"},
+        "optional": {
+          "subject": "not_empty",
+          "priority": {"one_of": ["low", "normal", "high"]}
+        }
+      }
+    },
+    "read_messages": {
+      "_meta": {
+        "function": "read_messages",
+        "optional": {
+          "sender": "not_empty",
+          "unread_only": {"is_type": ["bool"]},
+          "limit": {"is_type": ["int"]}
+        }
+      }
+    },
+    "manage_threads": {
+      "_meta": {
+        "function": "manage_thread",
+        "required": {
+          "thread_id": "not_empty",
+          "action": {"one_of": ["archive", "label", "delete"]}
+        },
+        "optional": {"label": "not_empty"}
+      }
+    }
+  },
+  "math": {
+    "arithmetic": {
+      "_meta": {
+        "function": "calculate",
+        "required": {"expression": "not_empty"}
+      }
+    },
+    "unit_conversion": {
+      "_meta": {
+        "function": "convert_units",
+        "required": {
+          "value": {"is_type": ["int", "float"]},
+          "from_unit": "not_empty",
+          "to_unit": "not_empty"
+        }
+      }
+    },
+    "statistics": {
+      "_meta": {
+        "function": "compute_stats",
+        "required": {"data": {"is_type": ["list"]}},
+        "optional": {"operation": {"one_of": ["mean", "median", "std", "sum"]}}
+      }
+    }
+  }
+}
