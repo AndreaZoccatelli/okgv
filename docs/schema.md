@@ -26,6 +26,7 @@ All via environment variables. A `.env` file in the working directory is **auto-
 |----------|---------|---------|
 | `OKGV_SCHEMA` | *required* | `module:ClassName` schema specifier |
 | `OKGV_DB` | `./okgv.db` | Path to SQLite database (graph + vectors + log + review) |
+| `OKGV_STRUCTURE` | `./config/structure.json` | Structure file folded into per-topic constraint specs (see [Topic constraints](#topic-constraints-_meta)) |
 | `EMBED_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model (`backend/model-name`) |
 | `EMBED_DIM` | auto-detect from model | Embedding dimension override |
 | `OKGV_REVIEW` | `none` | Default review mode: `none` or `all` |
@@ -121,7 +122,7 @@ Format: `module:ClassName`, module resolved relative to cwd.
 okgv provides validators that serve dual purpose: runtime enforcement and agent prompt generation. Define them once, use in `Entry.__init__` for validation, list in `Schema.validators` for prompt output.
 
 ```python
-from okgv.validators import OneOf, InRange, NotEmpty, Matches
+from okgv.validators import OneOf, InRange, NotEmpty, Matches, IsType, Items
 
 difficulty = OneOf("difficulty", {"easy", "medium", "hard"})
 score = InRange("score", 0, 100)
@@ -148,8 +149,10 @@ Built-in validators:
 | `InRange(field, lo, hi)` | Numeric range `[lo, hi]` | `field: number between lo and hi` |
 | `NotEmpty(field)` | Non-empty string | `field: non-empty string` |
 | `Matches(field, pattern)` | Regex match | `field: must match pattern '...'` |
+| `IsType(field, type)` | Instance of a type or tuple of types (bool is not int) | `field: <type name>` |
+| `Items(field, inner, [min_len], [max_len])` | List with a per-element validator and optional length bounds | `field: list ..., each: ...` |
 
-Custom validators can be created by implementing `validate(value)` and `prompt() -> str` methods with a `field` attribute.
+Custom validators implement `validate(value)` and `prompt() -> str` with a `field` attribute. To participate in serialization (needed for use inside structure-file `_meta` blocks), add a unique `tag` class attribute plus `to_json()`/`from_json()` and apply the `@register` decorator from `okgv.validators`; `validator_from_json()` then rebuilds them and fails loudly on an unknown tag. A validator may also implement an optional `narrow(other)` returning the simplified conjunction of two validators on the same field — this powers contradiction detection, sibling-disjointness checks, and narrowed prompt rendering; validators without it are treated as opaque (enforcement is unaffected, only analysis degrades).
 
 ## Field Descriptions
 
@@ -199,8 +202,56 @@ class MySchema:
 
 `okgv entry-prompt` includes a balancing section when `balance_fields` is defined. `okgv topic-stats` defaults to these fields when `--fields` is not passed.
 
+## Topic constraints (`_meta`)
+
+The validators above are global: every entry must satisfy them regardless of topic. okgv also supports **per-topic** constraints, so a rule like "an entry under a function topic must call that function" can be enforced relationally.
+
+### The `validate_for_topic` hook
+
+Add an optional static method to your schema. It is called on submission with the built entry and its destination topic, before any DB write; raise `ValueError` to reject. Schemas without the hook are unaffected.
+
+```python
+class MySchema:
+    @staticmethod
+    def validate_for_topic(entry, topic: str) -> None:
+        spec = SPECS.get(topic)            # folded from structure.json _meta
+        if spec is None or spec.function is None:
+            raise ValueError(f"topic '{topic}' has no function spec on its path")
+        ...                               # check entry against spec
+```
+
+The hook also runs for every moved entry (against the destination) and is what the `revalidate` command uses to find entries left invalid by a tightened spec.
+
+### `_meta` blocks in `structure.json`
+
+A topic node may carry a reserved `_meta` key declaring its constraints (any other key is a child topic). Blocks **compose along a path** — a topic's effective spec is the fold of every ancestor's `_meta` plus its own — and a child may only narrow, add, or `forbid`, never relax.
+
+```json
+{
+  "weather": {
+    "current_conditions": {
+      "_meta": {
+        "function": "get_current_weather",
+        "required": {"location": {"type": "not_empty", "field": "location"}},
+        "optional": {"units": {"type": "one_of", "field": "units", "valid": ["celsius", "fahrenheit"]}},
+        "entry":    {"difficulty": {"type": "one_of", "field": "difficulty", "valid": ["easy", "medium", "hard"]}},
+        "similarity_scope": "leaf"
+      }
+    }
+  }
+}
+```
+
+- `required` / `optional` / `forbidden` constrain a function's arguments; `entry` narrows global entry-schema fields; `function` is the function identity (set once per path); `similarity_scope` is `"leaf"` (default) or `"subtree"`.
+- Validator values use the serializable form (`{"type": <tag>, "field": ..., ...}`), parsed through the validator registry. A malformed validator, a contradictory fold, or a redeclared function fails at `create-structure`, before anything is written.
+- `create-structure` warns about topics with no `_meta` on their path and about overlapping siblings with no explicit `similarity_scope`. Re-running over a populated DB suggests `revalidate`.
+- The schema reads the folded specs from the structure file. `okgv entry-prompt --topic <path>` renders the fields narrowed to a topic plus its function name and argument signature; `Session.effective_spec(topic)` exposes the fold programmatically.
+
+See the Structure Design Guide (`prompts/structure-prompt.md`, scaffolded by `okgv init`) for authoring guidance.
+
 ## Schema Validation
 
 At runtime, okgv validates:
 - No key collisions between `metadata()` and `graph_properties()`/`vector_properties()`
 - `vector_property_definitions()` covers exactly the keys from `metadata()` + `vector_properties()`
+- Each `_meta` block parses through the validator registry and folds without contradiction (at `create-structure`)

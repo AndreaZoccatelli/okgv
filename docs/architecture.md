@@ -22,7 +22,7 @@ algebra                          → path: "algebra"
 └── abstract_algebra             → path: "algebra/abstract_algebra"
 ```
 
-Entries can live at any level. Topic queries (counts, listings, stats) are recursive: querying `algebra` includes entries under all its descendants. Similarity search is the exception, it is scoped to the exact target topic only (see [Similarity Scoping](#similarity-scoping)).
+Entries attach to **leaf** topics only — submission to a node that has children is rejected, since an entry on an interior node is unclassified along the child dimension. Topic queries (counts, listings, stats) are recursive: querying `algebra` includes entries under all its descendants. Similarity search defaults to the exact target topic but can widen to the subtree per node (see [Similarity Scoping](#similarity-scoping)).
 
 ### Tree TUI
 ```bash
@@ -31,15 +31,21 @@ okgv tree -i
 ```
 ![Tree TUI](../resources/tree_tui.svg)
 
+## Node Constraints (`_meta`)
+
+A structure-file node may carry a reserved `_meta` block describing constraints on the entries placed under it. `create-structure` parses each block through the validator registry and **folds** the blocks along every root-to-leaf path (`okgv/specs.py`) into one effective `Spec` per topic, with three merge classes: constraints by conjunction (narrowing only; a contradiction is an ingest error), policy (`similarity_scope`, nearest ancestor wins), and identity (`function`, set once). A malformed validator, a contradictory fold, or a redeclared function fails at ingest, before anything is written.
+
+Enforcement is a schema concern: the optional `validate_for_topic(entry, topic)` hook (`okgv/core.py`) runs on every `submit`/`submit-batch`, on the destination of every `move`, and on every entry checked by `revalidate`. The example schema reads the folded `Spec` for the topic and checks the entry's function and arguments against it. Specs are also exposed in-memory via `Session.effective_spec(topic)`, and `entry-prompt --topic` renders fields narrowed through each validator's `narrow()`. Backward compatible: a structure with no `_meta` folds to empty specs and behaves exactly as before.
+
 ## Similarity Scoping
 
-**Similarity search is scoped to the exact target topic.** When checking for duplicates before submitting to `topic1/sub_topic1`, only entries already in `topic1/sub_topic1` are compared. Entries in sibling topics like `topic1/sub_topic2` are not considered.
+**Similarity search defaults to the exact target topic, configurable per node via `similarity_scope`.** When checking for duplicates before submitting to `topic1/sub_topic1`, only entries already in `topic1/sub_topic1` are compared by default (`leaf` scope). A node may declare `"similarity_scope": "subtree"` to also compare against descendants and siblings under the split; `get_top_n` then prefix-filters via an `id IN (...)` prefilter (vec0 KNN allows only equality/range on metadata columns, so `LIKE`/`OR` is pushed into the prefilter), and matches in other topics are tagged `sibling: true` so an agent treats them as variants rather than automatic rejections.
 
-This is by design for performance (native sqlite-vec pre-filtering) and correctness (each topic has its own semantic scope). It means:
+Leaf scope is by design for performance (native sqlite-vec pre-filtering) and correctness (each topic has its own semantic scope). It means:
 
 - **Same topic name, different parent = fine.** `dogs/legs` and `cats/legs` both contain "legs" entries but about different animals, no cross-dedup needed.
 - **The full path determines semantic scope.** A well-structured topic tree naturally avoids ambiguity.
-- **Avoid overlapping topics.** If `anatomy/limbs` and `dogs/legs` could contain similar entries, design the tree so each leaf has a clear, non-overlapping scope.
+- **Overlapping siblings.** If `anatomy/limbs` and `dogs/legs` could contain similar entries, either design the tree so each leaf has a clear, non-overlapping scope, or set `similarity_scope: subtree` on their parent (`create-structure` warns about overlapping siblings with no explicit scope).
 
 ## Session Logging
 

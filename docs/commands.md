@@ -6,20 +6,20 @@ All output is JSON to stdout. Logs go to stderr.
 |---------|---------|
 | `init` | Scaffold project: `.env`, `generation-guide.md`, `config/` (schema.py, structure.json), `prompts/` (schema-guide, reviewer-prompt, structure-prompt) |
 | `cli-prompt` | Print agent instructions for using the CLI |
-| `entry-prompt` | Print entry field descriptions and constraints for the agent |
+| `entry-prompt` | Print entry field descriptions and constraints for the agent. `--topic <path>` narrows fields to a topic's effective spec and appends its function/argument signature |
 | `get-structure` | Topic/subtopic tree as nested JSON. `--root`, `--depth` to scope |
 | `get-depth` | Max depth of topic tree. `--root` to measure from specific topic |
 | `create-topic` | Create topic by path. `--parents` for mkdir -p behavior |
-| `create-structure` | Create topic tree from JSON file |
+| `create-structure` | Create topic tree from JSON file. Parses `_meta` constraint blocks; warns when re-run over a populated DB |
 | `least-topic` | Child topic with fewest entries. `--topic` scopes to parent |
 | `topic-stats` | Entry counts grouped by metadata fields |
 | `report` | Dataset-wide balance report: counts per leaf topic × balance-field value, including empty cells |
-| `similar` | Top-N similar entries within a topic |
+| `similar` | Top-N similar entries. Scope follows the topic's `similarity_scope` (`leaf` default; `subtree` also searches siblings, tagging cross-topic matches `sibling: true`) |
 | `similar-batch` | Batch similarity search (single model load) |
-| `submit` | Upsert entry into both tables. `--review` to flag for review |
+| `submit` | Upsert entry into both tables (leaf topics only). `--review` to flag for review. `--overwrite` re-derives in place and cannot relocate (use `move-entry`) |
 | `submit-batch` | Batch upsert (single model load). `--review` to flag for review |
-| `move-topic` | Move topic/subtopic under different parent. `--dry-run` to preview |
-| `move-entry` | Move entry to different topic. `--dry-run` to preview |
+| `move-topic` | Move topic/subtopic under different parent. Revalidates moved entries against their new paths. `--dry-run` to preview |
+| `move-entry` | Move entry to different topic. Revalidates against the destination spec. `--dry-run` to preview |
 | `tree` | Visualize topic tree. `--counts`, `-i` interactive browser, `--export dot\|json` |
 | `get-by-topic` | Fetch sample entries for a topic |
 | `get-vector` | Fetch entry from the vector table by ID |
@@ -30,6 +30,7 @@ All output is JSON to stdout. Logs go to stderr.
 | `log` | Query submission log. `--topic`, `--after`, `--before`, `--count` |
 | `undo` | Delete entries submitted after a timestamp. `--dry-run` to preview |
 | `reconcile` | Find and fix orphan entries across the graph and vector tables. `--dry-run` to preview |
+| `revalidate` | Report entries that violate their topic's current effective spec (after tightening `_meta`) and queue them for review. `--topic` to scope, `--no-queue` to only report |
 | `export` | Export all entries to JSONL. `--fields`, `--exclude-in-review`, `--split` for stratified train/val/test, `--dry-run` |
 | `purge` | **Hidden.** Delete everything (entries, topics, log). Requires `--confirm "delete all"` |
 
