@@ -50,7 +50,8 @@ class TestParseMeta:
         assert spec.optional["y"][0].valid == {"a", "b"}
 
     def test_validator_list_per_field(self):
-        spec = parse_meta({"required": {"x": [_not_empty("x"), {"type": "matches", "field": "x", "pattern": "a+"}]}}, "t")
+        meta = {"required": {"x": [_not_empty("x"), {"type": "matches", "field": "x", "pattern": "a+"}]}}
+        spec = parse_meta(meta, "t")
         assert [v.__class__.__name__ for v in spec.required["x"]] == ["NotEmpty", "Matches"]
 
     def test_unknown_meta_key_errors(self):

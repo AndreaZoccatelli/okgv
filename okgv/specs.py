@@ -95,7 +95,8 @@ def _parse_validators(value, topic: str, target: str, name: str) -> list:
     for item in raw:
         if not isinstance(item, dict):
             raise SpecError(
-                f"topic '{topic}': {target}.{name} must be a validator object or a list of them, got {type(item).__name__}"
+                f"topic '{topic}': {target}.{name} must be a validator object or a list of them, "
+                f"got {type(item).__name__}"
             )
         try:
             parsed.append(validator_from_json(item))
@@ -300,13 +301,18 @@ def collect_warnings(specs: dict[str, Spec]) -> list[dict]:
         spec = specs[path]
         if spec.is_empty():
             out.append(
-                {"level": "warning", "message": f"topic '{path}' has no _meta on its path; entries validate against the global schema only"}
+                {
+                    "level": "warning",
+                    "message": f"topic '{path}' has no _meta on its path; "
+                    "entries validate against the global schema only",
+                }
             )
         for name in spec.opaque_fields():
             out.append(
                 {
                     "level": "warning",
-                    "message": f"custom validator on '{path}.{name}': contradiction and disjointness checks disabled for this field, verify filtering rules manually",
+                    "message": f"custom validator on '{path}.{name}': contradiction and disjointness "
+                    "checks disabled for this field, verify filtering rules manually",
                 }
             )
 
@@ -321,13 +327,18 @@ def collect_warnings(specs: dict[str, Spec]) -> list[dict]:
                 a, b = specs[a_path], specs[b_path]
                 if provably_disjoint(a, b):
                     out.append(
-                        {"level": "info", "message": f"siblings '{a_path}' and '{b_path}' are provably disjoint; leaf similarity scope is safe"}
+                        {
+                            "level": "info",
+                            "message": f"siblings '{a_path}' and '{b_path}' are provably disjoint; "
+                            "leaf similarity scope is safe",
+                        }
                     )
                 elif a.similarity_scope is None and b.similarity_scope is None:
                     out.append(
                         {
                             "level": "warning",
-                            "message": f"siblings '{a_path}' and '{b_path}' are not provably disjoint; set similarity_scope explicitly to choose leaf vs subtree dedup",
+                            "message": f"siblings '{a_path}' and '{b_path}' are not provably disjoint; "
+                            "set similarity_scope explicitly to choose leaf vs subtree dedup",
                         }
                     )
 
