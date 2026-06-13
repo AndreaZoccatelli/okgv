@@ -65,7 +65,7 @@ A useful test for a proposed split: *could a reasonable entry belong to two of t
 
 ## Principle 5 — A dimension is either a branch or a field, and the choice is about scope
 
-This is the decision people get wrong most often, so it deserves its own principle. You have a categorical dimension (difficulty, language, channel, function). Does it become a **level in the tree** or a **balance field on the entry**?
+You have a categorical dimension (difficulty, language, channel, function). Does it become a **level in the tree** or a **balance field on the entry**?
 
 Decide by what the dimension does to *meaning*:
 
