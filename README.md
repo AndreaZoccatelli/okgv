@@ -1,8 +1,6 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/AndreaZoccatelli/okgv/main/resources/okgv-logo-dark.svg">
-    <img alt="okgv logo" src="https://raw.githubusercontent.com/AndreaZoccatelli/okgv/main/resources/okgv-logo-light.svg" width="720">
-  </picture>
+  <img src="resources/okgv-logo-light.svg#gh-light-mode-only" alt="okgv logo" width="720">
+  <img src="resources/okgv-logo-dark.svg#gh-dark-mode-only" alt="okgv logo" width="720">
 </p>
 
 # okgv - organizing knowledge: graphs and vectors
