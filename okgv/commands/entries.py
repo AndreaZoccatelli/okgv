@@ -19,6 +19,30 @@ from okgv.protocols import entry_id
 from okgv.session import Session
 
 
+def _similar_results(session: Session, topic: str, matches: list[tuple[str, float]]) -> list[dict]:
+    """Shape similarity matches for output, tagging each with its topic.
+
+    Under subtree scope a match may live in a sibling topic: that is reported
+    (``topic`` plus ``sibling`` flag) as a variant signal, not a hard
+    duplicate, leaving the accept/reject call to the agent and the review queue.
+    """
+    match_ids = [uid for uid, _ in matches]
+    certainties = {uid: cert for uid, cert in matches}
+    fetched = {r.id: r for r in session.vector_db.get_by_ids(match_ids)} if match_ids else {}
+    topics = session.graph_db.get_topics_for_ids(match_ids) if match_ids else {}
+
+    results = []
+    for uid in match_ids:
+        match_topic = topics.get(uid)
+        item: dict = {"id": uid, "certainty": certainties[uid], "topic": match_topic}
+        if match_topic is not None and match_topic != topic:
+            item["sibling"] = True
+        if uid in fetched:
+            item["properties"] = fetched[uid].properties
+        results.append(item)
+    return results
+
+
 @click.command()
 @click.option("--topic", required=True, help="Topic to restrict similarity search to.")
 @click.option(
@@ -40,23 +64,17 @@ def similar(session: Session, topic: str, entry: str, top_k: int):
     entry_obj = build_entry(schema, raw)
 
     vector_db = session.vector_db
+    scope, search_root = session.similarity_scope(topic)
     log("Loading embedding model...")
     vector = session.embedder([schema.embedding_text(entry_obj)])[0]
-    log(f"Searching top-{top_k} similar entries in topic '{topic}'...")
-    matches = vector_db.get_top_n(vector, n=top_k, filter_topic=topic)
+    if scope == "subtree":
+        log(f"Searching top-{top_k} similar entries under subtree '{search_root}'...")
+    else:
+        log(f"Searching top-{top_k} similar entries in topic '{topic}'...")
+    matches = vector_db.get_top_n(vector, n=top_k, filter_topic=search_root, subtree=scope == "subtree")
 
-    match_ids = [uid for uid, _ in matches]
-    certainties = {uid: cert for uid, cert in matches}
-    fetched = {r.id: r for r in vector_db.get_by_ids(match_ids)} if match_ids else {}
-
-    results = []
-    for uid in match_ids:
-        item: dict = {"id": uid, "certainty": certainties[uid]}
-        if uid in fetched:
-            item["properties"] = fetched[uid].properties
-        results.append(item)
-
-    output({"candidate_id": entry_id(raw), "similar": results})
+    results = _similar_results(session, topic, matches)
+    output({"candidate_id": entry_id(raw), "scope": scope, "similar": results})
 
 
 @click.command(name="similar-batch")
@@ -92,6 +110,7 @@ def similar_batch(session: Session, topic: str, entries: str, top_k: int):
         )
 
     vector_db = session.vector_db
+    scope, search_root = session.similarity_scope(topic)
     log(f"Loading embedding model and embedding {len(rows)} candidates...")
     # Build entries, skipping bad ones
     valid = []
@@ -111,17 +130,9 @@ def similar_batch(session: Session, topic: str, entries: str, top_k: int):
 
         for (i, raw, _), vector in zip(valid, vectors):
             log(f"[{i + 1}/{len(rows)}] Searching top-{top_k} similar for candidate...")
-            matches = vector_db.get_top_n(vector, n=top_k, filter_topic=topic)
-            match_ids = [uid for uid, _ in matches]
-            certainties = {uid: cert for uid, cert in matches}
-            fetched = {r.id: r for r in vector_db.get_by_ids(match_ids)} if match_ids else {}
-            results = []
-            for uid in match_ids:
-                item: dict = {"id": uid, "certainty": certainties[uid]}
-                if uid in fetched:
-                    item["properties"] = fetched[uid].properties
-                results.append(item)
-            results_all.append({"candidate_id": entry_id(raw), "similar": results})
+            matches = vector_db.get_top_n(vector, n=top_k, filter_topic=search_root, subtree=scope == "subtree")
+            results = _similar_results(session, topic, matches)
+            results_all.append({"candidate_id": entry_id(raw), "scope": scope, "similar": results})
 
     output(results_all)
 

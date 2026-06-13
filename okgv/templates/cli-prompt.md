@@ -27,7 +27,7 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 - `okgv get-by-topic --topic <path> [--limit N]` — sample entries from a topic.
 
 ### Similarity
-- `okgv similar --topic <path> --entry '<json>' [--top-k 5]` — top-N similar entries within topic.
+- `okgv similar --topic <path> --entry '<json>' [--top-k 5]` — top-N similar entries. Scope follows the topic's `similarity_scope` metadata (default `leaf` = this topic only; `subtree` also searches sibling topics under the split). Output reports each match's `topic` and flags `sibling: true` for cross-topic hits.
 - `okgv similar-batch --topic <path> --entries '<json_array>' [--top-k 5]` — batch version.
 
 `--entry` takes the **complete candidate entry** (the same JSON you would submit), not a text snippet. Similarity is computed on the schema's embedding text, so the check only matches submit-time behavior when given the full entry; partial entries are rejected with `missing_field`.
@@ -85,7 +85,7 @@ You can review entries submitted by yourself or other agents. Use `okgv review` 
 - Use `report` to plan at the start of a run, re-check after filling a target, and verify balance at the end. Its `empty_cells` list tells you exactly which leaf-topic/field-value combinations still need entries. On large trees, scope with `--topic <path>` to keep the output small.
 - Use `least-topic` for a cheap mid-loop "where next": one answer, compares the direct children of one parent by raw recursive count. It ignores balance fields — a topic it skips may still be missing entries for specific field values, which only `report` (or `topic-stats`) reveals.
 - Use `topic-stats` to drill into the metadata distribution of a single topic.
-- Always check `similar` before submitting — avoid redundant entries. Similarity checks only see entries in the target topic — design your topic tree so each leaf has a clear, non-overlapping scope.
+- Always check `similar` before submitting — avoid redundant entries. By default similarity only sees the target leaf; topics with `similarity_scope: subtree` also surface near-matches in sibling topics. Treat a `sibling: true` match as a **variant to note** (the same stem may be an intentional refinement in a sibling), not an automatic rejection — judge by the content, and let the review queue make the final call.
 - Use batch commands when processing multiple entries — single model load, much faster.
 - If a topic grows too large, suggest creating subtopics to the user.
 - Use `--dry-run` on destructive commands (`undo`, `reconcile`, `move-topic`, `move-entry`) to preview before committing.

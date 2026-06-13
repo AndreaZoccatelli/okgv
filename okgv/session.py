@@ -165,6 +165,29 @@ class Session:
         """Folded spec for a topic path, or None when it carries no constraints."""
         return self.specs.get(topic)
 
+    def similarity_scope(self, topic: str) -> tuple[str, str]:
+        """Resolve the dedup scope for a topic into ``(scope, search_root)``.
+
+        ``scope`` is ``leaf`` (default, current exact-match behavior) or
+        ``subtree``, read from the topic's folded ``similarity_scope`` (nearest
+        ancestor wins). For ``subtree`` the search must cover the siblings that
+        the scope was declared to dedup against, so ``search_root`` climbs to
+        the topmost contiguous ancestor still carrying ``subtree`` (the split
+        node); ``get_top_n`` then prefix-matches that root. For ``leaf`` the
+        root is the topic itself.
+        """
+        spec = self.effective_spec(topic)
+        if spec is None or spec.scope() != "subtree":
+            return "leaf", topic
+        root = topic
+        while "/" in root:
+            parent = root.rsplit("/", 1)[0]
+            pspec = self.effective_spec(parent)
+            if pspec is None or pspec.scope() != "subtree":
+                break
+            root = parent
+        return "subtree", root
+
     def check_structure_consistency(self) -> list[str]:
         """Warn when the DB's topic set has drifted from the structure file.
 

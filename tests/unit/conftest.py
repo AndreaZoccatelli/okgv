@@ -185,10 +185,15 @@ class MockVectorDB:
         t = self.topics.get(entry_id, "")
         return t == topic or t.startswith(topic + "/")
 
-    def get_top_n(self, vector: list[float], n: int, filter_topic: str | None = None) -> list[tuple[str, float]]:
+    def get_top_n(
+        self, vector: list[float], n: int, filter_topic: str | None = None, subtree: bool = False
+    ) -> list[tuple[str, float]]:
         ids = list(self.entries.keys())
         if filter_topic is not None:
-            ids = [i for i in ids if self._matches_topic(i, filter_topic)]
+            if subtree:
+                ids = [i for i in ids if self._matches_topic(i, filter_topic)]
+            else:
+                ids = [i for i in ids if self.topics.get(i) == filter_topic]
         return [(eid, 0.95) for eid in ids[:n]]
 
     def get_by_id(self, entry_id: str) -> VectorRecord | None:

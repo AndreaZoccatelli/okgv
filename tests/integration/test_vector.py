@@ -110,6 +110,29 @@ class TestSimilaritySearch:
         results = vector_db.get_top_n(make_vector(), n=10)
         assert len(results) == 2
 
+    def test_get_top_n_exact_excludes_subtopics(self, vector_db):
+        vector_db.upload_entry(E1, {"text": "a", "text_length": 1}, make_vector(), topic="weather")
+        vector_db.upload_entry(E2, {"text": "b", "text_length": 1}, make_vector_unique(1), topic="weather/current")
+        ids = [uid for uid, _ in vector_db.get_top_n(make_vector(), n=5, filter_topic="weather")]
+        assert E1 in ids
+        assert E2 not in ids  # exact match: the child topic is excluded
+
+    def test_get_top_n_subtree_includes_descendants(self, vector_db):
+        vector_db.upload_entry(E1, {"text": "a", "text_length": 1}, make_vector(), topic="weather/current")
+        vector_db.upload_entry(E2, {"text": "b", "text_length": 1}, make_vector_unique(1), topic="weather/current/sub")
+        vector_db.upload_entry(E3, {"text": "c", "text_length": 1}, make_vector_unique(2), topic="other")
+        ids = [uid for uid, _ in vector_db.get_top_n(make_vector(), n=5, filter_topic="weather/current", subtree=True)]
+        assert E1 in ids and E2 in ids  # topic and its descendant
+        assert E3 not in ids
+
+    def test_get_top_n_subtree_prefix_not_substring(self, vector_db):
+        # prefix "w/cur" must not leak into a sibling like "w/current"
+        vector_db.upload_entry(E1, {"text": "a", "text_length": 1}, make_vector(), topic="w/cur")
+        vector_db.upload_entry(E2, {"text": "b", "text_length": 1}, make_vector_unique(1), topic="w/current")
+        ids = [uid for uid, _ in vector_db.get_top_n(make_vector(), n=5, filter_topic="w/cur", subtree=True)]
+        assert E1 in ids
+        assert E2 not in ids
+
 
 class TestDelete:
     def test_delete_by_id(self, vector_db):

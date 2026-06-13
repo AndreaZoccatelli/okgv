@@ -54,9 +54,21 @@ class SQLiteVectorDB:
         vector: list[float],
         n: int,
         filter_topic: str | None = None,
+        subtree: bool = False,
     ) -> list[tuple[str, float]]:
         blob = _vec_f32(vector)
-        if filter_topic:
+        if filter_topic and subtree:
+            # Subtree scope: the entry topic equals filter_topic or sits under
+            # it. vec0's KNN only allows equality/range on metadata columns
+            # (no LIKE/OR), so the prefix match is pushed down as an id IN
+            # prefilter against the relational table, which mirrors
+            # get_by_topic. k then applies within the subtree, not globally.
+            rows = self._conn.execute(
+                "SELECT id, distance FROM vec_entries WHERE embedding MATCH ? AND k = ? "
+                "AND id IN (SELECT id FROM vector_entries WHERE topic = ? OR topic LIKE ?)",
+                (blob, n, filter_topic, filter_topic + "/%"),
+            ).fetchall()
+        elif filter_topic:
             rows = self._conn.execute(
                 "SELECT id, distance FROM vec_entries WHERE embedding MATCH ? AND k = ? AND topic = ?",
                 (blob, n, filter_topic),

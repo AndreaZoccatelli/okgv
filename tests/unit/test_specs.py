@@ -305,3 +305,52 @@ class TestSessionSpecs:
     def test_consistency_skipped_without_db(self, tmp_path, monkeypatch):
         s = self._session(tmp_path, {"a": {}}, monkeypatch, make_db=False)
         assert s.check_structure_consistency() == []
+
+
+class TestSimilarityScope:
+    def _session(self, tmp_path, structure, monkeypatch):
+        import json
+
+        from okgv.session import Session
+        from tests.unit.conftest import MockGraphDB
+
+        sfile = tmp_path / "structure.json"
+        sfile.write_text(json.dumps(structure))
+        monkeypatch.setenv("OKGV_STRUCTURE", str(sfile))
+        return Session(graph_db=MockGraphDB(), db_path=tmp_path / "okgv.db")
+
+    def test_default_leaf_for_unconstrained_topic(self, tmp_path, monkeypatch):
+        s = self._session(tmp_path, {"a": {"b": {}}}, monkeypatch)
+        assert s.similarity_scope("a/b") == ("leaf", "a/b")
+
+    def test_leaf_when_no_structure(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("OKGV_STRUCTURE", str(tmp_path / "missing.json"))
+        from okgv.session import Session
+        from tests.unit.conftest import MockGraphDB
+
+        s = Session(graph_db=MockGraphDB(), db_path=tmp_path / "okgv.db")
+        assert s.similarity_scope("anything") == ("leaf", "anything")
+
+    def test_subtree_roots_at_declaring_ancestor(self, tmp_path, monkeypatch):
+        # parent declares subtree; children inherit. Searching a child roots the
+        # subtree at the parent so siblings are covered.
+        structure = {
+            "p": {
+                "_meta": {"function": "f", "similarity_scope": "subtree"},
+                "a": {},
+                "b": {},
+            }
+        }
+        s = self._session(tmp_path, structure, monkeypatch)
+        assert s.similarity_scope("p/a") == ("subtree", "p")
+        assert s.similarity_scope("p") == ("subtree", "p")
+
+    def test_child_override_to_leaf_breaks_the_climb(self, tmp_path, monkeypatch):
+        structure = {
+            "p": {
+                "_meta": {"function": "f", "similarity_scope": "subtree"},
+                "c": {"_meta": {"similarity_scope": "leaf"}},
+            }
+        }
+        s = self._session(tmp_path, structure, monkeypatch)
+        assert s.similarity_scope("p/c") == ("leaf", "p/c")

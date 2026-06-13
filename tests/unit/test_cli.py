@@ -894,3 +894,48 @@ class TestCreateStructure:
         assert "invalid_meta" in result.stderr
         # nothing written: the fold runs before any create_topic call
         assert mock_session.graph_db.topics == {}
+
+
+class TestSimilarScope:
+    def _session_with_structure(self, tmp_path, monkeypatch, structure):
+        sfile = tmp_path / "structure.json"
+        sfile.write_text(json.dumps(structure))
+        monkeypatch.setenv("OKGV_STRUCTURE", str(sfile))
+        return Session(
+            graph_db=MockGraphDB(),
+            vector_db=MockVectorDB(),
+            embedder=fake_embedder,
+            schema=SimpleSchema(),
+            db_path=tmp_path / "okgv.db",
+        )
+
+    def _seed(self, session, eid, topic):
+        session.vector_db.upload_entry(eid, {"text": "seed"}, fake_embedder(["seed"])[0], topic=topic)
+        session.graph_db.create_topic(topic.split("/")[0])
+        session.graph_db.upload_entry(topic=topic, entry_id=eid, properties={"text": "seed"})
+
+    def test_subtree_scope_surfaces_sibling_marked(self, runner, tmp_path, monkeypatch):
+        structure = {"p": {"_meta": {"similarity_scope": "subtree"}, "a": {}, "b": {}}}
+        session = self._session_with_structure(tmp_path, monkeypatch, structure)
+        self._seed(session, "sibling-id", "p/b")
+        result = runner.invoke(
+            cli, ["similar", "--topic", "p/a", "--entry", json.dumps({"text": "hi"})], obj=session
+        )
+        assert result.exit_code == 0
+        data = parse_json_output(result.stdout)
+        assert data["scope"] == "subtree"
+        match = next(m for m in data["similar"] if m["id"] == "sibling-id")
+        assert match["topic"] == "p/b"
+        assert match["sibling"] is True
+
+    def test_leaf_scope_excludes_sibling(self, runner, tmp_path, monkeypatch):
+        structure = {"p": {"a": {}, "b": {}}}  # no similarity_scope: default leaf
+        session = self._session_with_structure(tmp_path, monkeypatch, structure)
+        self._seed(session, "sibling-id", "p/b")
+        result = runner.invoke(
+            cli, ["similar", "--topic", "p/a", "--entry", json.dumps({"text": "hi"})], obj=session
+        )
+        assert result.exit_code == 0
+        data = parse_json_output(result.stdout)
+        assert data["scope"] == "leaf"
+        assert all(m["id"] != "sibling-id" for m in data["similar"])

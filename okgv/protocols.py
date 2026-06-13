@@ -197,7 +197,11 @@ class VectorDB(Protocol):
         vector: list[float],
         n: int,
         filter_topic: str | None = None,
-    ) -> list[tuple[str, float]]: ...
+        subtree: bool = False,
+    ) -> list[tuple[str, float]]:
+        """Top-n by similarity. filter_topic restricts to that topic; with
+        subtree=True it restricts to that topic and all descendants (prefix)."""
+        ...
 
     def get_by_id(self, entry_id: str) -> VectorRecord | None: ...
 
