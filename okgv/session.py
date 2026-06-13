@@ -35,6 +35,7 @@ class Session:
         self._conn = None
         self._owns_connections = graph_db is None and vector_db is None
         self._specs = None  # lazily built {topic_path: Spec} from the structure file
+        self._validators_loaded = False
 
     @property
     def schema(self) -> EntrySchema:
@@ -151,6 +152,19 @@ class Session:
             self._specs = self._load_specs()
         return self._specs
 
+    def ensure_validators(self) -> None:
+        """Import OKGV_VALIDATORS modules so custom tags register before a fold.
+
+        Idempotent per session. Must run before any `build_specs` call that may
+        reference a custom validator tag (`create-structure`, spec loading).
+        """
+        if self._validators_loaded:
+            return
+        from okgv.config import load_validators
+
+        load_validators()
+        self._validators_loaded = True
+
     def _load_specs(self) -> dict:
         import json
 
@@ -159,6 +173,7 @@ class Session:
         path = self.structure_path
         if not path.exists():
             return {}
+        self.ensure_validators()
         return build_specs(json.loads(path.read_text()))
 
     def effective_spec(self, topic: str):
@@ -259,3 +274,4 @@ class Session:
         self._vector_db = None
         self._embedder = None
         self._specs = None
+        self._validators_loaded = False

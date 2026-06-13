@@ -52,6 +52,43 @@ def _import_schema(specifier: str) -> EntrySchema:
     return cls()
 
 
+def load_validators() -> list[str]:
+    """Import modules named in OKGV_VALIDATORS so their custom validators register.
+
+    Custom validators participate in `_meta` through their `tag`, but the tag is
+    only in VALIDATOR_REGISTRY once the module holding the `@register` decorator
+    has been imported. The structure fold (`create-structure`, session start)
+    does not import your schema module, so a dedicated validators module would
+    otherwise stay unregistered and its tag would fail at ingest.
+
+    OKGV_VALIDATORS is a comma-separated list of module paths (resolved relative
+    to cwd, like OKGV_SCHEMA). It is operator-controlled config, not data: the
+    structure file never names code, it only references tags. Idempotent —
+    importlib caches, so repeated calls are cheap. Returns the imported names.
+    """
+    spec = os.getenv("OKGV_VALIDATORS")
+    if not spec:
+        return []
+
+    cwd = str(Path.cwd())
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+
+    imported = []
+    for module_path in (m.strip() for m in spec.split(",")):
+        if not module_path:
+            continue
+        try:
+            importlib.import_module(module_path)
+        except ModuleNotFoundError as e:
+            raise ImportError(
+                f"Cannot import validator module '{module_path}' from OKGV_VALIDATORS: {e}. "
+                f"Make sure the file exists in {cwd}"
+            ) from e
+        imported.append(module_path)
+    return imported
+
+
 def load_schema() -> EntrySchema:
     """Load the active EntrySchema from OKGV_SCHEMA env var."""
     env_specifier = os.getenv("OKGV_SCHEMA")

@@ -303,10 +303,12 @@ def create_structure(session: Session, file_path: str):
             exit_code=EXIT_USAGE,
         )
 
-    # Parse and fold every `_meta` block before touching the DB: a malformed
-    # validator, a contradiction, or a function redeclaration must abort the
-    # whole ingest, not leave a half-built tree behind. Raises SpecError
-    # (converted to a structured CLI error by the top-level group).
+    # Register any custom validators (OKGV_VALIDATORS) before folding, so their
+    # tags resolve. Then parse and fold every `_meta` block before touching the
+    # DB: a malformed validator, a contradiction, or a function redeclaration
+    # must abort the whole ingest, not leave a half-built tree behind. Raises
+    # SpecError (converted to a structured CLI error by the top-level group).
+    session.ensure_validators()
     specs = build_specs(structure)
 
     graph_db = session.graph_db

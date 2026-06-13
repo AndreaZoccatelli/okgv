@@ -32,6 +32,7 @@ All via environment variables. A `.env` file in the working directory is **auto-
 | `OKGV_SCHEMA` | *required* | `module:ClassName` schema specifier |
 | `OKGV_DB` | `./okgv.db` | Path to SQLite database (graph + vectors + log + review) |
 | `OKGV_STRUCTURE` | `./config/structure.json` | Structure file folded into per-topic constraint specs (see [Topic constraints](#topic-constraints-_meta)) |
+| `OKGV_VALIDATORS` | *(none)* | Comma-separated module paths to import so custom validators register before a fold (see [Validators](#validators)) |
 | `EMBED_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model (`backend/model-name`) |
 | `EMBED_DIM` | auto-detect from model | Embedding dimension override |
 | `OKGV_REVIEW` | `none` | Default review mode: `none` or `all` |
@@ -157,7 +158,9 @@ Built-in validators:
 | `IsType(field, type)` | Instance of a type or tuple of types (bool is not int) | `field: <type name>` |
 | `Items(field, inner, [min_len], [max_len])` | List with a per-element validator and optional length bounds | `field: list ..., each: ...` |
 
-Custom validators implement `validate(value)` and `prompt() -> str` with a `field` attribute. To participate in serialization (needed for use inside structure-file `_meta` blocks), add a unique `tag` class attribute plus `to_json()`/`from_json()` and apply the `@register` decorator from `okgv.validators`; `validator_from_json()` then rebuilds them and fails loudly on an unknown tag. A validator may also implement an optional `narrow(other)` returning the simplified conjunction of two validators on the same field — this powers contradiction detection, sibling-disjointness checks, and narrowed prompt rendering; validators without it are treated as opaque (enforcement is unaffected, only analysis degrades).
+Custom validators implement `validate(value)` and `prompt() -> str` with a `field` attribute. To participate in serialization (needed for use inside structure-file `_meta` blocks), add a unique `tag` class attribute plus `to_json()`/`from_json()` and apply the `@register` decorator from `okgv.validators`; `validator_from_json()` then rebuilds them and fails loudly on an unknown tag. Add an `args` tuple (the positional argument order) to opt into the tagged `{tag: args}` shorthand. A validator may also implement an optional `narrow(other)` returning the simplified conjunction of two validators on the same field — this powers contradiction detection, sibling-disjointness checks, and narrowed prompt rendering; validators without it are treated as opaque (enforcement is unaffected, only analysis degrades).
+
+A custom tag is only in the registry once the module holding its `@register` runs. The fold (`create-structure`, session start) does **not** import your schema module, so put custom validators in a module listed in `OKGV_VALIDATORS` (comma-separated, resolved relative to cwd, like `OKGV_SCHEMA`). okgv imports those modules before folding, so the tags resolve. `OKGV_VALIDATORS` is operator config: the structure file references tags, never code paths.
 
 ## Field Descriptions
 
