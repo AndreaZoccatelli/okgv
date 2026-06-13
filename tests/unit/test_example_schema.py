@@ -18,7 +18,7 @@ spec.loader.exec_module(example_schema)
 ToolCallEntry = example_schema.ToolCallEntry
 ToolCallSchema = example_schema.ToolCallSchema
 FunctionSpec = example_schema.FunctionSpec
-FUNCTIONS = example_schema.FUNCTIONS
+SPECS = example_schema.SPECS
 
 
 def valid_raw(**overrides) -> dict:
@@ -109,14 +109,65 @@ class TestValidateForTopic:
             ToolCallSchema.validate_for_topic(e, "math/unit_conversion")
 
 
-class TestFunctionsRegistry:
-    def test_registry_covers_every_structure_leaf(self):
+class TestSpecsFromStructure:
+    def test_every_structure_topic_has_a_folded_spec(self):
+        import json
+
+        from okgv.specs import topic_paths
+
+        structure = json.loads((SCHEMA_PATH.parent / "structure.json").read_text())
+        assert set(SPECS) == topic_paths(structure)
+
+    def test_function_names_unique_across_declaring_topics(self):
+        # Refinement children inherit their parent's function, so a name repeats
+        # down a path; collect only the topics whose own _meta declares it and
+        # assert those are distinct.
         import json
 
         structure = json.loads((SCHEMA_PATH.parent / "structure.json").read_text())
-        leaves = {f"{category}/{leaf}" for category, children in structure.items() for leaf in children}
-        assert leaves == set(FUNCTIONS)
+        declared: list[str] = []
 
-    def test_function_names_unique_across_topics(self):
-        names = [spec.function for spec in FUNCTIONS.values()]
-        assert len(names) == len(set(names))
+        def walk(node: dict) -> None:
+            for key, value in node.items():
+                if key == "_meta" and isinstance(value, dict) and "function" in value:
+                    declared.append(value["function"])
+                elif not key.startswith("_") and isinstance(value, dict):
+                    walk(value)
+
+        walk(structure)
+        assert len(declared) == len(set(declared))
+
+
+class TestRefinementSplit:
+    """The weather/current_conditions split is living documentation of the fold:
+    children inherit the parent's function and required args, and narrow units."""
+
+    def _entry(self, **arguments) -> "ToolCallEntry":
+        return ToolCallEntry(valid_raw(arguments=arguments))
+
+    def test_specless_inheritance_demands_parent_spec(self):
+        # no_unit_stated declares only `forbidden`; function + required location
+        # come entirely from the parent fold.
+        with pytest.raises(ValueError, match="topic expects 'get_current_weather'"):
+            ToolCallSchema.validate_for_topic(
+                ToolCallEntry(valid_raw(function="send_message", arguments={"location": "Tokyo"})),
+                "weather/current_conditions/no_unit_stated",
+            )
+        with pytest.raises(ValueError, match=r"missing required keys \['location'\]"):
+            ToolCallSchema.validate_for_topic(self._entry(), "weather/current_conditions/no_unit_stated")
+
+    def test_metric_narrows_units_to_celsius(self):
+        ToolCallSchema.validate_for_topic(
+            self._entry(location="Tokyo", units="celsius"), "weather/current_conditions/metric"
+        )
+        with pytest.raises(ValueError, match="units: must be one of"):
+            ToolCallSchema.validate_for_topic(
+                self._entry(location="Tokyo", units="fahrenheit"), "weather/current_conditions/metric"
+            )
+
+    def test_no_unit_stated_forbids_units(self):
+        ToolCallSchema.validate_for_topic(self._entry(location="Tokyo"), "weather/current_conditions/no_unit_stated")
+        with pytest.raises(ValueError, match=r"forbidden keys present \['units'\]"):
+            ToolCallSchema.validate_for_topic(
+                self._entry(location="Tokyo", units="celsius"), "weather/current_conditions/no_unit_stated"
+            )

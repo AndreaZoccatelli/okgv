@@ -356,11 +356,14 @@ def _param_validators(spec: Spec) -> dict[str, list]:
 def provably_disjoint(a: Spec, b: Spec) -> bool:
     """True when no entry can validate under both specs (closed vocabulary only).
 
-    Proven by a required key forbidden in the sibling, or a shared field whose
-    validators ``narrow`` to ``NEVER``. "Cannot prove" returns False
-    (conservatively treated as overlapping); opaque validators simply never
-    contribute a proof.
+    Proven by a differing ``function`` identity (an entry's single function
+    value cannot satisfy both), a required key forbidden in the sibling, or a
+    shared field whose validators ``narrow`` to ``NEVER``. "Cannot prove"
+    returns False (conservatively treated as overlapping); opaque validators
+    simply never contribute a proof.
     """
+    if a.function is not None and b.function is not None and a.function != b.function:
+        return True
     if set(a.required) & b.forbidden or set(b.required) & a.forbidden:
         return True
     for amap, bmap in ((_param_validators(a), _param_validators(b)), (a.entry, b.entry)):

@@ -171,6 +171,12 @@ class TestDisjointness:
         b = Spec(required={"u": [OneOf("u", {"y"})]})
         assert provably_disjoint(a, b)
 
+    def test_different_function_is_disjoint(self):
+        assert provably_disjoint(Spec(function="f"), Spec(function="g"))
+
+    def test_same_function_not_disjoint_on_function_alone(self):
+        assert not provably_disjoint(Spec(function="f"), Spec(function="f"))
+
     def test_overlapping_not_disjoint(self):
         from okgv.validators import OneOf
 

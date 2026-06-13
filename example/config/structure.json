@@ -1,27 +1,195 @@
 {
   "weather": {
-    "current_conditions": {},
-    "forecast": {},
-    "alerts": {}
+    "current_conditions": {
+      "_meta": {
+        "function": "get_current_weather",
+        "required": {
+          "location": {"type": "not_empty", "field": "location"}
+        },
+        "optional": {
+          "units": {"type": "one_of", "field": "units", "valid": ["celsius", "fahrenheit"]}
+        }
+      },
+      "metric": {
+        "_meta": {
+          "required": {
+            "units": {"type": "one_of", "field": "units", "valid": ["celsius"]}
+          }
+        }
+      },
+      "no_unit_stated": {
+        "_meta": {"forbidden": ["units"]}
+      }
+    },
+    "forecast": {
+      "_meta": {
+        "function": "get_forecast",
+        "required": {
+          "location": {"type": "not_empty", "field": "location"},
+          "days": {"type": "is_type", "field": "days", "expected": ["int"]}
+        },
+        "optional": {
+          "units": {"type": "one_of", "field": "units", "valid": ["celsius", "fahrenheit"]}
+        }
+      }
+    },
+    "alerts": {
+      "_meta": {
+        "function": "get_weather_alerts",
+        "required": {
+          "location": {"type": "not_empty", "field": "location"}
+        },
+        "optional": {
+          "severity": {"type": "one_of", "field": "severity", "valid": ["advisory", "watch", "warning"]}
+        }
+      }
+    }
   },
   "calendar": {
-    "create_event": {},
-    "list_events": {},
-    "modify_event": {}
+    "create_event": {
+      "_meta": {
+        "function": "create_event",
+        "required": {
+          "title": {"type": "not_empty", "field": "title"},
+          "start_time": {"type": "not_empty", "field": "start_time"}
+        },
+        "optional": {
+          "end_time": {"type": "not_empty", "field": "end_time"},
+          "location": {"type": "not_empty", "field": "location"},
+          "attendees": {"type": "is_type", "field": "attendees", "expected": ["list"]}
+        }
+      }
+    },
+    "list_events": {
+      "_meta": {
+        "function": "list_events",
+        "required": {
+          "date": {"type": "not_empty", "field": "date"}
+        },
+        "optional": {
+          "calendar": {"type": "not_empty", "field": "calendar"},
+          "query": {"type": "not_empty", "field": "query"}
+        }
+      }
+    },
+    "modify_event": {
+      "_meta": {
+        "function": "modify_event",
+        "required": {
+          "event_id": {"type": "not_empty", "field": "event_id"}
+        },
+        "optional": {
+          "title": {"type": "not_empty", "field": "title"},
+          "start_time": {"type": "not_empty", "field": "start_time"},
+          "end_time": {"type": "not_empty", "field": "end_time"},
+          "location": {"type": "not_empty", "field": "location"}
+        }
+      }
+    }
   },
   "search": {
-    "web_search": {},
-    "file_search": {},
-    "contact_lookup": {}
+    "web_search": {
+      "_meta": {
+        "function": "web_search",
+        "required": {
+          "query": {"type": "not_empty", "field": "query"}
+        },
+        "optional": {
+          "num_results": {"type": "is_type", "field": "num_results", "expected": ["int"]},
+          "site": {"type": "not_empty", "field": "site"}
+        }
+      }
+    },
+    "file_search": {
+      "_meta": {
+        "function": "file_search",
+        "required": {
+          "query": {"type": "not_empty", "field": "query"}
+        },
+        "optional": {
+          "path": {"type": "not_empty", "field": "path"},
+          "file_type": {"type": "not_empty", "field": "file_type"}
+        }
+      }
+    },
+    "contact_lookup": {
+      "_meta": {
+        "function": "contact_lookup",
+        "required": {
+          "name": {"type": "not_empty", "field": "name"}
+        },
+        "optional": {
+          "field": {"type": "one_of", "field": "field", "valid": ["phone", "email", "address"]}
+        }
+      }
+    }
   },
   "messaging": {
-    "send_message": {},
-    "read_messages": {},
-    "manage_threads": {}
+    "send_message": {
+      "_meta": {
+        "function": "send_message",
+        "required": {
+          "to": {"type": "not_empty", "field": "to"},
+          "body": {"type": "not_empty", "field": "body"}
+        },
+        "optional": {
+          "subject": {"type": "not_empty", "field": "subject"},
+          "priority": {"type": "one_of", "field": "priority", "valid": ["low", "normal", "high"]}
+        }
+      }
+    },
+    "read_messages": {
+      "_meta": {
+        "function": "read_messages",
+        "optional": {
+          "sender": {"type": "not_empty", "field": "sender"},
+          "unread_only": {"type": "is_type", "field": "unread_only", "expected": ["bool"]},
+          "limit": {"type": "is_type", "field": "limit", "expected": ["int"]}
+        }
+      }
+    },
+    "manage_threads": {
+      "_meta": {
+        "function": "manage_thread",
+        "required": {
+          "thread_id": {"type": "not_empty", "field": "thread_id"},
+          "action": {"type": "one_of", "field": "action", "valid": ["archive", "label", "delete"]}
+        },
+        "optional": {
+          "label": {"type": "not_empty", "field": "label"}
+        }
+      }
+    }
   },
   "math": {
-    "arithmetic": {},
-    "unit_conversion": {},
-    "statistics": {}
+    "arithmetic": {
+      "_meta": {
+        "function": "calculate",
+        "required": {
+          "expression": {"type": "not_empty", "field": "expression"}
+        }
+      }
+    },
+    "unit_conversion": {
+      "_meta": {
+        "function": "convert_units",
+        "required": {
+          "value": {"type": "is_type", "field": "value", "expected": ["int", "float"]},
+          "from_unit": {"type": "not_empty", "field": "from_unit"},
+          "to_unit": {"type": "not_empty", "field": "to_unit"}
+        }
+      }
+    },
+    "statistics": {
+      "_meta": {
+        "function": "compute_stats",
+        "required": {
+          "data": {"type": "is_type", "field": "data", "expected": ["list"]}
+        },
+        "optional": {
+          "operation": {"type": "one_of", "field": "operation", "valid": ["mean", "median", "std", "sum"]}
+        }
+      }
+    }
   }
 }

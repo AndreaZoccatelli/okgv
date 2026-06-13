@@ -7,7 +7,7 @@ A fully configured `okgv` knowledge base for building synthetic LLM tool-use dat
 ## What's in here
 
 ```
-config/structure.json   topic hierarchy (the 15 leaf topics)
+config/structure.json   topic hierarchy + per-topic function contracts (_meta)
 config/schema.py        entry schema (ToolCallSchema)
 .env                    wires schema, embedding model, review mode into okgv
 prompts/                agent guides, one per workflow phase
@@ -52,9 +52,11 @@ Every entry has four fields, defined and validated by `ToolCallSchema` in `confi
 
 The schema class also declares which fields are balanced (`difficulty`), what gets embedded for similarity (`query`), and how fields split across the graph and vector stores. Run `okgv entry-prompt` to see how it renders for a generating agent.
 
+The global field validators above are the baseline every entry must satisfy. The *per-topic* rules (which `function` a topic expects, which arguments are required or allowed) are not hardcoded in the schema; they live in `structure.json` `_meta` blocks (below) and `ToolCallSchema.validate_for_topic` enforces the folded effective spec for whichever topic an entry is filed under.
+
 ## The topic hierarchy
 
-Defined in `config/structure.json`:
+Defined in `config/structure.json`. Each leaf carries a `_meta` block declaring its function contract, parsed and folded by okgv at load:
 
 ```
 weather/          (current_conditions, forecast, alerts)
@@ -64,7 +66,19 @@ messaging/        (send_message, read_messages, manage_threads)
 math/             (arithmetic, unit_conversion, statistics)
 ```
 
-15 leaf topics × 3 difficulty levels = 45 cells, each filled with diverse entries.
+A `_meta` block names the function and its argument validators, for example `weather/current_conditions`:
+
+```json
+"_meta": {
+  "function": "get_current_weather",
+  "required": {"location": {"type": "not_empty", "field": "location"}},
+  "optional": {"units": {"type": "one_of", "field": "units", "valid": ["celsius", "fahrenheit"]}}
+}
+```
+
+`_meta` blocks compose along a path: a child can narrow or add to what its parent declared but never relax it. `weather/current_conditions` is split two ways to show this — `metric` narrows `units` to `["celsius"]`, and `no_unit_stated` forbids `units` entirely. Both inherit the parent's `get_current_weather` function and required `location`, so an entry filed there is validated against the parent contract *and* the child's refinement. This is what makes targeted generation possible: "current conditions where the user never states a unit" becomes its own topic with its own quota and prompt.
+
+15 leaf topics × 3 difficulty levels seed the coverage grid, each cell filled with diverse entries; refinement children like `metric` add further partitions where they earn their own quota.
 
 ## The prompts
 
