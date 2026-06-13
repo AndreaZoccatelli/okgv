@@ -243,8 +243,8 @@ A topic node may carry a reserved `_meta` key declaring its constraints (any oth
       "_meta": {
         "function": "get_current_weather",
         "required": {"location": "not_empty"},
-        "optional": {"units": ["celsius", "fahrenheit"]},
-        "entry":    {"difficulty": ["easy", "medium", "hard"]},
+        "optional": {"units": {"one_of": ["celsius", "fahrenheit"]}},
+        "entry":    {"difficulty": {"one_of": ["easy", "medium", "hard"]}},
         "similarity_scope": "leaf"
       }
     }
@@ -253,7 +253,7 @@ A topic node may carry a reserved `_meta` key declaring its constraints (any oth
 ```
 
 - `required` / `optional` / `forbidden` constrain a function's arguments; `entry` narrows global entry-schema fields; `function` is the function identity (set once per path); `similarity_scope` is `"leaf"` (default) or `"subtree"`.
-- **Authoring shorthands** (the explicit long form is always accepted): a bare tag string `"location": "not_empty"` is that validator with its `field` defaulted to the key; a list of strings `"units": ["celsius", "fahrenheit"]` is a `OneOf`; the `field` inside any validator object defaults to its key (`{"type": "is_type", "expected": ["int"]}` is enough). A list containing a validator object is a conjunction (all run).
+- **Validator forms** (`field` always defaults to the key): a bare tag string for a zero-arg validator (`"location": "not_empty"`); the tagged `{tag: args}` form (`{"one_of": ["celsius", "fahrenheit"]}`, `{"in_range": [0, 1]}`, `{"is_type": ["int"]}`); or the explicit `{"type": tag, ...}` form. The tag decides how the args are read — a single-argument validator takes the value whole, `in_range` takes `[lo, hi]`, a dict value is named args. A **list is always a conjunction** (`["not_empty", {"matches": "^[A-Z]"}]`).
 - Validators are parsed through the registry. A malformed validator, a contradictory fold, or a redeclared function fails at `create-structure`, before anything is written.
 - **Python-first authoring:** build a `Spec` from validator objects and call `spec.to_json()` to emit a `_meta` block, instead of hand-writing JSON. `parse_meta(spec.to_json())` round-trips.
 - `create-structure` warns about topics with no `_meta` on their path and about overlapping siblings with no explicit `similarity_scope`. Re-running over a populated DB suggests `revalidate`.

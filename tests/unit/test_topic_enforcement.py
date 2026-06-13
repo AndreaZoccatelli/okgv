@@ -29,13 +29,13 @@ class _Bare:
 
 class TestEnforceEntrySpec:
     def test_rejects_violation(self):
-        spec = parse_meta({"entry": {"difficulty": ["hard"]}}, "t")
+        spec = parse_meta({"entry": {"difficulty": {"one_of": ["hard"]}}}, "t")
         with pytest.raises(ValueError, match="difficulty"):
             enforce_entry_spec(spec, _Obj(difficulty="easy"))
         enforce_entry_spec(spec, _Obj(difficulty="hard"))  # valid: no raise
 
     def test_missing_field_errors(self):
-        spec = parse_meta({"entry": {"difficulty": ["hard"]}}, "t")
+        spec = parse_meta({"entry": {"difficulty": {"one_of": ["hard"]}}}, "t")
         with pytest.raises(ValueError, match="not present on the entry"):
             enforce_entry_spec(spec, _Obj(other=1))
 
@@ -50,7 +50,7 @@ class TestEnforceEntrySpec:
 
 class TestValidateEntryTopic:
     def test_default_enforces_entry_without_hook(self):
-        spec = parse_meta({"entry": {"difficulty": ["hard"]}}, "t")
+        spec = parse_meta({"entry": {"difficulty": {"one_of": ["hard"]}}}, "t")
         with pytest.raises(EntryError, match="rejected for topic"):
             validate_entry_topic(_Bare(), _Obj(difficulty="easy"), "t", spec)
         validate_entry_topic(_Bare(), _Obj(difficulty="hard"), "t", spec)
@@ -90,7 +90,7 @@ class TestValidateEntryTopic:
             def validate_for_topic(entry, topic, spec):
                 order.append("hook")
 
-        spec = parse_meta({"entry": {"difficulty": ["hard"]}}, "t")
+        spec = parse_meta({"entry": {"difficulty": {"one_of": ["hard"]}}}, "t")
         with pytest.raises(EntryError):
             validate_entry_topic(S(), _Obj(difficulty="easy"), "t", spec)
         assert order == []  # hook never reached
@@ -145,7 +145,7 @@ class TestDefaultEnforcementE2E:
         return CliRunner()
 
     def _session(self, tmp_path, monkeypatch):
-        structure = {"t": {"_meta": {"entry": {"difficulty": ["hard"]}}}}
+        structure = {"t": {"_meta": {"entry": {"difficulty": {"one_of": ["hard"]}}}}}
         sfile = tmp_path / "structure.json"
         sfile.write_text(json.dumps(structure))
         monkeypatch.setenv("OKGV_STRUCTURE", str(sfile))

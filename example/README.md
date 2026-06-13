@@ -72,11 +72,11 @@ A `_meta` block names the function and its argument validators, for example `wea
 "_meta": {
   "function": "get_current_weather",
   "required": {"location": "not_empty"},
-  "optional": {"units": ["celsius", "fahrenheit"]}
+  "optional": {"units": {"one_of": ["celsius", "fahrenheit"]}}
 }
 ```
 
-(`"not_empty"` is shorthand for a `NotEmpty` validator on that key; a list of strings is a `OneOf` over those values. The explicit `{"type": ..., "field": ...}` form works too.)
+(`"not_empty"` is the bare tag for a `NotEmpty` validator on that key; `{"one_of": [...]}` is the tagged form. The explicit `{"type": ..., "field": ...}` form works too, and a list of validators is a conjunction.)
 
 `_meta` blocks compose along a path: a child can narrow or add to what its parent declared but never relax it. `weather/current_conditions` is split two ways to show this — `metric` narrows `units` to `["celsius"]`, and `no_unit_stated` forbids `units` entirely. Both inherit the parent's `get_current_weather` function and required `location`, so an entry filed there is validated against the parent contract *and* the child's refinement. This is what makes targeted generation possible: "current conditions where the user never states a unit" becomes its own topic with its own quota and prompt.
 

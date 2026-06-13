@@ -85,7 +85,7 @@ class TestAuthoringShorthands:
         spec = parse_meta({"required": {"location": {"type": "not_empty", "field": "location"}}}, "t")
         assert spec.required["location"][0].field == "location"
 
-    # E2: bare-tag string and OneOf list
+    # E2: bare-tag string for zero-arg validators
     def test_bare_tag_string(self):
         from okgv.validators import NotEmpty
 
@@ -93,23 +93,52 @@ class TestAuthoringShorthands:
         v = spec.required["location"][0]
         assert isinstance(v, NotEmpty) and v.field == "location"
 
-    def test_string_list_becomes_oneof(self):
+    # E2: tagged {tag: args} form
+    def test_tagged_oneof(self):
         from okgv.validators import OneOf
 
-        spec = parse_meta({"optional": {"units": ["celsius", "fahrenheit"]}}, "t")
-        v = spec.optional["units"][0]
-        assert isinstance(v, OneOf) and v.valid == {"celsius", "fahrenheit"} and v.field == "units"
+        spec = parse_meta({"optional": {"units": {"one_of": ["celsius", "fahrenheit"]}, "n": {"one_of": [0, 1]}}}, "t")
+        units = spec.optional["units"][0]
+        assert isinstance(units, OneOf) and units.valid == {"celsius", "fahrenheit"} and units.field == "units"
+        assert spec.optional["n"][0].valid == {0, 1}  # non-string enums work
 
-    def test_list_with_dict_stays_conjunction(self):
-        meta = {"required": {"x": ["not_empty", {"type": "matches", "pattern": "a+"}]}}
-        spec = parse_meta(meta, "t")
-        kinds = [v.__class__.__name__ for v in spec.required["x"]]
-        assert kinds == ["NotEmpty", "Matches"]
-        # the matches dict omitted field; it defaulted to the key
+    def test_tagged_positional_and_named(self):
+        spec = parse_meta({"entry": {"a": {"in_range": [0, 1]}, "b": {"in_range": {"lo": 2, "hi": 3}}}}, "t")
+        assert (spec.entry["a"][0].lo, spec.entry["a"][0].hi) == (0, 1)
+        assert (spec.entry["b"][0].lo, spec.entry["b"][0].hi) == (2, 3)
+        assert spec.entry["a"][0].field == "a"
+
+    def test_tagged_is_type_and_matches(self):
+        spec = parse_meta({"required": {"days": {"is_type": ["int"]}, "p": {"matches": "^a+"}}}, "t")
+        assert spec.required["days"][0].expected == (int,)
+        assert spec.required["p"][0].pattern == "^a+"
+
+    def test_list_is_always_conjunction(self):
+        # no list->OneOf overload: a list runs every validator; a single bare
+        # tag in a list is just that validator (the old silent trap is gone).
+        spec = parse_meta({"required": {"x": ["not_empty", {"matches": "^[A-Z]"}], "y": ["not_empty"]}}, "t")
+        assert [v.__class__.__name__ for v in spec.required["x"]] == ["NotEmpty", "Matches"]
         assert spec.required["x"][1].field == "x"
+        assert spec.required["y"][0].__class__.__name__ == "NotEmpty"
+
+    def test_unknown_tag_errors(self):
+        with pytest.raises(SpecError, match="unknown validator tag 'nope'"):
+            parse_meta({"required": {"x": {"nope": 1}}}, "t")
+
+    def test_multi_key_tagged_errors(self):
+        with pytest.raises(SpecError, match="single .tag: args. pair"):
+            parse_meta({"required": {"x": {"lo": 0, "hi": 1}}}, "t")
+
+    def test_wrong_arity_errors(self):
+        with pytest.raises(SpecError, match="expects 2 positional args"):
+            parse_meta({"required": {"x": {"in_range": [0]}}}, "t")
+
+    def test_validator_without_shorthand_errors(self):
+        with pytest.raises(SpecError, match="has no shorthand"):
+            parse_meta({"required": {"x": {"items": []}}}, "t")
 
     def test_bad_shorthand_item_errors(self):
-        with pytest.raises(SpecError, match="must be a validator object, a tag string"):
+        with pytest.raises(SpecError, match="must be a tag string"):
             parse_meta({"required": {"x": 5}}, "t")
 
 
@@ -118,7 +147,7 @@ class TestSpecToJson:
         meta = {
             "function": "f",
             "required": {"location": "not_empty", "x": [_not_empty("x"), {"type": "matches", "pattern": "a+"}]},
-            "optional": {"units": ["celsius", "fahrenheit"]},
+            "optional": {"units": {"one_of": ["celsius", "fahrenheit"]}},
             "entry": {"difficulty": _one_of("difficulty", "easy", "hard")},
             "forbidden": ["z"],
             "similarity_scope": "subtree",

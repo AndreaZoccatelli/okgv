@@ -34,7 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from okgv.errors import SpecError
-from okgv.validators import NEVER, OneOf, narrow, validator_from_json
+from okgv.validators import NEVER, VALIDATOR_REGISTRY, narrow, validator_from_json
 
 # Keys recognized inside a `_meta` block. Constraint targets plus the policy and
 # identity keys. Anything else is a typo and fails at ingest.
@@ -113,29 +113,75 @@ class Spec:
 # ── Parsing one node's _meta block ────────────────────────────────────────
 
 
-def _parse_one(item, topic: str, target: str, name: str):
-    """Parse one validator from its explicit dict or a bare-tag string.
+def _expand_tagged(item: dict, topic: str, target: str, name: str) -> dict:
+    """Expand the ``{tag: args}`` shorthand into an explicit validator dict.
 
-    A dict may omit ``field``; it defaults to the enclosing key ``name`` (a
-    validator constrains the parameter it is filed under). An explicit ``field``
-    that disagrees with the key is a bug and raises.
+    The single key is a registered validator tag; the value is its arguments,
+    read against the validator's declared positional ``args``:
+      - arity 0 (``not_empty``): no args (prefer the bare string form);
+      - arity 1 (``one_of`` -> valid, ``is_type`` -> expected, ``matches`` ->
+        pattern): the whole value is that one argument;
+      - arity >= 2 (``in_range`` -> lo, hi): the value is a list of that length,
+        zipped positionally.
+    A dict value is always taken as named args (the unambiguous escape). The
+    tag, not the value's shape, decides how the value is read.
+    """
+    if len(item) != 1:
+        raise SpecError(
+            f"topic '{topic}': {target}.{name} must be a single {{tag: args}} pair, got keys {sorted(item)}"
+        )
+    [(tag, value)] = item.items()
+    cls = VALIDATOR_REGISTRY.get(tag)
+    if cls is None:
+        raise SpecError(
+            f"topic '{topic}': {target}.{name}: unknown validator tag '{tag}', known: {sorted(VALIDATOR_REGISTRY)}"
+        )
+    arg_order = getattr(cls, "args", None)
+    if arg_order is None:
+        raise SpecError(
+            f"topic '{topic}': {target}.{name}: validator '{tag}' has no shorthand; "
+            f'use the explicit {{"type": "{tag}", ...}} form'
+        )
+
+    if isinstance(value, dict):
+        named = dict(value)
+    elif not arg_order:
+        named = {}
+    elif len(arg_order) == 1:
+        named = {arg_order[0]: value}
+    else:
+        if not isinstance(value, list) or len(value) != len(arg_order):
+            raise SpecError(
+                f"topic '{topic}': {target}.{name}: '{tag}' expects {len(arg_order)} positional args "
+                f"{list(arg_order)}, got {value!r}"
+            )
+        named = dict(zip(arg_order, value))
+    return {"type": tag, **named}
+
+
+def _parse_one(item, topic: str, target: str, name: str):
+    """Parse one validator from any of its accepted forms.
+
+    Forms: a bare tag string (``"not_empty"``), the tagged ``{tag: args}``
+    shorthand (``{"one_of": [...]}`)`, or the explicit ``{"type": tag, ...}``
+    dict. In every form ``field`` defaults to the enclosing key ``name``; an
+    explicit ``field`` that disagrees with the key is a bug and raises.
     """
     if isinstance(item, str):
-        payload = {"type": item, "field": name}  # bare-tag shorthand: "not_empty"
+        payload = {"type": item}  # bare-tag shorthand for a zero-arg validator
     elif isinstance(item, dict):
-        payload = dict(item)
-        if "field" not in payload:
-            payload["field"] = name
-        elif payload["field"] != name:
-            raise SpecError(
-                f"topic '{topic}': {target}.{name}: validator field '{payload['field']}' must match "
-                f"the key '{name}' (omit 'field' to default it)"
-            )
+        payload = dict(item) if "type" in item else _expand_tagged(item, topic, target, name)
     else:
         raise SpecError(
-            f"topic '{topic}': {target}.{name} must be a validator object, a tag string, or a list of them, "
-            f"got {type(item).__name__}"
+            f"topic '{topic}': {target}.{name} must be a tag string, a {{tag: args}} or {{\"type\": ...}} object, "
+            f"or a list of them, got {type(item).__name__}"
         )
+    if "field" in payload and payload["field"] != name:
+        raise SpecError(
+            f"topic '{topic}': {target}.{name}: validator field '{payload['field']}' must match "
+            f"the key '{name}' (omit 'field' to default it)"
+        )
+    payload["field"] = name
     try:
         return validator_from_json(payload)
     except ValueError as e:
@@ -143,15 +189,8 @@ def _parse_one(item, topic: str, target: str, name: str):
 
 
 def _parse_validators(value, topic: str, target: str, name: str) -> list:
-    """Parse a field's validators into a list, with authoring shorthands.
-
-    Forms accepted:
-      - a single validator dict or bare-tag string;
-      - a list of plain strings -> a single ``OneOf`` over those values;
-      - a list containing any dict -> a conjunction (every validator runs).
-    """
-    if isinstance(value, list) and value and all(isinstance(x, str) for x in value):
-        return [OneOf(name, set(value))]  # OneOf shorthand: ["celsius", "fahrenheit"]
+    """Parse a field's validators into a list. A list is always a conjunction
+    (every validator runs); a single value is one validator."""
     raw = value if isinstance(value, list) else [value]
     return [_parse_one(item, topic, target, name) for item in raw]
 

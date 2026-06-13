@@ -116,6 +116,7 @@ class OneOf:
     """Check that value is in a set of allowed values."""
 
     tag = "one_of"
+    args = ("valid",)  # tagged shorthand: {"one_of": [<values>]}
 
     def __init__(self, field: str, valid: set):
         self.field = field
@@ -159,6 +160,7 @@ class InRange:
     """Check that a numeric value is within [lo, hi]."""
 
     tag = "in_range"
+    args = ("lo", "hi")  # tagged shorthand: {"in_range": [lo, hi]}
 
     def __init__(self, field: str, lo: float, hi: float):
         self.field = field
@@ -200,6 +202,7 @@ class NotEmpty:
     """Check that a string is non-empty after stripping whitespace."""
 
     tag = "not_empty"
+    args = ()  # zero-arg: write the bare tag string "not_empty"
 
     def __init__(self, field: str):
         self.field = field
@@ -237,6 +240,7 @@ class IsType:
     """Check that value is an instance of the expected type (or one of several)."""
 
     tag = "is_type"
+    args = ("expected",)  # tagged shorthand: {"is_type": ["int", "float"]}
 
     _NAMES = {
         dict: "JSON object",
@@ -311,6 +315,7 @@ class Matches:
     """Check that a string matches a regex pattern."""
 
     tag = "matches"
+    args = ("pattern",)  # tagged shorthand: {"matches": "<regex>"}
 
     def __init__(self, field: str, pattern: str):
         self.field = field

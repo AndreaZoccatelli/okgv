@@ -40,7 +40,7 @@ A topic node may carry a reserved `_meta` key describing constraints on the entr
       "_meta": {
         "function": "get_current_weather",
         "required": {"location": "not_empty"},
-        "optional": {"units": ["celsius", "fahrenheit"]},
+        "optional": {"units": {"one_of": ["celsius", "fahrenheit"]}},
         "similarity_scope": "leaf"
       }
     }
@@ -48,11 +48,13 @@ A topic node may carry a reserved `_meta` key describing constraints on the entr
 }
 ```
 
-Authoring shorthands keep blocks terse (the explicit long form is always accepted too):
+A validator is written in one of three forms (`field` always defaults to the key):
 
-- A bare tag string — `"location": "not_empty"` — is the validator with its `field` defaulted to the key.
-- A list of strings — `"units": ["celsius", "fahrenheit"]` — is a `OneOf` over those values.
-- The `field` inside any validator object defaults to its key, so `{"type": "is_type", "expected": ["int"]}` is enough; a list that contains a validator object is a conjunction (all run). The explicit `{"type": "not_empty", "field": "location"}` form still works.
+- **Bare tag string** for a zero-arg validator — `"location": "not_empty"`.
+- **Tagged `{tag: args}`** — `{"one_of": ["celsius", "fahrenheit"]}`, `{"in_range": [0, 1]}`, `{"is_type": ["int", "float"]}`, `{"matches": "^[A-Z]"}`. The value is the validator's argument(s): a single-argument validator takes the value whole (so `one_of`'s value is the list of allowed values); a multi-argument validator like `in_range` takes a positional list `[lo, hi]`; a dict value is read as named args (`{"in_range": {"lo": 0, "hi": 1}}`).
+- **Explicit `{"type": tag, ...}`** — always works, needed for validators without a shorthand (e.g. `items`).
+
+A **list is always a conjunction** — every validator in it runs: `"x": ["not_empty", {"matches": "^[A-Z]"}]`.
 
 - `_meta` blocks **compose along a path**: a child's effective spec is the fold of every ancestor's `_meta` plus its own. A child may narrow an existing constraint, add a new one, or `forbid` a key — never relax one. A contradiction or a malformed validator fails at `create-structure`, before anything is written.
 - `entry` narrows global entry-schema fields (e.g. `difficulty`); `required`/`optional`/`forbidden` constrain a function's arguments; `function` sets the function identity (once per path).
