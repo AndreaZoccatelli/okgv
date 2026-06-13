@@ -207,18 +207,21 @@ class SQLiteVectorDB:
         return [r[0] for r in rows]
 
     def iter_entry_ids(self, batch_size: int = 1000) -> Iterator[list[str]]:
-        offset = 0
+        # Keyset (seek) pagination: track the last id and seek past it via the
+        # PRIMARY KEY index, instead of LIMIT/OFFSET which rescans every prior
+        # page (O(n^2) over a full scan).
+        last_id = ""
         while True:
             rows = self._conn.execute(
-                "SELECT id FROM vector_entries ORDER BY id LIMIT ? OFFSET ?",
-                (batch_size, offset),
+                "SELECT id FROM vector_entries WHERE id > ? ORDER BY id LIMIT ?",
+                (last_id, batch_size),
             ).fetchall()
             if not rows:
                 break
             yield [r[0] for r in rows]
             if len(rows) < batch_size:
                 break
-            offset += batch_size
+            last_id = rows[-1][0]
 
     def exists_batch(self, ids: list[str]) -> set[str]:
         if not ids:
