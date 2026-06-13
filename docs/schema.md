@@ -1,3 +1,8 @@
+<p align="center">
+    <img src="../resources/okgv-logo-light.svg#gh-light-mode-only" alt="okgv logo" width="400">
+    <img src="../resources/okgv-logo-dark.svg#gh-dark-mode-only" alt="okgv logo" width="400">
+</p>
+
 # Entry Schema & Configuration
 
 ## Install
