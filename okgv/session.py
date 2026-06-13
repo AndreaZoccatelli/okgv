@@ -34,6 +34,7 @@ class Session:
         self._db_path = db_path
         self._conn = None
         self._owns_connections = graph_db is None and vector_db is None
+        self._specs = None  # lazily built {topic_path: Spec} from the structure file
 
     @property
     def schema(self) -> EntrySchema:
@@ -128,6 +129,73 @@ class Session:
                 self._db_path = Path.cwd() / "okgv.db"
         return self._db_path
 
+    @property
+    def structure_path(self) -> Path:
+        """Location of the structure file the in-memory specs are folded from.
+
+        ``OKGV_STRUCTURE`` overrides the default ``config/structure.json``
+        (relative to cwd), mirroring how prompts.py refers to it.
+        """
+        custom = os.getenv("OKGV_STRUCTURE")
+        return Path(custom) if custom else Path.cwd() / "config" / "structure.json"
+
+    @property
+    def specs(self) -> dict:
+        """Effective (folded) constraint spec per topic path, keyed by path.
+
+        Parsed once from the structure file (see okgv.specs). Empty when the
+        file is absent: the library stays permissive, and schemas that require
+        constraints enforce that themselves in validate_for_topic.
+        """
+        if self._specs is None:
+            self._specs = self._load_specs()
+        return self._specs
+
+    def _load_specs(self) -> dict:
+        import json
+
+        from okgv.specs import build_specs
+
+        path = self.structure_path
+        if not path.exists():
+            return {}
+        return build_specs(json.loads(path.read_text()))
+
+    def effective_spec(self, topic: str):
+        """Folded spec for a topic path, or None when it carries no constraints."""
+        return self.specs.get(topic)
+
+    def check_structure_consistency(self) -> list[str]:
+        """Warn when the DB's topic set has drifted from the structure file.
+
+        Specs live in memory keyed by topic path, so a DB whose topics no longer
+        match the file would validate against stale constraints. Skipped (no
+        warnings) when either the structure file or the DB is absent, so it
+        never forces a DB to be created or a model to load.
+        """
+        from okgv.helpers import log
+        from okgv.specs import topic_paths
+
+        path = self.structure_path
+        if not path.exists() or not self.db_path.exists():
+            return []
+
+        import json
+
+        file_topics = topic_paths(json.loads(path.read_text()))
+        db_topics = topic_paths(self.graph_db.get_topic_tree())
+
+        warnings = []
+        missing = file_topics - db_topics
+        extra = db_topics - file_topics
+        if missing:
+            warnings.append(f"topics in {path.name} but not in the DB: {sorted(missing)}; run create-structure")
+        if extra:
+            warnings.append(f"topics in the DB but not in {path.name}: {sorted(extra)}; structure file is stale")
+        for w in warnings:
+            log(f"warning: {w}")
+        return warnings
+
     @contextmanager
     def transaction(self):
         """Group graph and vector writes into one atomic SQLite transaction.
@@ -167,3 +235,4 @@ class Session:
         self._graph_db = None
         self._vector_db = None
         self._embedder = None
+        self._specs = None

@@ -5,7 +5,7 @@ import sys
 
 import click
 
-from okgv.helpers import EXIT_NOT_FOUND, EXIT_USAGE, err, output
+from okgv.helpers import EXIT_NOT_FOUND, EXIT_USAGE, err, log, output
 from okgv.session import Session
 
 
@@ -240,7 +240,13 @@ def create_structure(session: Session, file_path: str):
 
     Expected format: nested dict where keys are topic names, values are dicts of subtopics.
     Example: {"algebra": {"linear_algebra": {"basics": {}, "advanced": {}}, "abstract_algebra": {}}}
+
+    A key starting with ``_`` is node metadata, not a child topic. ``_meta``
+    blocks declare per-node constraints folded along each root-to-leaf path
+    (see okgv.specs); a malformed validator or a contradictory fold fails here,
+    before any topic is written. Files without ``_meta`` parse exactly as before.
     """
+    from okgv.specs import build_specs, collect_warnings
     if file_path == "-":
         raw_str = sys.stdin.read()
     else:
@@ -266,6 +272,12 @@ def create_structure(session: Session, file_path: str):
             exit_code=EXIT_USAGE,
         )
 
+    # Parse and fold every `_meta` block before touching the DB: a malformed
+    # validator, a contradiction, or a function redeclaration must abort the
+    # whole ingest, not leave a half-built tree behind. Raises SpecError
+    # (converted to a structured CLI error by the top-level group).
+    specs = build_specs(structure)
+
     graph_db = session.graph_db
     created = []
     stack: list[tuple[dict, str | None]] = [(structure, None)]
@@ -273,6 +285,8 @@ def create_structure(session: Session, file_path: str):
     while stack:
         tree, parent = stack.pop()
         for name, children in tree.items():
+            if name.startswith("_"):
+                continue  # node metadata (e.g. _meta), not a child topic
             if parent is None:
                 graph_db.create_topic(name)
                 path = name
@@ -283,7 +297,17 @@ def create_structure(session: Session, file_path: str):
             if isinstance(children, dict) and children:
                 stack.append((children, path))
 
-    output({"created_topics": created, "count": len(created)})
+    warnings = collect_warnings(specs)
+    for w in warnings:
+        log(f"{w['level']}: {w['message']}")
+
+    output(
+        {
+            "created_topics": created,
+            "count": len(created),
+            "warnings": [w["message"] for w in warnings if w["level"] == "warning"],
+        }
+    )
 
 
 @click.command(name="least-topic")

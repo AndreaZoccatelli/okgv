@@ -24,6 +24,14 @@ class EntryError(OkgvError):
     exit_code = EXIT_USAGE
 
 
+class SpecError(OkgvError):
+    """Raised when a structure file's `_meta` block is malformed or its
+    folded effective spec is contradictory (an ingest-time error)."""
+
+    code = "invalid_meta"
+    exit_code = EXIT_USAGE
+
+
 class DuplicateEntryError(OkgvError, ValueError):
     """Raised when inserting an entry whose ID already exists.
 

@@ -63,6 +63,15 @@ def cli(ctx):
         ctx.obj = Session()
     ctx.call_on_close(ctx.obj.close)
 
+    # Session-start drift check: specs live in memory keyed by topic path, so a
+    # DB whose topics no longer match the structure file would validate against
+    # stale constraints. Advisory only (stderr), never fatal, and a no-op unless
+    # both the structure file and the DB already exist.
+    try:
+        ctx.obj.check_structure_consistency()
+    except Exception:
+        pass
+
 
 for _command in all_commands:
     cli.add_command(_command)

@@ -851,3 +851,46 @@ class TestBrowseLazyVectorDB:
         assert len(calls) == 1  # resolved on first access
         _ = app._vector_db
         assert len(calls) == 1  # cached, not re-resolved
+
+
+class TestCreateStructure:
+    def test_meta_block_is_not_a_topic(self, runner, mock_session):
+        structure = json.dumps(
+            {
+                "weather": {
+                    "current": {
+                        "_meta": {
+                            "function": "get_current_weather",
+                            "required": {"location": {"type": "not_empty", "field": "location"}},
+                        }
+                    }
+                }
+            }
+        )
+        result = runner.invoke(cli, ["create-structure", "--file", "-"], obj=mock_session, input=structure)
+        assert result.exit_code == 0
+        data = parse_json_output(result.stdout)
+        assert set(data["created_topics"]) == {"weather", "weather/current"}
+        assert "weather/_meta" not in mock_session.graph_db.topics
+
+    def test_metaless_file_warns_global_schema_only(self, runner, mock_session):
+        structure = json.dumps({"a": {"b": {}}})
+        result = runner.invoke(cli, ["create-structure", "--file", "-"], obj=mock_session, input=structure)
+        assert result.exit_code == 0
+        data = parse_json_output(result.stdout)
+        assert any("global schema only" in w for w in data["warnings"])
+
+    def test_contradiction_aborts_before_writing(self, runner, mock_session):
+        structure = json.dumps(
+            {
+                "p": {
+                    "_meta": {"optional": {"u": {"type": "one_of", "field": "u", "valid": ["x"]}}},
+                    "c": {"_meta": {"required": {"u": {"type": "one_of", "field": "u", "valid": ["y"]}}}},
+                }
+            }
+        )
+        result = runner.invoke(cli, ["create-structure", "--file", "-"], obj=mock_session, input=structure)
+        assert result.exit_code == 2
+        assert "invalid_meta" in result.stderr
+        # nothing written: the fold runs before any create_topic call
+        assert mock_session.graph_db.topics == {}
