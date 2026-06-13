@@ -7,7 +7,7 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 1. **Learn entry format**: `okgv entry-prompt` → field descriptions, constraints, and valid values
 2. **Explore structure**: `okgv get-structure` → understand topic layout
 3. **Plan targets**: `okgv report` → counts for every leaf topic and balance-field value; pick an empty or low-count cell. For a quick single answer at one tree level, `okgv least-topic --topic <parent>` returns the child with fewest entries (raw counts, ignores balance fields)
-4. **Generate** a candidate entry following the field constraints (your job)
+4. **Generate** a candidate entry following the field constraints (your job). Before generating for a specific topic, run `okgv entry-prompt --topic <topic>` — it narrows the fields to that topic's effective spec and lists its function name and argument signature
 5. **Check similarity**: `okgv similar --topic <topic> --entry '<json>'` → top-N similar entries with full content
 6. **Decide**: if too similar (evaluate similarity score and compare the contents) → regenerate or edit. If novel → submit
 7. **Submit**: `okgv submit --topic <topic> --entry '<json>'`
@@ -16,7 +16,7 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 ## Commands
 
 ### Entry Format
-- `okgv entry-prompt` — field descriptions, constraints, and valid values for entries. Run this first to understand what fields to include.
+- `okgv entry-prompt [--topic <path>]` — field descriptions, constraints, and valid values for entries. Run this first to understand what fields to include. With `--topic`, fields are narrowed to that topic's effective spec (narrowed fields show only their allowed values) and a "Topic constraints" section adds the function name, argument signature, and similarity scope.
 
 ### Discovery
 - `okgv get-structure [--root <path>] [--depth N]` — topic/subtopic tree as nested JSON. Use --root for subtree, --depth to limit levels.
