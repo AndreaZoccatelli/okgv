@@ -273,6 +273,8 @@ class MySchema:
 
 The validators above are global: every entry must satisfy them regardless of topic. okgv also supports **per-topic** constraints, so a rule like "an entry under a function topic must call that function" can be enforced relationally.
 
+For *when* to reach for `_meta` versus a global validator or the tree shape, and worked examples across several dataset types, see [Dataset Patterns](patterns.md). This section documents the mechanics.
+
 ### Default enforcement (no code needed)
 
 For the common case — a topic narrows a scalar entry field via the `entry` namespace — okgv enforces it for you. On every submission (and move, and `revalidate`), the library runs each `entry`-namespace validator from the topic's folded spec against the entry, raising `EntryError` on a violation. A schema that only narrows entry fields per topic needs **no** hook at all.

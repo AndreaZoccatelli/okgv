@@ -127,5 +127,7 @@ See [Architecture & Internals](docs/architecture.md) for the details: topic stru
 |-----|----------|
 | [Commands](docs/commands.md) | Full command reference, examples, agent workflow, error handling |
 | [Entry Schema & Configuration](docs/schema.md) | Install, env vars, embedding backends, defining a schema, validators, field descriptions, balance fields |
+| [Design Principles](docs/principles.md) | How to think about structural choices: how deep the tree, what makes a good partition, when a dimension is a branch vs a field, sizing leaves, the depth/balance/dedup trade-offs |
+| [Dataset Patterns](docs/patterns.md) | Worked dataset shapes (classification, Q&A, tool-use, RAG eval, paraphrase), where each rule belongs, when to use `_meta` and when not, choosing similarity scope |
 | [Review System](docs/review.md) | Review modes, CLI and TUI workflows, review states |
 | [Architecture & Internals](docs/architecture.md) | Storage, topic structure, similarity scoping, session logging, reliability |
