@@ -12,17 +12,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        python-version: ["3.11", "3.12", "3.13"]
         # "dev": minimal install — proves the no-extras path + graceful degradation.
         # "dev,tui": full install — actually runs textual-dependent tests.
         extras: ["dev", "dev,tui"]
-    name: test (${{ matrix.extras }})
+    name: test (py${{ matrix.python-version }}, ${{ matrix.extras }})
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: |
@@ -39,3 +40,36 @@ jobs:
 
       - name: Run integration tests
         run: pytest tests/integration -v
+
+  build:
+    runs-on: ubuntu-latest
+    name: build + install smoke
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build wheel and sdist
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+
+      - name: Validate distribution metadata
+        run: twine check dist/*
+
+      - name: Install the built wheel into a clean environment
+        run: |
+          python -m venv /tmp/fresh
+          /tmp/fresh/bin/pip install dist/*.whl
+
+      - name: Smoke test the installed CLI (no source tree, core deps only)
+        run: |
+          /tmp/fresh/bin/okgv --version
+          /tmp/fresh/bin/okgv --help > /dev/null
+          mkdir -p /tmp/proj && cd /tmp/proj
+          /tmp/fresh/bin/okgv init --template qa
+          test -f config/schema.py && test -f config/structure.json
+          /tmp/fresh/bin/okgv init --list > /dev/null

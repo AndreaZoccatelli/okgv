@@ -1,12 +1,14 @@
 <p align="center">
-  <img src="resources/okgv-logo-light.svg#gh-light-mode-only" alt="okgv logo" width="720">
-  <img src="resources/okgv-logo-dark.svg#gh-dark-mode-only" alt="okgv logo" width="720">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/AndreaZoccatelli/okgv/main/resources/okgv-logo-dark.svg">
+    <img alt="okgv logo" src="https://raw.githubusercontent.com/AndreaZoccatelli/okgv/main/resources/okgv-logo-light.svg" width="720">
+  </picture>
 </p>
 
 # okgv - organizing knowledge: graphs and vectors
 
 [![Tests](https://github.com/AndreaZoccatelli/okgv/actions/workflows/tests.yml/badge.svg)](https://github.com/AndreaZoccatelli/okgv/actions/workflows/tests.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/AndreaZoccatelli/okgv/blob/main/LICENSE)
 
 LLMs are often used to generate synthetic text datasets for training other ML models. Two requirements make this hard at scale: the dataset has to stay balanced, and it has to avoid near-duplicate instances. Both get harder as the instance count grows.
 
@@ -60,7 +62,7 @@ okgv init --template qa        # or start from a worked preset
 okgv init --list               # see all presets
 ```
 
-`okgv init` scaffolds a project you fill in (existing files are never overwritten). `--template` picks a starting point: `default` is the blank scaffold below; `classification`, `qa`, `function-calling`, `rag`, and `paraphrase` are worked, documented projects, one per shape in [Dataset Patterns](docs/patterns.md), so you can start from the one closest to your problem and edit. The files are the same in every preset, only their contents differ:
+`okgv init` scaffolds a project you fill in (existing files are never overwritten). `--template` picks a starting point: `default` is the blank scaffold below; `classification`, `qa`, `function-calling`, `rag`, and `paraphrase` are worked, documented projects, one per shape in [Dataset Patterns](https://github.com/AndreaZoccatelli/okgv/blob/main/docs/patterns.md), so you can start from the one closest to your problem and edit. The files are the same in every preset, only their contents differ:
 
 | File | What it is | You edit it… |
 |------|-----------|--------------|
@@ -113,7 +115,7 @@ okgv export --output dataset.jsonl --split "train=0.8,val=0.1,test=0.1"   # stra
 
 One JSONL file, or one per split. `--split` divides each topic × balance-field stratum by the given fractions, so train/val/test all keep the dataset's distribution. Preview with `--dry-run` to see per-split counts and balance before writing.
 
-See [`example/`](example/) for a complete worked project: a filled-in schema, topic structure, generation guide, and a populated database.
+See [`example/`](https://github.com/AndreaZoccatelli/okgv/tree/main/example) for a complete worked project: a filled-in schema, topic structure, generation guide, and a populated database.
 
 ## How it works
 
@@ -121,7 +123,7 @@ Everything lives in one portable SQLite file (`okgv.db`): the topic tree, entrie
 
 Topics form a path-identified tree (`algebra/linear_algebra/basics`). The tree is both the **balance stratum** and the **dedup scope**: counts and stats are recursive across descendants, but similarity search is scoped to the exact target topic, so its cost tracks the per-topic count, not the dataset total. An agent works one topic at a time, runs `report` (or `least-topic` for a quick single-level answer) to find gaps, and checks `similar` (full-content, not a score) before submitting.
 
-See [Architecture & Internals](docs/architecture.md) for the details: topic structure, similarity scoping, session logging, and reliability.
+See [Architecture & Internals](https://github.com/AndreaZoccatelli/okgv/blob/main/docs/architecture.md) for the details: topic structure, similarity scoping, session logging, and reliability.
 
 ## Documentation
 
@@ -131,14 +133,14 @@ If you are designing a dataset, read **Principles** then **Patterns** first, the
 
 | Doc | Contents |
 |-----|----------|
-| [Design Principles](docs/principles.md) | How to think about structural choices: how deep the tree, what makes a good partition, when a dimension is a branch vs a field, sizing leaves, the depth/balance/dedup trade-offs |
-| [Dataset Patterns](docs/patterns.md) | Worked dataset shapes (classification, Q&A, tool-use, RAG eval, paraphrase), where each rule belongs, when to use `_meta` and when not, choosing similarity scope |
+| [Design Principles](https://github.com/AndreaZoccatelli/okgv/blob/main/docs/principles.md) | How to think about structural choices: how deep the tree, what makes a good partition, when a dimension is a branch vs a field, sizing leaves, the depth/balance/dedup trade-offs |
+| [Dataset Patterns](https://github.com/AndreaZoccatelli/okgv/blob/main/docs/patterns.md) | Worked dataset shapes (classification, Q&A, tool-use, RAG eval, paraphrase), where each rule belongs, when to use `_meta` and when not, choosing similarity scope |
 
 **Reference, how to drive it:**
 
 | Doc | Contents |
 |-----|----------|
-| [Entry Schema & Configuration](docs/schema.md) | Install, env vars, embedding backends, defining a schema, validators, field descriptions, balance fields |
-| [Commands](docs/commands.md) | Full command reference, examples, agent workflow, error handling |
-| [Review System](docs/review.md) | Review modes, CLI and TUI workflows, review states |
-| [Architecture & Internals](docs/architecture.md) | Storage, topic structure, similarity scoping, session logging, reliability |
+| [Entry Schema & Configuration](https://github.com/AndreaZoccatelli/okgv/blob/main/docs/schema.md) | Install, env vars, embedding backends, defining a schema, validators, field descriptions, balance fields |
+| [Commands](https://github.com/AndreaZoccatelli/okgv/blob/main/docs/commands.md) | Full command reference, examples, agent workflow, error handling |
+| [Review System](https://github.com/AndreaZoccatelli/okgv/blob/main/docs/review.md) | Review modes, CLI and TUI workflows, review states |
+| [Architecture & Internals](https://github.com/AndreaZoccatelli/okgv/blob/main/docs/architecture.md) | Storage, topic structure, similarity scoping, session logging, reliability |

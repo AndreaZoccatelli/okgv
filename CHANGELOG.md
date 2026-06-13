@@ -12,5 +12,7 @@ Initial release.
 - Batch submit and similarity operations
 - Review system with TUI, export/import, purge/recover
 - Configurable entry schema via user-defined Python classes
+- Per-topic constraints via structure-file `_meta`, folded root-to-leaf
+- `init --template` scaffold presets, one per dataset shape (classification, qa, function-calling, rag, paraphrase) plus a generic default
 - Session logging with undo support
 - Reconcile command for cross-table consistency checks
