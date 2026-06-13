@@ -29,6 +29,31 @@ The structure is a nested JSON object. Keys are topic names (snake_case), values
 }
 ```
 
+## Optional: node constraints (`_meta`)
+
+A topic node may carry a reserved `_meta` key describing constraints on the entries placed under it (any other key is a child topic). This is optional — a structure with no `_meta` behaves exactly as before.
+
+```json
+{
+  "weather": {
+    "current_conditions": {
+      "_meta": {
+        "function": "get_current_weather",
+        "required": {"location": {"type": "not_empty", "field": "location"}},
+        "optional": {"units": {"type": "one_of", "field": "units", "valid": ["celsius", "fahrenheit"]}},
+        "similarity_scope": "leaf"
+      }
+    }
+  }
+}
+```
+
+- `_meta` blocks **compose along a path**: a child's effective spec is the fold of every ancestor's `_meta` plus its own. A child may narrow an existing constraint, add a new one, or `forbid` a key — never relax one. A contradiction or a malformed validator fails at `create-structure`, before anything is written.
+- `entry` narrows global entry-schema fields (e.g. `difficulty`); `required`/`optional`/`forbidden` constrain a function's arguments; `function` sets the function identity (once per path).
+- `similarity_scope` is `"leaf"` (default) or `"subtree"`: under `subtree`, `similar` also searches sibling topics and reports cross-topic matches as variants.
+- Splitting a constrained topic into children that narrow it (a "refinement split") gives each child its own quota and its own `entry-prompt --topic` rendering. Use it when you want targeted generation, not for every metadata dimension.
+- `create-structure` warns about topics with no `_meta` on their path and about overlapping siblings with no explicit `similarity_scope`; run `entry-prompt --topic <path>` to see a topic's folded effective spec. Entries can only be submitted to leaf topics.
+
 ## How to Build It
 
 ### Option A: User gives a broad topic

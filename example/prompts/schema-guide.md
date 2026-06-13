@@ -47,13 +47,17 @@ After gathering answers, create a `candidate_schema.py` with:
    - `embedding_text()` returning the text to embed for similarity
    - `vector_property_definitions()` listing all vector DB fields with types
 
+Optionally, also define:
+   - `validate_for_topic(entry, topic)` — a static method called on submission with the built entry and its destination topic. Raise `ValueError` to reject relational constraints the raw dict alone cannot express (e.g. "an entry under a function topic must call that function"). It typically reads the topic's folded effective spec from `structure.json` `_meta` blocks (see the Structure Design Guide). Schemas without this hook are unaffected.
+
 Refer to `config/schema.py` for the template structure.
 
 ## Validation
 
 After creating the schema, verify it works:
 ```bash
-okgv entry-prompt        # check field descriptions render correctly
+okgv entry-prompt              # check field descriptions render correctly
+okgv entry-prompt --topic <p>  # if using _meta: see fields narrowed to a topic
 ```
 
 ## Interact with user

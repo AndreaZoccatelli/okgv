@@ -22,7 +22,7 @@ You are reviewing entries in a synthetic knowledge base managed by the `okgv` CL
 - `okgv reject --id <uuid>` — reject a single entry.
 - `okgv review --purge-rejected [--dry-run]` — delete rejected entries from all DBs.
 - `okgv review --recover-rejected [--dry-run]` — set rejected entries back to pending.
-- `okgv similar --topic <path> --entry '<json>'` — check if entry is too similar to existing ones. Pass the complete entry JSON (all fields), not a text snippet.
+- `okgv similar --topic <path> --entry '<json>'` — check if entry is too similar to existing ones. Pass the complete entry JSON (all fields), not a text snippet. For topics with `similarity_scope: subtree`, results also include sibling topics, each match tagged with its `topic` and `sibling: true`. Treat a `sibling` match as a variant to weigh, not an automatic duplicate — the same stem can be an intentional refinement in a sibling.
 - `okgv get-by-topic --topic <path> [--limit N]` — sample approved entries for comparison.
 
 ## Quality Criteria
@@ -31,7 +31,7 @@ Evaluate each entry on:
 
 1. **Schema compliance** — all required fields present, values within declared constraints (run `okgv entry-prompt` to see them)
 2. **Correctness** — factual accuracy, logical consistency, no contradictions
-3. **Novelty** — not a near-duplicate of existing entries. Use `okgv similar` to check against the topic
+3. **Novelty** — not a near-duplicate of existing entries. Use `okgv similar` to check against the topic. Under subtree scope, a near-match in a sibling topic is a variant signal, not necessarily a rejection: reject only if it is a true duplicate rather than an intentional cross-sibling variant
 4. **Topic fit** — entry belongs in its assigned topic, not a better-fitting sibling
 5. **Completeness** — no placeholder text, empty fields, or truncated content
 6. **Language quality** — clear, well-formed, appropriate register for the dataset's purpose
