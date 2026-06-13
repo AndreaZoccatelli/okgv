@@ -1,5 +1,6 @@
 """Core logic: upsert, logging, schema validation, review."""
 
+import inspect
 import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -83,17 +84,62 @@ def build_entry(schema: EntrySchema, raw: dict):
         raise EntryError(f"Entry JSON missing required key: {e}") from e
 
 
-def validate_entry_topic(schema: EntrySchema, entry, topic: str) -> None:
-    """Run the schema's optional validate_for_topic hook.
+def enforce_entry_spec(spec, entry) -> None:
+    """Run a topic's folded `entry`-namespace validators against the entry.
 
-    Schemas without the hook are unaffected. A ValueError from the hook is
-    wrapped as EntryError (catchable in batch operations).
+    This is the generic half of per-topic validation: each `entry` constraint
+    narrows a global entry-schema field, so the library can enforce it for any
+    schema without bespoke code.
+    Raises ValueError on the first violation.
     """
+    for field_name, validators in spec.entry.items():
+        if not hasattr(entry, field_name):
+            raise ValueError(f"entry field '{field_name}' constrained by the topic spec is not present on the entry")
+        value = getattr(entry, field_name)
+        for validator in validators:
+            validator.validate(value)
+
+
+def _hook_accepts_spec(hook) -> bool:
+    """True when validate_for_topic can take the folded spec as a 3rd argument."""
+    try:
+        params = list(inspect.signature(hook).parameters.values())
+    except (TypeError, ValueError):
+        return False
+    positional = 0
+    for p in params:
+        if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD):
+            positional += 1
+        elif p.kind == p.VAR_POSITIONAL:
+            return True
+    return positional >= 3
+
+
+def validate_entry_topic(schema: EntrySchema, entry, topic: str, spec=None) -> None:
+    """Validate an entry against its topic's effective spec, then the schema hook.
+
+    When ``spec`` (the folded effective spec for ``topic``) is provided, the
+    library first enforces its `entry`-namespace constraints generically
+    (`enforce_entry_spec`). The schema's optional ``validate_for_topic`` hook
+    then runs for anything bespoke; it receives ``spec`` as a third argument if
+    its signature accepts one (older `(entry, topic)` hooks still work).
+    Schemas with neither a spec nor a hook are unaffected. A ValueError from
+    either step is wrapped as EntryError (catchable in batch operations).
+    """
+    try:
+        if spec is not None:
+            enforce_entry_spec(spec, entry)
+    except ValueError as e:
+        raise EntryError(f"Entry rejected for topic '{topic}': {e}") from e
+
     hook = getattr(schema, "validate_for_topic", None)
     if hook is None:
         return
     try:
-        hook(entry, topic)
+        if _hook_accepts_spec(hook):
+            hook(entry, topic, spec)
+        else:
+            hook(entry, topic)
     except ValueError as e:
         raise EntryError(f"Entry rejected for topic '{topic}': {e}") from e
 
@@ -107,11 +153,13 @@ def upsert_entry(
     embedder: Callable[[list[str]], list[list[float]]],
     overwrite: bool = False,
     vector: list[float] | None = None,
+    spec=None,
 ) -> str:
     """Upsert entry into both DBs.
 
     If vector is provided, uses it directly instead of calling embedder.
     This allows batch callers to pre-compute all embeddings in one call.
+    `spec` is the topic's folded effective spec, passed to validate_entry_topic.
     """
     eid = entry_id(raw)
     entry = build_entry(schema, raw)
@@ -119,7 +167,7 @@ def upsert_entry(
         existing = graph_db.get_by_id(eid)
         if existing is not None and existing.topic != topic:
             raise RelocationError(f"Entry '{eid}' exists in topic '{existing.topic}', cannot overwrite into '{topic}'")
-    validate_entry_topic(schema, entry, topic)
+    validate_entry_topic(schema, entry, topic, spec)
     meta = schema.metadata(entry)
     graph_props = schema.graph_properties(entry)
     vector_props = schema.vector_properties(entry)
@@ -158,6 +206,7 @@ def upsert_entries_batch(
     entries: list | None = None,
     vectors: list[list[float]] = None,
     overwrite: bool = False,
+    spec=None,
 ) -> tuple[list[str], list[dict]]:
     """Batch upsert entries into both DBs.
 
@@ -165,7 +214,8 @@ def upsert_entries_batch(
     Graph uploads are individual (transactional). Vector upload is batched.
 
     If entries (pre-built entry objects) are provided, skips build_entry.
-    Schema is validated once using the first entry.
+    Schema is validated once using the first entry. `spec` is the topic's folded
+    effective spec, passed to validate_entry_topic per entry.
     """
     if entries is None:
         entries = [build_entry(schema, raw) for raw in raws]
@@ -195,7 +245,7 @@ def upsert_entries_batch(
                     raise RelocationError(
                         f"Entry '{eid}' exists in topic '{existing.topic}', cannot overwrite into '{topic}'"
                     )
-            validate_entry_topic(schema, entry, topic)
+            validate_entry_topic(schema, entry, topic, spec)
             graph_db.upload_entry(
                 topic=topic,
                 entry_id=eid,

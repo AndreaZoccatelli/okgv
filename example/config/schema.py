@@ -95,13 +95,18 @@ class ToolCallSchema:
     }
 
     @staticmethod
-    def validate_for_topic(entry: ToolCallEntry, topic: str) -> None:
+    def validate_for_topic(entry: ToolCallEntry, topic: str, spec=None) -> None:
+        # okgv passes the topic's folded effective spec (one source of truth,
+        # no second fold here). When called without it — e.g. directly in a
+        # test — fall back to the module-level SPECS.
+        #
         # The dataset's whole purpose is verified query-to-function pairs, so a
         # topic with no `function` anywhere on its path (problem 1 alive again)
         # is refused at the last cheap gate rather than accepted as unverifiable
         # training data. Inheritance is automatic: a specless child of a spec'd
         # parent still demands the parent's folded function and arguments.
-        spec = SPECS.get(topic)
+        if spec is None:
+            spec = SPECS.get(topic)
         if spec is None or spec.function is None:
             raise ValueError(
                 f"topic '{topic}' has no function spec on its path; "

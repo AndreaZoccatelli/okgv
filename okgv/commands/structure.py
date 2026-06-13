@@ -11,29 +11,30 @@ from okgv.session import Session
 
 
 def _revalidate_entry(session: Session, record: GraphRecord, topic: str) -> str | None:
-    """Rebuild a stored entry and run the schema's `validate_for_topic` hook
-    against `topic` (the destination).
+    """Rebuild a stored entry and validate it against `topic`'s effective spec
+    (the move destination, or its current topic for `revalidate`).
 
-    Returns an error message when the entry violates the destination spec, or
-    None when it is valid, the schema has no hook, or the entry cannot be
+    Routes through `validate_entry_topic`, so it applies both the library's
+    default `entry`-namespace enforcement and the schema's `validate_for_topic`
+    hook. Returns an error message when the entry violates the spec, or None
+    when it is valid, there is nothing to check, or the entry cannot be
     reconstructed from its stored properties (unverifiable, so the move is
     allowed; monotone narrowing already keeps upward refiling safe).
     """
-    schema = session.schema
-    hook = getattr(schema, "validate_for_topic", None)
-    if hook is None:
-        return None
+    from okgv.core import validate_entry_topic
+    from okgv.errors import EntryError
+
     props = dict(record.properties)
     vrec = session.vector_db.get_by_id(record.id)
     if vrec is not None:
         props.update(vrec.properties)
     try:
-        entry = schema.entry_class(props)
+        entry = session.schema.entry_class(props)
     except Exception:
         return None
     try:
-        hook(entry, topic)
-    except ValueError as e:
+        validate_entry_topic(session.schema, entry, topic, session.effective_spec(topic))
+    except EntryError as e:
         return str(e)
     return None
 

@@ -70,11 +70,16 @@ class EntrySchema(Protocol):
 
     Optional hook (not part of the protocol, detected at runtime):
 
-    validate_for_topic(entry, topic) — called on upsert with the built entry
-        and the destination topic path, before any DB write. Raise ValueError
-        to reject the entry for that topic (relational constraints the raw
-        dict alone cannot express, e.g. "entries under a function topic must
-        call that function"). Schemas without the hook are unaffected.
+    validate_for_topic(entry, topic[, spec]) — called on upsert (and on the
+        destination of a move, and by `revalidate`) with the built entry and the
+        topic path, before any DB write. Raise ValueError to reject the entry
+        (relational constraints the raw dict alone cannot express, e.g. "entries
+        under a function topic must call that function"). An optional third
+        parameter receives the topic's folded effective spec (okgv.specs.Spec)
+        so the hook need not re-read the structure file; `(entry, topic)` hooks
+        still work. The library already enforces the spec's `entry`-namespace
+        constraints generically before this hook runs, so the hook only handles
+        what is dataset-specific. Schemas without the hook are unaffected.
     """
 
     entry_class: type

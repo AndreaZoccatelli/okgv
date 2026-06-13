@@ -186,6 +186,7 @@ def submit(session: Session, topic: str, entry: str, overwrite: bool, review: bo
             raw,
             session.embedder,
             overwrite=overwrite,
+            spec=session.effective_spec(topic),
         )
     log_session(session.db_path, topic, [eid])
     needs_review = review if review is not None else session.review_enabled
@@ -262,6 +263,7 @@ def submit_batch(session: Session, topic: str, entries: str, overwrite: bool, re
                 valid_entries,
                 vectors,
                 overwrite=overwrite,
+                spec=session.effective_spec(topic),
             )
         for eid in inserted_ids:
             results.append({"id": eid, "submitted": True})

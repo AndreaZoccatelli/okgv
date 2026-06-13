@@ -211,18 +211,23 @@ class MySchema:
 
 The validators above are global: every entry must satisfy them regardless of topic. okgv also supports **per-topic** constraints, so a rule like "an entry under a function topic must call that function" can be enforced relationally.
 
-### The `validate_for_topic` hook
+### Default enforcement (no code needed)
 
-Add an optional static method to your schema. It is called on submission with the built entry and its destination topic, before any DB write; raise `ValueError` to reject. Schemas without the hook are unaffected.
+For the common case — a topic narrows a scalar entry field via the `entry` namespace — okgv enforces it for you. On every submission (and move, and `revalidate`), the library runs each `entry`-namespace validator from the topic's folded spec against the entry, raising `EntryError` on a violation. A schema that only narrows entry fields per topic needs **no** hook at all.
+
+The argument-object namespaces (`required`/`optional`/`forbidden`) are *not* auto-enforced — binding them to a compound entry field is dataset-specific.
+
+### The `validate_for_topic` hook (for the bespoke part)
+
+Add an optional static method for anything the default cannot express (e.g. matching a function name and its argument signature). It is called after the default enforcement, with the built entry and its topic, before any DB write; raise `ValueError` to reject. It may take an optional third parameter to receive the topic's folded effective spec, so it need not re-read the structure file (`(entry, topic)` hooks still work).
 
 ```python
 class MySchema:
     @staticmethod
-    def validate_for_topic(entry, topic: str) -> None:
-        spec = SPECS.get(topic)            # folded from structure.json _meta
-        if spec is None or spec.function is None:
+    def validate_for_topic(entry, topic: str, spec=None) -> None:
+        if spec is None or spec.function is None:   # spec passed in by okgv
             raise ValueError(f"topic '{topic}' has no function spec on its path")
-        ...                               # check entry against spec
+        ...                                         # check entry against spec
 ```
 
 The hook also runs for every moved entry (against the destination) and is what the `revalidate` command uses to find entries left invalid by a tightened spec.
