@@ -247,6 +247,7 @@ def create_structure(session: Session, file_path: str):
     before any topic is written. Files without ``_meta`` parse exactly as before.
     """
     from okgv.specs import build_specs, collect_warnings
+
     if file_path == "-":
         raw_str = sys.stdin.read()
     else:

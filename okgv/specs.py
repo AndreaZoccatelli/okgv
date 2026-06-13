@@ -222,9 +222,7 @@ def fold(node_specs: list[Spec], topic: str) -> Spec:
 
         for key in spec.forbidden:
             if key in eff.required:
-                raise SpecError(
-                    f"topic '{topic}': key '{key}' is forbidden but required by an ancestor (or this node)"
-                )
+                raise SpecError(f"topic '{topic}': key '{key}' is forbidden but required by an ancestor (or this node)")
             eff.optional.pop(key, None)  # forbidding narrows away an inherited optional key
             eff.forbidden.add(key)
 

@@ -918,9 +918,7 @@ class TestSimilarScope:
         structure = {"p": {"_meta": {"similarity_scope": "subtree"}, "a": {}, "b": {}}}
         session = self._session_with_structure(tmp_path, monkeypatch, structure)
         self._seed(session, "sibling-id", "p/b")
-        result = runner.invoke(
-            cli, ["similar", "--topic", "p/a", "--entry", json.dumps({"text": "hi"})], obj=session
-        )
+        result = runner.invoke(cli, ["similar", "--topic", "p/a", "--entry", json.dumps({"text": "hi"})], obj=session)
         assert result.exit_code == 0
         data = parse_json_output(result.stdout)
         assert data["scope"] == "subtree"
@@ -932,9 +930,7 @@ class TestSimilarScope:
         structure = {"p": {"a": {}, "b": {}}}  # no similarity_scope: default leaf
         session = self._session_with_structure(tmp_path, monkeypatch, structure)
         self._seed(session, "sibling-id", "p/b")
-        result = runner.invoke(
-            cli, ["similar", "--topic", "p/a", "--entry", json.dumps({"text": "hi"})], obj=session
-        )
+        result = runner.invoke(cli, ["similar", "--topic", "p/a", "--entry", json.dumps({"text": "hi"})], obj=session)
         assert result.exit_code == 0
         data = parse_json_output(result.stdout)
         assert data["scope"] == "leaf"
