@@ -80,6 +80,38 @@ class TestLoadValidators:
             load_validators()
 
 
+class TestValidatorsCommand:
+    def _session(self, tmp_path):
+        return Session(
+            graph_db=MockGraphDB(),
+            vector_db=MockVectorDB(),
+            embedder=fake_embedder,
+            db_path=tmp_path / "okgv.db",
+        )
+
+    def test_lists_builtins_with_shorthands(self, runner, tmp_path, monkeypatch):
+        monkeypatch.delenv("OKGV_VALIDATORS", raising=False)
+        result = runner.invoke(cli, ["validators"], obj=self._session(tmp_path))
+        assert result.exit_code == 0
+        tags = {v["tag"]: v for v in json.loads(result.stdout)["validators"]}
+        assert {"one_of", "in_range", "not_empty", "matches", "is_type", "items"} <= set(tags)
+        assert tags["not_empty"]["form"] == '"not_empty"'
+        assert tags["in_range"]["form"] == '{"in_range": [<lo>, <hi>]}'
+        assert tags["one_of"]["form"] == '{"one_of": <valid>}'
+        assert tags["one_of"]["analyzable"] is True
+        # items has no shorthand: explicit form with its real fields, not "..."
+        assert "inner" in tags["items"]["form"] and "min_len" in tags["items"]["form"]
+        assert tags["items"]["analyzable"] is False  # Items has no narrow()
+
+    def test_includes_custom_tags(self, runner, tmp_path, monkeypatch, custom_validator_module):
+        monkeypatch.setenv("OKGV_VALIDATORS", custom_validator_module)
+        result = runner.invoke(cli, ["validators"], obj=self._session(tmp_path))
+        assert result.exit_code == 0
+        tags = {v["tag"]: v for v in json.loads(result.stdout)["validators"]}
+        assert "even_test" in tags
+        assert tags["even_test"]["form"] == '"even_test"'  # args=()
+
+
 class TestSchemaConfigError:
     def test_bad_specifier(self):
         from okgv.config import _import_schema

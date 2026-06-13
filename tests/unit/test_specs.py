@@ -137,6 +137,21 @@ class TestAuthoringShorthands:
         with pytest.raises(SpecError, match="has no shorthand"):
             parse_meta({"required": {"x": {"items": []}}}, "t")
 
+    def test_items_inner_accepts_shorthand(self):
+        # inner written as a bare tag, a tagged form, and explicit — all work,
+        # and inner's field defaults to the key
+        spec = parse_meta({"required": {"xs": {"type": "items", "inner": "not_empty", "min_len": 1}}}, "t")
+        items = spec.required["xs"][0]
+        assert items.__class__.__name__ == "Items"
+        assert items.inner.__class__.__name__ == "NotEmpty" and items.inner.field == "xs"
+
+        tagged = parse_meta({"required": {"xs": {"type": "items", "inner": {"one_of": ["a", "b"]}}}}, "t")
+        assert tagged.required["xs"][0].inner.valid == {"a", "b"}
+
+    def test_nested_items_inner_recurses(self):
+        spec = parse_meta({"required": {"m": {"type": "items", "inner": {"type": "items", "inner": "not_empty"}}}}, "t")
+        assert spec.required["m"][0].inner.inner.__class__.__name__ == "NotEmpty"
+
     def test_bad_shorthand_item_errors(self):
         with pytest.raises(SpecError, match="must be a tag string"):
             parse_meta({"required": {"x": 5}}, "t")

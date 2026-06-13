@@ -159,14 +159,16 @@ def _expand_tagged(item: dict, topic: str, target: str, name: str) -> dict:
     return {"type": tag, **named}
 
 
-def _parse_one(item, topic: str, target: str, name: str):
-    """Parse one validator from any of its accepted forms.
+def _to_payload(item, topic: str, target: str, name: str) -> dict:
+    """Normalize one validator (bare tag string, tagged ``{tag: args}``, or
+    explicit ``{"type": tag, ...}``) into an explicit payload dict.
 
-    Forms: a bare tag string (``"not_empty"``), the tagged ``{tag: args}``
-    shorthand (``{"one_of": [...]}`)`, or the explicit ``{"type": tag, ...}``
-    dict. In every form ``field`` defaults to the enclosing key ``name``; an
-    explicit ``field`` that disagrees with the key is a bug and raises.
+    ``field`` defaults to the enclosing key ``name``; an explicit ``field`` that
+    disagrees is a bug and raises. An ``items`` validator's ``inner`` is
+    normalized recursively, so it accepts the same shorthands as any other
+    validator instead of requiring the explicit form.
     """
+    payload: dict
     if isinstance(item, str):
         payload = {"type": item}  # bare-tag shorthand for a zero-arg validator
     elif isinstance(item, dict):
@@ -182,6 +184,14 @@ def _parse_one(item, topic: str, target: str, name: str):
             f"the key '{name}' (omit 'field' to default it)"
         )
     payload["field"] = name
+    if payload.get("type") == "items" and "inner" in payload:
+        payload["inner"] = _to_payload(payload["inner"], topic, target, name)
+    return payload
+
+
+def _parse_one(item, topic: str, target: str, name: str):
+    """Parse one validator (any accepted form) into a validator object."""
+    payload = _to_payload(item, topic, target, name)
     try:
         return validator_from_json(payload)
     except ValueError as e:

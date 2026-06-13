@@ -52,6 +52,8 @@ Optionally, also define:
 
 Per-topic `entry` constraints in `_meta` are resolved as **attributes** on the entry, so a field you want to narrow per topic must be a stored attribute or a `@property` — a value computed only inside `metadata()`/`graph_properties()`, or defined as a plain method, can't be used as a per-topic filter (expose it as a `@property` if you need to).
 
+**Custom validators.** If a field needs a constraint the built-ins (`OneOf`, `InRange`, `NotEmpty`, `Matches`, `IsType`, `Items`) don't cover, define a custom validator in `config/validators.py` (scaffolded by `okgv init`, with a worked example) and add its module to `OKGV_VALIDATORS` in `.env`. A custom validator is a `@register`'d class with a unique `tag`, `validate()`, `prompt()`, `to_json()`/`from_json()` (and optional `args` for the `{tag: args}` shorthand and `narrow()` for analysis). Once registered it is usable both in Python and as a tag in `structure.json` `_meta`; run `okgv validators` to confirm it loaded. This is the home for any new validator — `_meta` only *references* tags, it never defines them.
+
 Refer to `config/schema.py` for the template structure.
 
 ## Validation

@@ -56,6 +56,39 @@ A validator is written in one of three forms (`field` always defaults to the key
 
 A **list is always a conjunction** — every validator in it runs: `"x": ["not_empty", {"matches": "^[A-Z]"}]`.
 
+Built-in tags:
+
+- `"not_empty"` — non-empty string
+- `{"one_of": [<values>]}` — value in the allowed set
+- `{"in_range": [<lo>, <hi>]}` — number within `[lo, hi]`
+- `{"is_type": [<types>]}` — instance of a type; names: `dict`, `list`, `str`, `int`, `float`, `bool`
+- `{"matches": "<regex>"}` — full-match a regex
+- `{"type": "items", "inner": {...}, "min_len": N}` — list with a per-element validator (no shorthand)
+
+Your project may register more. **Run `okgv validators` to list every tag available here (built-in + custom)** before authoring `_meta`. If you need a constraint that no available tag covers, that is a **schema change, not a structure change**: define a custom validator in `config/validators.py` (see the Schema Design Guide), add its module to `OKGV_VALIDATORS`, then re-run. Authoring an unregistered tag fails at `create-structure` with `unknown validator tag`.
+
+### Populating a constraint
+
+You can't infer constraints from topic names — the entries don't exist yet. The constraint *values* come from what you were given: the **entry schema** (`okgv entry-prompt`) and, for tool-use datasets, the **function signatures** (e.g. in `generation-guide.md`). Your job is to **transcribe a known field shape into a validator**, using this mapping:
+
+| The field/parameter is… | Write |
+|---|---|
+| one of a fixed set of values | `{"one_of": [<values>]}` |
+| a number within a range | `{"in_range": [<lo>, <hi>]}` |
+| a specific type | `{"is_type": ["int"]}` (`str`, `int`, `float`, `bool`, `list`, `dict`) |
+| a non-empty string | `"not_empty"` |
+| a string matching a pattern | `{"matches": "<regex>"}` |
+| a **flat list** of one of the above | `{"type": "items", "inner": <validator for each element>}` |
+| an **object with named keys** (a function's arguments) | the `required`/`optional`/`forbidden` keys, one validator per key |
+
+`items` is for a list whose elements all share one rule; its `inner` is written like any other validator (a tag string, a `{tag: args}`, or explicit). For example, `attendees: list of non-empty strings` from a signature becomes:
+
+```json
+"attendees": {"type": "items", "inner": "not_empty", "min_len": 1}
+```
+
+If a field's shape isn't in this table (a nested object, a bespoke format), don't approximate it — that's a custom validator in `config/validators.py`.
+
 - `_meta` blocks **compose along a path**: a child's effective spec is the fold of every ancestor's `_meta` plus its own. A child may narrow an existing constraint, add a new one, or `forbid` a key — never relax one. A contradiction or a malformed validator fails at `create-structure`, before anything is written.
 - `entry` narrows global entry-schema fields (e.g. `difficulty`); `required`/`optional`/`forbidden` constrain a function's arguments; `function` sets the function identity (once per path).
 - `similarity_scope` is `"leaf"` (default) or `"subtree"`: under `subtree`, `similar` also searches sibling topics and reports cross-topic matches as variants.

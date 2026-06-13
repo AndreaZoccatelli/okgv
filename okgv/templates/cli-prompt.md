@@ -17,6 +17,7 @@ You are interacting with a self-organized knowledge base via the `okgv` CLI. All
 
 ### Entry Format
 - `okgv entry-prompt [--topic <path>]` — field descriptions, constraints, and valid values for entries. Run this first to understand what fields to include. With `--topic`, fields are narrowed to that topic's effective spec (narrowed fields show only their allowed values) and a "Topic constraints" section adds the function name, argument signature, and similarity scope.
+- `okgv validators` — list validator tags usable in structure `_meta` (built-in + your project's custom ones), each with its shorthand form.
 
 ### Discovery
 - `okgv get-structure [--root <path>] [--depth N]` — topic/subtopic tree as nested JSON. Use --root for subtree, --depth to limit levels.

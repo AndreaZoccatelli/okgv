@@ -182,7 +182,7 @@ Built-in validators:
 | `IsType` | `is_type` | `{"is_type": ["int", "float"]}` | `{"type": "is_type", "expected": ["int", "float"]}` |
 | `Items` | `items` | *(no shorthand)* | `{"type": "items", "inner": {...}, "min_len": 1}` |
 
-`is_type` type names are `dict`, `list`, `str`, `int`, `float`, `bool` (a `bool` is not accepted as `int` unless `bool` is listed).
+`is_type` type names are `dict`, `list`, `str`, `int`, `float`, `bool` (a `bool` is not accepted as `int` unless `bool` is listed). `items` has no tagged shorthand, but its `inner` is written like any other validator (a bare tag, a `{tag: args}`, or explicit) — e.g. `{"type": "items", "inner": "not_empty", "min_len": 1}` is a non-empty list of non-empty strings. Run `okgv validators` to see every available tag (built-in + custom) and the exact form to write for each.
 
 Custom validators implement `validate(value)` and `prompt() -> str` with a `field` attribute. To participate in serialization (needed for use inside structure-file `_meta` blocks), add a unique `tag` class attribute plus `to_json()`/`from_json()` and apply the `@register` decorator from `okgv.validators`; `validator_from_json()` then rebuilds them and fails loudly on an unknown tag. Add an `args` tuple (the positional argument order) to opt into the tagged `{tag: args}` shorthand. A validator may also implement an optional `narrow(other)` returning the simplified conjunction of two validators on the same field — this powers contradiction detection, sibling-disjointness checks, and narrowed prompt rendering; validators without it are treated as opaque (enforcement is unaffected, only analysis degrades).
 

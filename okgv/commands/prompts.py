@@ -196,6 +196,61 @@ def entry_prompt(ctx, topic):
     click.echo(text)
 
 
+def _meta_form(tag: str, cls) -> str:
+    """The `_meta` form to write for a validator.
+
+    Validators with an `args` tuple get the tagged shorthand; the rest show the
+    explicit `{"type": ...}` form with their constructor fields spelled out
+    (introspected, so e.g. `items` lists `inner`/`min_len`/`max_len` rather than
+    a vague `...`).
+    """
+    args = getattr(cls, "args", None)
+    if args is None:
+        import inspect
+
+        fields = [p for p in inspect.signature(cls.__init__).parameters if p not in ("self", "field")]
+        parts = [f'"type": "{tag}"'] + [f'"{f}": <{f}>' for f in fields]
+        return "{" + ", ".join(parts) + "}"
+    if len(args) == 0:
+        return f'"{tag}"'  # bare tag string
+    if len(args) == 1:
+        return f'{{"{tag}": <{args[0]}>}}'
+    return f'{{"{tag}": [{", ".join(f"<{a}>" for a in args)}]}}'
+
+
+@click.command()
+@click.pass_obj
+def validators(session):
+    """List validator tags available in `_meta` (built-in + custom).
+
+    Loads OKGV_VALIDATORS first, so custom tags appear alongside the built-ins.
+    For each tag: the exact `_meta` form to write, and whether it is analyzable
+    (implements `narrow()` — opaque validators still enforce, but disable
+    contradiction/disjointness/narrowed-prompt analysis on their field).
+    """
+    session.ensure_validators()
+    from okgv.validators import VALIDATOR_REGISTRY
+
+    listed = []
+    for tag in sorted(VALIDATOR_REGISTRY):
+        cls = VALIDATOR_REGISTRY[tag]
+        listed.append(
+            {
+                "tag": tag,
+                "name": cls.__name__,
+                "form": _meta_form(tag, cls),
+                "analyzable": hasattr(cls, "narrow"),
+            }
+        )
+    output(
+        {
+            "validators": listed,
+            "note": "To add a tag, define a custom validator in an OKGV_VALIDATORS module "
+            "(see config/validators.py), then re-run.",
+        }
+    )
+
+
 @click.command()
 def init():
     """Initialize current directory with okgv scaffold files."""
@@ -237,4 +292,4 @@ def init():
         output({"initialized": False, "message": "All files already exist", "created": []})
 
 
-commands = (cli_prompt, entry_prompt, init)
+commands = (cli_prompt, entry_prompt, validators, init)

@@ -12,6 +12,7 @@ All output is JSON to stdout. Logs go to stderr.
 | `init` | Scaffold project: `.env`, `generation-guide.md`, `config/` (schema.py, validators.py, structure.json), `prompts/` (schema-guide, reviewer-prompt, structure-prompt) |
 | `cli-prompt` | Print agent instructions for using the CLI |
 | `entry-prompt` | Print entry field descriptions and constraints for the agent. `--topic <path>` narrows fields to a topic's effective spec and appends its function/argument signature |
+| `validators` | List validator tags available in `_meta` (built-in + custom from `OKGV_VALIDATORS`), with the exact form to write for each and whether it is analyzable |
 | `get-structure` | Topic/subtopic tree as nested JSON. `--root`, `--depth` to scope |
 | `get-depth` | Max depth of topic tree. `--root` to measure from specific topic |
 | `create-topic` | Create topic by path. `--parents` for mkdir -p behavior |
