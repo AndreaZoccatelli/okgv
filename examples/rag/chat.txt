@@ -1,0 +1,256 @@
+❯ @generation-guide.md                                                          
+  ⎿  Read generation-guide.md (22 lines)
+
+⏺ Bash(uv run okgv cli-prompt)
+  ⎿  # okgv — Knowledge Base CLI
+
+     You are interacting with a self-organized knowledge base via the `okgv
+     … +117 lines (ctrl+o to expand)
+
+⏺ CLI learned. What you want do?
+
+✻ Baked for 6s
+
+❯ check current structure and generate around 200 obs in total, keep it         
+  balanced and avoid redundancies                                               
+
+⏺ Bash(uv run okgv get-structure)
+  ⎿  Error: Exit code 3
+     {
+       "error": "no_topics",
+       "detail": "No topics found in graph"
+     }
+
+⏺ Bash(uv run okgv entry-prompt)
+  ⎿  warning: topics in structure.json but not in the DB: ['networking', 'n
+     etworking/general', 'networking/vpn', 'networking/vpn/setup', 'network
+     ing/vpn/troubleshooting', 'networking/wifi', 'networking/wifi/setup',
+     … +9 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv report)
+  ⎿  Error: Exit code 3
+     warning: topics in structure.json but not in the DB: ['networking', 
+     'networking/general', 'networking/vpn', 'networking/vpn/setup', 
+     'networking/vpn/troubleshooting', 'networking/wifi', 
+     'networking/wifi/setup', 'networking/wifi/troubleshooting']; run 
+     create-structure
+     {
+       "error": "no_topics",
+       "detail": "No topics found in graph"
+     }
+
+⏺ No DB topics yet. Need create-structure first. Check config/structure.json.
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Bash(uv run okgv create-structure --file config/structure.json)
+  ⎿  warning: topics in structure.json but not in the DB: ['networking', 'n
+     etworking/general', 'networking/vpn', 'networking/vpn/setup', 'network
+     ing/vpn/troubleshooting', 'networking/wifi', 'networking/wifi/setup',
+     … +15 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv entry-prompt --topic networking/vpn/setup)
+  ⎿  # Entry Fields — networking/vpn/setup
+
+     Each entry under `networking/vpn/setup` has the following fields:
+     … +12 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv entry-prompt --topic networking/general)
+  ⎿  # Entry Fields — networking/general
+
+     Each entry under `networking/general` has the following fields:
+     … +12 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv report)
+  ⎿  {
+       "total_entries": 0,
+       "leaf_topics": 5,
+     … +32 lines (ctrl+o to expand)
+⏺ Write(data/vpn_setup.json)
+  ⎿  Wrote 42 lines to data/vpn_setup.json
+      2   {"query": "How do I install and configure OpenVPN on an Ubuntu 
+        server?", "passage": "Install OpenVPN and Easy-RSA with apt, then
+         initialize a PKI and generate a CA, server certificate, and Diff
+        ie-Hellman parameters using easyrsa. Copy the generated keys and 
+        certs into /etc/openvpn/server, write a server.conf specifying th
+         and start the openvpn-server@server systemd unit."}, then enable
+      3   {"query": "What are the steps to set up a WireGuard VPN on Linu
+        x?", "passage": "Install wireguard-tools, then generate a private
+        /public key pair with 'wg genkey' and 'wg pubkey'. Create /etc/wi
+        reguard/wg0.conf with an [Interface] section cont
+     … +281 lines (ctrl+o to expand)
+
+⏺ Now check similarity batch before submit.
+
+⏺ Bash(cat data/vpn_setup.json | uv run okgv similar-batch --topic
+      networking/vpn/setup --entries - --top-k 3 2>/dev/null | uv run python3 -c
+      "
+      import json,sys…)
+  ⎿  0 ['candidate_id', 'scope', 'similar']
+     1 ['candidate_id', 'scope', 'similar']
+     2 ['candidate_id', 'scope', 'similar']
+     … +37 lines (ctrl+o to expand)
+
+⏺ Bash(cat data/vpn_setup.json | uv run okgv similar-batch --topic
+      networking/vpn/setup --entries - --top-k 3 2>/dev/null | uv run python3 -c
+      "
+      import json,sys…)
+  ⎿  0 []
+     1 []
+     2 []
+     … +37 lines (ctrl+o to expand)
+
+⏺ No matches (empty DB). Submitting batch.
+
+⏺ Bash(cat data/vpn_setup.json | uv run okgv submit-batch --topic
+      networking/vpn/setup --entries -)
+  ⎿  Loading embedding model and embedding 40 entries...
+     Warning: You are sending unauthenticated requests to the HF Hub. Pleas
+     e set a HF_TOKEN to enable higher rate limits and faster downloads.
+     … +163 lines (ctrl+o to expand)
+
+⏺ 40 vpn/setup entries done. Mark task 1 complete, move to vpn/troubleshooting.
+
+⏺ Write(data/vpn_troubleshooting.json)
+  ⎿  Wrote 43 lines to data/vpn_troubleshooting.json
+      2   {"query": "Why does my OpenVPN client fail with 'TLS Error: TLS
+         key negotiation failed to occur within 60 seconds'?", "passage":
+         "This error usually indicates that the client's UDP or TCP packe
+        ts are not reaching the server, often because a firewall or ISP i
+        s blocking the configured port, or the server isn't listening on 
+        t port with a tool like nc or telnet, check that the firewall all
+        ows the OpenVPN port, and confirm the client and server protocol 
+        (UDP vs TCP) and port settings match exactly."},
+      3   {"query": "Why is my VPN connection extremely slow compared to 
+        my normal internet speed?", "passage": "VPN throughput
+     … +348 lines (ctrl+o to expand)
+
+⏺ Bash(cat data/vpn_troubleshooting.json | uv run okgv similar-batch --topic
+      networking/vpn/troubleshooting --entries - --top-k 3 2>/dev/null | uv run
+      python3 -c "
+      imp…)
+  ⎿  Error: Exit code 1
+     Traceback (most recent call last):
+       File "<string>", line 7, in <module>
+     KeyError: 'score'
+
+⏺ Bash(cat data/vpn_troubleshooting.json | uv run okgv similar-batch --topic
+      networking/vpn/troubleshooting --entries - --top-k 3 2>/dev/null | uv run
+      python3 -c "
+      imp…)
+  ⎿  {
+       "candidate_id": "b29aa1e7-def1-5930-b85e-dee3352c11ed",
+       "scope": "subtree",
+     … +33 lines (ctrl+o to expand)
+
+⏺ Field is certainty, not score. Re-checking.
+
+⏺ Bash(cat data/vpn_troubleshooting.json | uv run okgv similar-batch --topic
+      networking/vpn/troubleshooting --entries - --top-k 3 2>/dev/null | uv run
+      python3 -c "
+      imp…)
+  ⎿  done False
+
+⏺ No high-similarity duplicates. Submitting.
+
+⏺ Bash(cat data/vpn_troubleshooting.json | uv run okgv submit-batch --topic
+      networking/vpn/troubleshooting --entries - 2>&1 | tail -5)
+  ⎿    {
+         "id": "aa12f44e-c2a5-5723-aa82-deb85091ab76",
+         "submitted": true
+     … +2 lines (ctrl+o to expand)
+⏺ Write(data/wifi_setup.json)
+  ⎿  Wrote 44 lines to data/wifi_setup.json
+      2   {"query": "How do I set up a new home Wi-Fi router for the firs
+        t time?", "passage": "Connect the router to your modem with an Et
+        hernet cable, power it on, and access its configuration page by e
+        ntering its default IP address (commonly 192.168.1.1 or 192.168.0
+        .1) in a browser. Follow the setup wizard to set your internet co
+        ong WPA2/WPA3 password before saving the settings."},e) and a str
+      3   {"query": "How do I change my Wi-Fi network name and password?"
+        , "passage": "Log into your router's admin interface using its IP
+         address and admin credentials, then navigate to the Wireless or 
+        Wi-Fi settings section. Update the SSID field to 
+     … +317 lines (ctrl+o to expand)
+
+⏺ Bash(cat data/wifi_setup.json | uv run okgv similar-batch --topic
+      networking/wifi/setup --entries - --top-k 3 2>/dev/null | uv run python3
+      -c "
+      import json,sys…)
+  ⎿  done False
+
+⏺ Bash(cat data/wifi_setup.json | uv run okgv submit-batch --topic
+      networking/wifi/setup --entries - 2>&1 | tail -5)
+  ⎿    {
+         "id": "164f1c4c-d62f-5695-abf4-96584429b207",
+         "submitted": true
+     … +2 lines (ctrl+o to expand)
+
+⏺ Write(data/wifi_troubleshooting.json)
+  ⎿  Wrote 44 lines to data/wifi_troubleshooting.json
+      2   {"query": "Why does my Wi-Fi signal weaken or drop in certain r
+        ooms of my house?", "passage": "Wi-Fi signals degrade as they pas
+        s through walls, floors, and large objects, with materials like c
+        itioning the router to a more central, elevated location away fro
+        m obstructions, or add a Wi-Fi extender or mesh node positioned t
+        o cover the affected area, ensuring it's placed within strong sig
+      3   {"query": "Why does my device say 'incorrect password' for Wi-F
+        i even though I'm entering the right one?", "passage": "This can 
+        happen if the network's security settings were recently changed, 
+        if th
+     … +356 lines (ctrl+o to expand)
+
+⏺ Bash(cat data/wifi_troubleshooting.json | uv run okgv similar-batch --topic
+      networking/wifi/troubleshooting --entries - --top-k 3 2>/dev/null | uv run
+      python3 -c "
+      i…)
+  ⎿  done False
+
+⏺ Bash(cat data/wifi_troubleshooting.json | uv run okgv submit-batch --topic
+      networking/wifi/troubleshooting --entries - 2>&1 | tail -5)
+  ⎿    {
+         "id": "5e9bafa6-e73f-5b9e-8041-9f94c170ca78",
+         "submitted": true
+     … +2 lines (ctrl+o to expand)
+
+⏺ Write(data/general.json)
+  ⎿  Wrote 45 lines to data/general.json
+      2   {"query": "What is the OSI model and what does each layer do?",
+         "passage": "The OSI model is a seven-layer conceptual framework 
+        for describing network communication: Physical (raw bit transmiss
+        ion), Data Link (framing and MAC addressing), Network (logical ad
+        dressing and routing, e.g., IP), Transport (end-to-end delivery, 
+        a formatting/encryption), and Application (user-facing protocols 
+        like HTTP). Each layer provides services to the layer above it an
+        d relies on the layer below, helping engineers reason about where
+         in the stack a given problem or protocol operates."},
+      3   {"query": "What is the difference between TCP 
+     … +390 lines (ctrl+o to expand)
+
+⏺ Bash(cat data/general.json | uv run okgv similar-batch --topic
+      networking/general --entries - --top-k 3 2>/dev/null | uv run python3 -c "
+      import json,sys…)
+  ⎿  done False
+
+⏺ Bash(cat data/general.json | uv run okgv submit-batch --topic
+      networking/general --entries - 2>&1 | tail -5)
+  ⎿    {
+         "id": "72356028-193d-58f7-9c41-2cc29eed2cd7",
+         "submitted": true
+     … +2 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv report)
+  ⎿  {
+       "total_entries": 208,
+       "leaf_topics": 5,
+     … +32 lines (ctrl+o to expand)
+
+⏺ Balanced, 40-43 per leaf, 208 total. Now removing data folder.
+
+⏺ Bash(rm -rf data && ls)
+  ⎿  config
+     generation-guide.md
+     okgv.db
+     prompts
+
+✻ Baked for 11m 45s

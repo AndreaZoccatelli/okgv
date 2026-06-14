@@ -367,14 +367,19 @@ def _build_split_assignment(
     seed: int,
     pending_ids: set[str],
     batch_size: int,
-) -> tuple[dict[str, str], dict[str, int], dict[str, dict]]:
+) -> tuple[dict[str, str], dict[str, int], dict[str, dict], dict[tuple, int]]:
     """Assign each entry ID to a split, stratified by topic and balance fields.
 
     Each stratum (one topic x balance-field-value combination) is shuffled
     deterministically and divided by the split fractions, so every split
     keeps the dataset's topic and balance distribution. Returns
     ({entry_id: split_name}, {split_name: count},
-    {split_name: {field: {value: count}}}).
+    {split_name: {field: {value: count}}}, {stratum_key: size}).
+
+    Exact for a single export, but assignments are a function of the whole
+    population, so adding entries and re-exporting reshuffles them. Use the
+    ``hash`` split method for a growing knowledge base that needs splits that
+    stay stable across re-exports.
     """
     import random
 
@@ -393,12 +398,20 @@ def _build_split_assignment(
             key = (topic_map.get(eid),) + tuple(str(props.get(eid, {}).get(f)) for f in balance_fields)
             strata.setdefault(key, []).append(eid)
 
+    strata_sizes = {key: len(ids) for key, ids in strata.items()}
     rng = random.Random(seed)
     assignment: dict[str, str] = {}
     counts = {name: 0 for name, _ in splits}
     balance_counts: dict[str, dict] = {name: {f: {} for f in balance_fields} for name, _ in splits}
     seen = 0
-    for key in sorted(strata, key=str):
+    # Canonical sort first (DB-order independent → reproducible), then a
+    # seeded shuffle of stratum *processing* order. Iterating strata in the
+    # canonical order instead clusters one balance value contiguously (e.g.
+    # all "hard" cells), letting the leftover-balancing drift accumulate
+    # within a value and skew val vs test in mirror image.
+    keys = sorted(strata, key=str)
+    rng.shuffle(keys)
+    for key in keys:
         ids = sorted(strata[key])
         rng.shuffle(ids)
         n = len(ids)
@@ -407,10 +420,13 @@ def _build_split_assignment(
         # Rounding leftovers go to the splits with the largest *global*
         # deficit (running target minus assigned). Per-stratum rounding
         # would hand every leftover to the largest split, starving small
-        # splits when strata are tiny (e.g. a few entries per cell).
+        # splits when strata are tiny (e.g. a few entries per cell). Ties
+        # (common between equal-fraction splits like val/test) are broken
+        # randomly, else a stable index order always favours the same split.
         leftover = n - sum(base)
         deficits = [frac * seen - (counts[name] + b) for (name, frac), b in zip(splits, base)]
-        for i in sorted(range(len(splits)), key=lambda i: deficits[i], reverse=True)[:leftover]:
+        order = sorted(range(len(splits)), key=lambda i: (deficits[i], rng.random()), reverse=True)
+        for i in order[:leftover]:
             base[i] += 1
         start = 0
         for (name, _), c in zip(splits, base):
@@ -423,7 +439,99 @@ def _build_split_assignment(
                     value = key[1 + i]
                     value_counts[value] = value_counts.get(value, 0) + c
             start += c
-    return assignment, counts, balance_counts
+    return assignment, counts, balance_counts, strata_sizes
+
+
+def _hash_split(eid: str, seed: int, splits: list[tuple[str, float]]) -> str:
+    """Map an entry ID to a split as a pure function of the ID and seed.
+
+    SHA-256 (not the salted builtin ``hash``) so the result is identical
+    across processes and machines. Splits tile ``[0, 1)`` as adjacent
+    intervals; the entry's hash lands in exactly one. Independent of the rest
+    of the population, so an entry keeps its split when the dataset grows and
+    is re-exported (no cross-export leakage), at the cost of holding split
+    proportions only in expectation.
+    """
+    import hashlib
+
+    h = hashlib.sha256(f"{seed}:{eid}".encode()).digest()
+    u = int.from_bytes(h[:8], "big") / 2**64
+    cum = 0.0
+    for name, frac in splits:
+        cum += frac
+        if u < cum:
+            return name
+    return splits[-1][0]  # guard against float rounding at the top of the range
+
+
+def _hash_split_stats(
+    session: Session,
+    splits: list[tuple[str, float]],
+    seed: int,
+    pending_ids: set[str],
+    batch_size: int,
+) -> tuple[dict[str, int], dict[str, dict], dict[tuple, int]]:
+    """Stream entries, assign by hash, accumulate split stats.
+
+    Holds only per-stratum counts (not per-entry assignments), so memory is
+    O(#strata) regardless of dataset size. Returns
+    ({split_name: count}, {split_name: {field: {value: count}}},
+    {stratum_key: size}).
+    """
+    balance_fields = list(getattr(session.schema, "balance_fields", None) or [])
+    vector_db = session.vector_db
+    graph_db = session.graph_db
+
+    counts = {name: 0 for name, _ in splits}
+    balance_counts: dict[str, dict] = {name: {f: {} for f in balance_fields} for name, _ in splits}
+    strata_sizes: dict[tuple, int] = {}
+    for chunk in vector_db.iter_entry_ids(batch_size):
+        chunk = [eid for eid in chunk if eid not in pending_ids]
+        if not chunk:
+            continue
+        topic_map = graph_db.get_topics_for_ids(chunk)
+        props = {r.id: r.properties for r in vector_db.get_by_ids(chunk)} if balance_fields else {}
+        for eid in chunk:
+            key = (topic_map.get(eid),) + tuple(str(props.get(eid, {}).get(f)) for f in balance_fields)
+            strata_sizes[key] = strata_sizes.get(key, 0) + 1
+            name = _hash_split(eid, seed, splits)
+            counts[name] += 1
+            for i, f in enumerate(balance_fields):
+                value_counts = balance_counts[name][f]
+                value = key[1 + i]
+                value_counts[value] = value_counts.get(value, 0) + 1
+    return counts, balance_counts, strata_sizes
+
+
+def _thin_stratum_warning(
+    strata_sizes: dict[tuple, int],
+    splits: list[tuple[str, float]],
+    min_expected: float,
+) -> dict | None:
+    """Flag strata too small to subdivide cleanly across splits.
+
+    A stratum of size ``n`` gives the smallest split only ``f_min * n``
+    entries in expectation; below ``min_expected`` that split is unreliably
+    represented (often absent) in the cell. ``empty`` counts the harder case
+    of ``n < len(splits)``: not enough entries to place even one per split.
+    """
+    if not strata_sizes:
+        return None
+    f_min = min(frac for _, frac in splits)
+    total = sum(strata_sizes.values())
+    thin = [n for n in strata_sizes.values() if f_min * n < min_expected]
+    if not thin:
+        return None
+    affected = sum(thin)
+    return {
+        "thin_strata": len(thin),
+        "total_strata": len(strata_sizes),
+        "entries_affected": affected,
+        "pct_entries_affected": round(affected / total, 4) if total else 0.0,
+        "min_expected_per_split": min_expected,
+        "starved_split": min(splits, key=lambda s: s[1])[0],
+        "empty_strata": sum(1 for n in strata_sizes.values() if n < len(splits)),
+    }
 
 
 @click.command(name="export")
@@ -445,7 +553,30 @@ def _build_split_assignment(
     default=None,
     help='Stratified split spec, e.g. "train=0.8,val=0.1,test=0.1". Writes one JSONL file per split.',
 )
-@click.option("--seed", default=42, show_default=True, help="Shuffle seed for --split assignment.")
+@click.option("--seed", default=42, show_default=True, help="Seed for --split assignment.")
+@click.option(
+    "--split-method",
+    type=click.Choice(["shuffle", "hash"]),
+    default="shuffle",
+    show_default=True,
+    help=(
+        "shuffle: exact split sizes for a one-shot export. "
+        "hash: per-entry hash, splits stay stable as the dataset grows and "
+        "is re-exported (proportions held in expectation)."
+    ),
+)
+@click.option(
+    "--min-expected",
+    default=1.0,
+    show_default=True,
+    help="Warn when the smallest split expects fewer than this many entries in any stratum.",
+)
+@click.option(
+    "--strict",
+    is_flag=True,
+    default=False,
+    help="Exit nonzero if any stratum is too small to place one entry per split.",
+)
 @click.option("--batch-size", default=500, show_default=True, help="Batch size for DB reads.")
 @click.option(
     "--dry-run",
@@ -461,6 +592,9 @@ def export_cmd(
     exclude_in_review: bool,
     split_spec: str | None,
     seed: int,
+    split_method: str,
+    min_expected: float,
+    strict: bool,
     batch_size: int,
     dry_run: bool,
 ):
@@ -485,10 +619,36 @@ def export_cmd(
     assignment: dict[str, str] = {}
     split_counts: dict[str, int] = {}
     balance_counts: dict[str, dict] = {}
+    warning: dict | None = None
+    split_of = None
     if splits:
-        assignment, split_counts, balance_counts = _build_split_assignment(
-            session, splits, seed, pending_ids, batch_size
-        )
+        if split_method == "hash":
+            split_counts, balance_counts, strata_sizes = _hash_split_stats(
+                session, splits, seed, pending_ids, batch_size
+            )
+            split_of = lambda eid: _hash_split(eid, seed, splits)  # noqa: E731
+        else:
+            assignment, split_counts, balance_counts, strata_sizes = _build_split_assignment(
+                session, splits, seed, pending_ids, batch_size
+            )
+            split_of = assignment.get
+        warning = _thin_stratum_warning(strata_sizes, splits, min_expected)
+        if warning:
+            if strict and warning["empty_strata"]:
+                err(
+                    "thin_strata",
+                    detail=(
+                        f"{warning['empty_strata']} strata have fewer than {len(splits)} entries; "
+                        "cannot place one entry per split"
+                    ),
+                    suggestion="Use fewer splits, drop a balance field, collect more entries, or omit --strict",
+                    exit_code=EXIT_USAGE,
+                )
+            log(
+                f"warning: {warning['thin_strata']}/{warning['total_strata']} strata "
+                f"({warning['pct_entries_affected'] * 100:.1f}% of entries) too small to subdivide; "
+                f"'{warning['starved_split']}' split under-represented in those cells"
+            )
 
     def _split_summary(name: str) -> dict:
         item: dict = {"count": split_counts[name]}
@@ -498,15 +658,17 @@ def export_cmd(
 
     if dry_run:
         if splits:
-            output(
-                {
-                    "dry_run": True,
-                    "would_export": sum(split_counts.values()),
-                    "splits": {name: _split_summary(name) for name, _ in splits},
-                    "seed": seed,
-                    "exclude_in_review": exclude_in_review,
-                }
-            )
+            result = {
+                "dry_run": True,
+                "would_export": sum(split_counts.values()),
+                "split_method": split_method,
+                "splits": {name: _split_summary(name) for name, _ in splits},
+                "seed": seed,
+                "exclude_in_review": exclude_in_review,
+            }
+            if warning:
+                result["warnings"] = warning
+            output(result)
             return
         total = 0
         for chunk in vector_db.iter_entry_ids(batch_size):
@@ -538,7 +700,7 @@ def export_cmd(
             records = vector_db.get_by_ids(chunk)
             topic_map = graph_db.get_topics_for_ids(chunk)
             for rec in records:
-                target = assignment.get(rec.id) if splits else None
+                target = split_of(rec.id) if splits else None
                 if splits and target is None:
                     continue
                 row: dict = {"id": rec.id, "topic": topic_map.get(rec.id)}
@@ -553,13 +715,15 @@ def export_cmd(
 
     if splits:
         log(f"Exported {written} entries across {len(splits)} splits")
-        output(
-            {
-                "exported": written,
-                "seed": seed,
-                "splits": {name: {"file": split_files[name], **_split_summary(name)} for name, _ in splits},
-            }
-        )
+        result = {
+            "exported": written,
+            "seed": seed,
+            "split_method": split_method,
+            "splits": {name: {"file": split_files[name], **_split_summary(name)} for name, _ in splits},
+        }
+        if warning:
+            result["warnings"] = warning
+        output(result)
     else:
         log(f"Exported {written} entries to {out_path}")
         output({"exported": written, "file": out_path})

@@ -18,6 +18,8 @@ This makes the agent work one topic at a time. It checks which topics are underr
 
 Handing an agent full ownership of generation requires a degree of trust that isn't always warranted. For that reason, okgv also supports a review stage: entries can be inspected and approved or discarded, interactively through a TUI by a human, or via CLI commands by an agent prompted to act as the reviewer.
 
+![demo](examples/classification/media/classification-chat.gif)
+
 ## When to use okgv (and when not to)
 
 okgv is not a vector database and not a large-scale curation pipeline. It is a thin, agent-native layer for building a dataset incrementally, where the generating agent makes the novelty and balance decisions in the loop. The design choices follow from that niche.
@@ -111,7 +113,7 @@ okgv export --output dataset.jsonl --exclude-in-review
 okgv export --output dataset.jsonl --split "train=0.8,val=0.1,test=0.1"   # stratified splits
 ```
 
-One JSONL file, or one per split. `--split` divides each topic × balance-field stratum by the given fractions, so train/val/test all keep the dataset's distribution. Preview with `--dry-run` to see per-split counts and balance before writing.
+One JSONL file, or one per split. `--split` divides each topic × balance-field stratum by the given fractions, so train/val/test all keep the dataset's distribution. `--split-method shuffle` (default) gives exact split sizes for a one-shot export; `--split-method hash` assigns each entry by a hash of its id, keeping splits stable as the knowledge base grows and is re-exported (proportions held in expectation). Cells too small to fill the smallest split are warned about (`--strict` to fail). Preview with `--dry-run` to see per-split counts, balance, and warnings before writing.
 
 See [`examples/function-calling/`](https://github.com/AndreaZoccatelli/okgv/tree/main/examples/function-calling) for a complete worked project: a filled-in schema, topic structure, and generation guide. More worked projects live under [`examples/`](https://github.com/AndreaZoccatelli/okgv/tree/main/examples).
 

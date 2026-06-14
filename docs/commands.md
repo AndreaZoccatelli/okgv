@@ -37,7 +37,7 @@ All output is JSON to stdout. Logs go to stderr.
 | `undo` | Delete entries submitted after a timestamp. `-i` opens an interactive checkpoint timeline (pick where to roll back to). `--dry-run` to preview |
 | `reconcile` | Find and fix orphan entries across the graph and vector tables. `--dry-run` to preview |
 | `revalidate` | Report entries that violate their topic's current effective spec (after tightening `_meta`) and queue them for review. `--topic` to scope, `--no-queue` to only report |
-| `export` | Export all entries to JSONL. `--fields`, `--exclude-in-review`, `--split` for stratified train/val/test, `--dry-run` |
+| `export` | Export all entries to JSONL. `--fields`, `--exclude-in-review`, `--split` for stratified train/val/test, `--split-method shuffle\|hash`, `--strict`/`--min-expected` for thin-cell checks, `--dry-run` |
 | `purge` | **Hidden.** Delete everything (entries, topics, log). Requires `--confirm "delete all"` |
 
 ## Examples
@@ -102,7 +102,19 @@ okgv export --output dataset.jsonl --fields "question,difficulty" --exclude-in-r
 okgv export --output dataset.jsonl --split "train=0.8,val=0.1,test=0.1" --seed 42
 # → dataset-train.jsonl, dataset-val.jsonl, dataset-test.jsonl
 
-# Preview the split first: per-split counts and balance-field distribution
+# --split-method shuffle (default): exact split sizes, best for one-shot exports.
+# --split-method hash: each entry's split is a function of its id, so splits
+#   stay stable as the knowledge base grows and is re-exported (no test→train
+#   leakage across exports). Proportions hold in expectation, sizes drift a little.
+okgv export --output dataset.jsonl --split "train=0.8,val=0.1,test=0.1" --split-method hash
+
+# A stratum is one topic × balance-value cell. When cells are too small to fill
+# the smallest split (e.g. 0.1 × 8 < 1), that split is under-represented there.
+# Export warns (and --strict exits nonzero if a cell can't fill one per split).
+# Tune the threshold with --min-expected (default 1.0).
+okgv export --output dataset.jsonl --split "train=0.8,val=0.1,test=0.1" --strict
+
+# Preview the split first: per-split counts, balance distribution, any warnings
 okgv export --dry-run --split "train=0.8,val=0.1,test=0.1"
 # {"splits": {"train": {"count": 77, "balance": {"difficulty": {"easy": 26, ...}}}, ...}}
 

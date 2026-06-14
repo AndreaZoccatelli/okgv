@@ -444,6 +444,32 @@ class TestExportSplit:
             vector.entries[eid] = props
             vector.topics[eid] = topic
 
+    def _balanced_session(self, tmp_path):
+        class BalancedSchema(SimpleSchema):
+            balance_fields = ["difficulty"]
+
+        return Session(
+            graph_db=MockGraphDB(),
+            vector_db=MockVectorDB(),
+            embedder=fake_embedder,
+            schema=BalancedSchema(),
+            db_path=tmp_path / "okgv.db",
+        )
+
+    def _seed_strata(self, session, topics, per_difficulty):
+        """topics x {easy,hard,medium} cells, `per_difficulty` entries each."""
+        for t in topics:
+            for d in ("easy", "hard", "medium"):
+                self._seed_entries(session, per_difficulty, topic=f"{t}-{d}", difficulty=d)
+
+    def _read_split_map(self, tmp_path, stem, names):
+        m = {}
+        for s in names:
+            with open(tmp_path / f"{stem}-{s}.jsonl") as f:
+                for line in f:
+                    m[json.loads(line)["id"]] = s
+        return m
+
     def test_split_writes_one_file_per_split(self, runner, mock_session, tmp_path):
         self._seed_entries(mock_session, 10)
         out = str(tmp_path / "dataset.jsonl")
@@ -562,6 +588,115 @@ class TestExportSplit:
         for split in ("train", "test"):
             assert data["splits"][split]["count"] == 4
             assert data["splits"][split]["balance"] == {"difficulty": {"easy": 2, "hard": 2}}
+
+    def _assert_balanced(self, data, names, tol):
+        """Each split's per-difficulty mix stays within tol of an even 1/3 each."""
+        for name in names:
+            bal = data["splits"][name]["balance"]["difficulty"]
+            total = sum(bal.values())
+            for d in ("easy", "hard", "medium"):
+                assert bal.get(d, 0) > 0, f"{name} missing {d}"
+                assert abs(bal[d] / total - 1 / 3) <= tol, f"{name}/{d} skewed: {bal}"
+
+    def test_split_balance_preserved_shuffle(self, runner, tmp_path):
+        # 18 topic x difficulty strata of 10 each: every cell contributes one
+        # entry to each 10% split, so a correct stratified split puts an even
+        # 6/6/6 of each difficulty in val and test. Before the order/tie-break
+        # fix these drifted into mirror images (val hard-heavy, test medium-heavy).
+        session = self._balanced_session(tmp_path)
+        self._seed_strata(session, [f"t{i}" for i in range(6)], per_difficulty=10)
+        result = runner.invoke(
+            cli,
+            ["export", "--dry-run", "--split", "train=0.8,val=0.1,test=0.1"],
+            obj=session,
+        )
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        assert [data["splits"][s]["count"] for s in ("train", "val", "test")] == [144, 18, 18]
+        even = {"easy": 6, "hard": 6, "medium": 6}
+        assert data["splits"]["val"]["balance"]["difficulty"] == even
+        assert data["splits"]["test"]["balance"]["difficulty"] == even
+
+    def test_split_balance_preserved_hash(self, runner, tmp_path):
+        # Hash holds proportions only in expectation, so it needs volume to
+        # converge: at 1800 entries each split's difficulty mix is within a
+        # few points of an even third, with no difficulty starved.
+        session = self._balanced_session(tmp_path)
+        self._seed_strata(session, [f"t{i}" for i in range(6)], per_difficulty=100)
+        result = runner.invoke(
+            cli,
+            ["export", "--dry-run", "--split", "train=0.8,val=0.1,test=0.1", "--split-method", "hash"],
+            obj=session,
+        )
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        assert data["split_method"] == "hash"
+        assert sum(data["splits"][s]["count"] for s in ("train", "val", "test")) == 1800
+        self._assert_balanced(data, ("train", "val", "test"), tol=0.07)
+
+    def test_hash_stable_across_growth(self, runner, tmp_path):
+        # An entry keeps its split when the dataset grows and is re-exported.
+        session = self._balanced_session(tmp_path)
+        self._seed_strata(session, [f"t{i}" for i in range(4)], per_difficulty=6)
+        args = ["--split", "train=0.8,val=0.1,test=0.1", "--split-method", "hash"]
+        out1 = str(tmp_path / "before.jsonl")
+        assert runner.invoke(cli, ["export", "--output", out1, *args], obj=session).exit_code == 0
+        before = self._read_split_map(tmp_path, "before", ("train", "val", "test"))
+
+        # Add a new stratum, re-export.
+        self._seed_strata(session, ["t-new"], per_difficulty=6)
+        out2 = str(tmp_path / "after.jsonl")
+        assert runner.invoke(cli, ["export", "--output", out2, *args], obj=session).exit_code == 0
+        after = self._read_split_map(tmp_path, "after", ("train", "val", "test"))
+
+        for eid, split in before.items():
+            assert after[eid] == split, f"{eid} moved {split} -> {after[eid]} on re-export"
+
+    def test_hash_deterministic_for_seed(self, runner, mock_session):
+        self._seed_entries(mock_session, 20)
+        args = ["--split", "train=0.8,val=0.1,test=0.1", "--split-method", "hash", "--seed", "7"]
+        a = runner.invoke(cli, ["export", "--dry-run", *args], obj=mock_session)
+        b = runner.invoke(cli, ["export", "--dry-run", *args], obj=mock_session)
+        assert a.exit_code == 0 and a.output == b.output
+
+    def test_thin_strata_warning_emitted(self, runner, mock_session):
+        # 20 two-entry strata: every cell is too small to fill a 10% split.
+        for i in range(20):
+            self._seed_entries(mock_session, 2, topic=f"topic{i}")
+        result = runner.invoke(
+            cli,
+            ["export", "--dry-run", "--split", "train=0.8,val=0.1,test=0.1"],
+            obj=mock_session,
+        )
+        assert result.exit_code == 0
+        data = parse_json_output(result.output)
+        assert data["warnings"]["thin_strata"] == 20
+        assert data["warnings"]["entries_affected"] == 40
+        assert data["warnings"]["starved_split"] in ("val", "test")
+        assert "warning:" in result.stderr
+
+    def test_no_warning_when_strata_large_enough(self, runner, mock_session):
+        self._seed_entries(mock_session, 40)
+        result = runner.invoke(
+            cli,
+            ["export", "--dry-run", "--split", "train=0.8,val=0.1,test=0.1"],
+            obj=mock_session,
+        )
+        assert result.exit_code == 0
+        assert "warnings" not in parse_json_output(result.output)
+
+    def test_strict_fails_on_empty_strata(self, runner, mock_session, tmp_path):
+        # A single-entry stratum cannot place one entry per 3 splits.
+        self._seed_entries(mock_session, 1, topic="lonely")
+        self._seed_entries(mock_session, 40, topic="big")
+        base = ["export", "--dry-run", "--split", "train=0.8,val=0.1,test=0.1"]
+        strict = runner.invoke(cli, [*base, "--strict"], obj=mock_session)
+        assert strict.exit_code == 2
+        assert "thin_strata" in strict.stderr
+        # Without --strict it only warns.
+        loose = runner.invoke(cli, base, obj=mock_session)
+        assert loose.exit_code == 0
+        assert parse_json_output(loose.output)["warnings"]["empty_strata"] == 1
 
     def test_split_bad_sum_rejected(self, runner, mock_session, tmp_path):
         out = str(tmp_path / "dataset.jsonl")

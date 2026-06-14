@@ -1,0 +1,595 @@
+❯ @generation-guide.md                                                          
+  ⎿  Read generation-guide.md (62 lines)
+
+⏺ Bash(uv run okgv cli-prompt)
+  ⎿  # okgv — Knowledge Base CLI
+
+     You are interacting with a self-organized knowledge base via the `okgv
+     … +117 lines (ctrl+o to expand)
+
+⏺ Got CLI. Ready. What do you want to do — generate entries, check
+  report/coverage, or something else?
+
+✻ Worked for 5s
+
+❯ check current structure, then generate around 800 entries, keep structure     
+  balanced and avoid redundancies                                               
+
+⏺ Bash(uv run okgv get-structure)
+  ⎿  Error: Exit code 3
+     {
+       "error": "no_topics",
+       "detail": "No topics found in graph"
+     }
+
+⏺ Bash(uv run okgv entry-prompt)
+  ⎿  warning: topics in structure.json but not in the DB: ['calendar', 'cal
+     endar/create_event', 'calendar/list_events', 'calendar/modify_event',
+     'math', 'math/arithmetic', 'math/statistics', 'math/unit_conversion',
+     … +21 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv report)
+  ⎿  Error: Exit code 3
+     warning: topics in structure.json but not in the DB: ['calendar', 
+     'calendar/create_event', 'calendar/list_events', 'calendar/modify_event', 
+     'math', 'math/arithmetic', 'math/statistics', 'math/unit_conversion', 
+     'messaging', 'messaging/manage_threads', 'messaging/read_messages', 
+     'messaging/send_message', 'search', 'search/contact_lookup', 
+     'search/file_search', 'search/web_search', 'weather', 'weather/alerts', 
+     'weather/current_conditions', 'weather/current_conditions/metric', 
+     'weather/current_conditions/no_unit_stated', 'weather/forecast']; run 
+     create-structure
+     {
+       "error": "no_topics",
+       "detail": "No topics found in graph"
+     }
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Bash(uv run okgv create-structure --file config/structure.json && uv run okgv
+      report)
+  ⎿  warning: topics in structure.json but not in the DB: ['calendar', 'cal
+     endar/create_event', 'calendar/list_events', 'calendar/modify_event',
+     'math', 'math/arithmetic', 'math/statistics', 'math/unit_conversion',
+     … +764 lines (ctrl+o to expand)
+
+⏺ Bash(mkdir -p tmp_entries)
+  ⎿  Done
+⏺ Write(tmp_entries/weather_cc_metric.json)
+  ⎿  Wrote 52 lines to tmp_entries/weather_cc_metric.json
+      2 {"query": "What's the current temperature in Paris in Celsius?", 
+        "function": "get_current_weather", "arguments": {"location": "Par
+        is", "units": "celsius"}, "difficulty": "easy"},
+        unction": "get_current_weather", "arguments": {"location": "Berli
+        n", "units": "celsius"}, "difficulty": "easy"},
+      4 {"query": "Check the current conditions in Tokyo, Celsius please.
+        Tokyo", "units": "celsius"}, "difficulty": "easy"},{"location": "
+      5 {"query": "How hot is it right now in Rome in Celsius?", "functio
+        n": "get_current_weather", "arguments": {"location": "Rome", "uni
+        ts": "celsius"}, "d
+     … +143 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic weather/current_conditions/metric
+      --entries - < tmp_entries/weather_cc_metric.json)
+  ⎿  Loading embedding model and embedding 50 entries...
+     Warning: You are sending unauthenticated requests to the HF Hub. Pleas
+     e set a HF_TOKEN to enable higher rate limits and faster downloads.
+     … +203 lines (ctrl+o to expand)
+
+⏺ Topic 1 done, 50/50 submitted. Topic 2:
+  weather/current_conditions/no_unit_stated (units forbidden, location-only).
+
+⏺ Write(tmp_entries/weather_cc_nounit.json)  ⎿  Wrote 51 lines to tmp_entries/weather_cc_nounit.json
+      2 {"query": "What's the weather like in New York right now?", "func
+        tion": "get_current_weather", "arguments": {"location": "New York
+      3 {"query": "Tell me the current weather in London.", "function": "
+        get_current_weather", "arguments": {"location": "London"}, "diffi
+        culty": "easy"},
+        tion": "get_current_weather", "arguments": {"location": "Los Ange
+        les"}, "difficulty": "easy"},
+        function": "get_current_weather", "arguments": {"location": "Chic
+        ago"}, "difficulty": "easy"},
+      6 {"query": "How's the weather in Miami at the moment?", "function
+     … +137 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic
+      weather/current_conditions/no_unit_stated --entries - <
+      tmp_entries/weather_cc_nounit.json 2>&1 | tail -5)
+  ⎿    {
+         "id": "f49dc3e1-1be5-5cc8-b9d9-d45142660976",
+         "submitted": true
+     … +2 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic
+      weather/current_conditions/no_unit_stated --entries - <
+      tmp_entries/weather_cc_nounit.json 2>/dev/null | grep -c '"submitted":…)
+  ⎿  0
+
+⏺ Bash(uv run okgv submit-batch --topic
+      weather/current_conditions/no_unit_stated --entries - <
+      tmp_entries/weather_cc_nounit.json 2>&1 | head -20)
+  ⎿  Loading embedding model and embedding 49 entries...
+     Warning: You are sending unauthenticated requests to the HF Hub. Pleas
+     e set a HF_TOKEN to enable higher rate limits and faster downloads.
+     … +21 lines (ctrl+o to expand)
+
+⏺ Write(tmp_entries/weather_forecast.json)
+  ⎿  Wrote 51 lines to tmp_entries/weather_forecast.json
+      2 {"query": "Give me a 5-day forecast for Paris.", "function": "get
+        _forecast", "arguments": {"location": "Paris", "days": 5}, "diffi
+      3 {"query": "What's the 3-day forecast for Tokyo in Fahrenheit?", "
+        function": "get_forecast", "arguments": {"location": "Tokyo", "da
+        ys": 3, "units": "fahrenheit"}, "difficulty": "easy"},
+         days.", "function": "get_forecast", "arguments": {"location": "L
+        ondon", "days": 7}, "difficulty": "easy"},
+        get_forecast", "arguments": {"location": "New York", "days": 10},
+         "difficulty": "easy"},
+      6 {"query": "Get the 2-day fore
+     … +139 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic weather/forecast --entries - <
+      tmp_entries/weather_forecast.json 2>&1 | grep -E "embedding|error" | head
+      -5)
+  ⎿  Loading embedding model and embedding 49 entries...
+
+⏺ Write(tmp_entries/weather_alerts.json)
+  ⎿  Wrote 50 lines to tmp_entries/weather_alerts.json
+      2 {"query": "Are there any weather alerts for Miami right now?", "f
+        unction": "get_weather_alerts", "arguments": {"location": "Miami"
+        }, "difficulty": "easy"},
+        unction": "get_weather_alerts", "arguments": {"location": "New Or
+        leans", "severity": "warning"}, "difficulty": "easy"},
+      4 {"query": "Are there any storm advisories for Houston?", "functio
+        everity": "advisory"}, "difficulty": "easy"},tion": "Houston", "s
+      5 {"query": "Is there a tornado watch in Oklahoma City?", "function
+        ": "get_weather_alerts", "arguments": {"location": "Oklahoma City
+        ", "severity": "watch"}, "difficulty": "e
+     … +142 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic weather/alerts --entries - <
+      tmp_entries/weather_alerts.json 2>&1 | grep -E "embedding|error" | head
+      -5)
+  ⎿  Loading embedding model and embedding 48 entries...
+
+⏺ Bash(cd tmp_entries && python3 -c "
+      import json…)
+  ⎿  total 48
+
+⏺ Bash(cd tmp_entries && for f in *.json; do python3 -c "import json;
+      print('$f', len(json.load(open('$f'))))"; done)
+  ⎿  Error: Exit code 1
+     (eval):cd:1: no such file or directory: tmp_entries
+
+⏺ Bash(pwd && for f in *.json; do python3 -c "import json; print('$f',
+      len(json.load(open('$f'))))"; done)
+  ⎿  /Users/andrea.zoccatelli/Downloads/okgv/examples/function-calling/tmp_
+     entries
+     weather_alerts.json 48
+     … +3 lines (ctrl+o to expand)
+
+⏺ Bash(cd /Users/andrea.zoccatelli/Downloads/okgv/examples/function-calling)
+  ⎿  Done
+
+⏺ Topic 4 done (48 entries). Now topic 5: calendar/create_event.
+⏺ Write(tmp_entries/calendar_create.json)
+  ⎿  Wrote 52 lines to tmp_entries/calendar_create.json
+      2 {"query": "Create an event called Team Standup at 9am tomorrow.",
+         "function": "create_event", "arguments": {"title": "Team Standup
+        ", "start_time": "tomorrow 9am"}, "difficulty": "easy"},
+        m on Friday.", "function": "create_event", "arguments": {"title":
+         "Budget Review", "start_time": "Friday 2pm", "end_time": "Friday
+         3pm"}, "difficulty": "easy"},
+        h in the Downtown Clinic.", "function": "create_event", "argument
+        s": {"title": "Dentist Appointment", "start_time": "June 20th 10a
+        m", "location": "Downtown Clinic"}, "difficulty": "easy"},
+      5 {"query": "Create a c
+     … +179 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic calendar/create_event --entries - <
+      tmp_entries/calendar_create.json 2>&1 | grep -E "embedding|error" | head
+      -5)
+  ⎿  Loading embedding model and embedding 50 entries...
+
+⏺ Now topic 6: calendar/list_events.
+
+⏺ Write(tmp_entries/calendar_list.json)
+  ⎿  Wrote 52 lines to tmp_entries/calendar_list.json
+      2 {"query": "What's on my calendar today?", "function": "list_event
+        s", "arguments": {"date": "today"}, "difficulty": "easy"},
+      3 {"query": "Show me my events for tomorrow.", "function": "list_ev
+      4 {"query": "List everything I have scheduled this week.", "functio
+        n": "list_events", "arguments": {"date": "this week"}, "difficult
+        y": "easy"},
+        _events", "arguments": {"date": "Friday"}, "difficulty": "easy"},
+      6 {"query": "Show my work calendar events for next Monday.", "funct
+        ion": "list_events", "arguments": {"date": "next Monday", "calend
+        ar": "work"}, "difficulty": "e
+     … +132 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic calendar/list_events --entries - <
+      tmp_entries/calendar_list.json 2>&1 | grep -E "embedding|error" | head -5)
+  ⎿  Loading embedding model and embedding 50 entries...
+
+⏺ Now topic 7: calendar/modify_event.
+
+⏺ Write(tmp_entries/calendar_modify.json)
+  ⎿  Wrote 51 lines to tmp_entries/calendar_modify.json
+      2 {"query": "Change the start time of event evt_1234 to 3pm.", "fun
+        ction": "modify_event", "arguments": {"event_id": "evt_1234", "st
+      3 {"query": "Update event evt_5678's title to 'Quarterly Sync'.", "
+        function": "modify_event", "arguments": {"event_id": "evt_5678", 
+        "title": "Quarterly Sync"}, "difficulty": "easy"},
+        , "function": "modify_event", "arguments": {"event_id": "evt_9012
+        ", "start_time": "10am", "end_time": "11am"}, "difficulty": "easy
+      5 {"query": "Change the location of event evt_3456 to 'Room 204'.",
+         "function": "modify_event", "arguments": {"event_id": "evt_3456"
+        , "loc
+     … +150 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic calendar/modify_event --entries - <
+      tmp_entries/calendar_modify.json 2>&1 | grep -E "embedding|error" | head
+      -5)
+  ⎿  Loading embedding model and embedding 49 entries...
+
+⏺ Calendar done. Now topic 8: search/web_search.
+
+⏺ Write(tmp_entries/search_web.json)
+  ⎿  Wrote 50 lines to tmp_entries/search_web.json
+      2 {"query": "Search the web for the best laptops under $1000.", "fu
+        nction": "web_search", "arguments": {"query": "best laptops under
+      3 {"query": "Find me 5 results about climate change effects.", "fun
+        ction": "web_search", "arguments": {"query": "climate change effe
+        cts", "num_results": 5}, "difficulty": "easy"},
+        , "function": "web_search", "arguments": {"query": "sourdough bre
+        ad recipes", "site": "allrecipes.com"}, "difficulty": "easy"},
+        earch", "arguments": {"query": "population of Canada"}, "difficul
+        ty": "easy"},
+      6 {"query": 
+     … +141 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic search/web_search --entries - <
+      tmp_entries/search_web.json 2>&1 | grep -E "embedding|error" | head -5)
+  ⎿  Loading embedding model and embedding 48 entries...
+
+⏺ Now topic 9: search/file_search.
+⏺ Write(tmp_entries/search_file.json)
+  ⎿  Wrote 49 lines to tmp_entries/search_file.json
+      2 {"query": "Find all PDF files containing 'invoice' in the Documen
+        ts folder.", "function": "file_search", "arguments": {"query": "i
+        "easy"}, "path": "Documents", "file_type": "pdf"}, "difficulty": 
+      3 {"query": "Search for files named 'budget_2024' on my computer.",
+         "function": "file_search", "arguments": {"query": "budget_2024"}
+      4 {"query": "Look for .docx files with 'resume' in the title in my 
+        Downloads folder.", "function": "file_search", "arguments": {"que
+        ulty": "easy"},"path": "Downloads", "file_type": "docx"}, "diffic
+      5 {"query": "Find any spreadsheet files with 'expenses' in the name
+        .", "function": "file_search", "arguments": {"query":
+     … +137 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic search/file_search --entries - <
+      tmp_entries/search_file.json 2>&1 | grep -E "embedding|error" | head -5)
+  ⎿  Loading embedding model and embedding 47 entries...
+
+⏺ Now topic 10: search/contact_lookup.
+
+⏺ Write(tmp_entries/search_contact.json)
+  ⎿  Wrote 49 lines to tmp_entries/search_contact.json
+      2 {"query": "What's John Smith's phone number?", "function": "conta
+        ct_lookup", "arguments": {"name": "John Smith", "field": "phone"}
+      3 {"query": "Get me Sarah Johnson's email address.", "function": "c
+        ontact_lookup", "arguments": {"name": "Sarah Johnson", "field": "
+      4 {"query": "What's the address for Mike Chen?", "function": "conta
+        ct_lookup", "arguments": {"name": "Mike Chen", "field": "address"
+      5 {"query": "Look up contact info for Emily Davis.", "function": "c
+        ontact_lookup", "arguments": {"name": "Emily Davis"}, "difficulty
+      6 {"query": "Find David Lee's phone number.", "function": "contact_
+        lookup",
+     … +133 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic search/contact_lookup --entries - <
+      tmp_entries/search_contact.json 2>&1 | grep -E "embedding|error" | head
+      -5)
+  ⎿  Loading embedding model and embedding 47 entries...
+
+⏺ Now topic 11: messaging/send_message.
+
+⏺ Write(tmp_entries/messaging_send.json)
+  ⎿  Wrote 49 lines to tmp_entries/messaging_send.json
+      2 {"query": "Send a message to John saying 'Running 10 minutes late
+        .'", "function": "send_message", "arguments": {"to": "John", "bod
+      3 {"query": "Text Sarah 'Can you pick up milk on your way home?' wi
+        th high priority.", "function": "send_message", "arguments": {"to
+        ": "Sarah", "body": "Can you pick up milk on your way home?", "pr
+      4 {"query": "Send an email to the team with subject 'Meeting Moved'
+         and body 'The 2pm meeting is now at 3pm.'", "function": "send_me
+        is now at 3pm.", "subject": "Meeting Moved"}, "difficulty": "easy
+        "},
+      5 {"
+     … +164 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic messaging/send_message --entries - <
+      tmp_entries/messaging_send.json 2>&1 | grep -E "embedding|error" | head
+      -5)
+  ⎿  Loading embedding model and embedding 47 entries...
+
+⏺ Now topic 12: messaging/read_messages (all args optional).
+
+⏺ Write(tmp_entries/messaging_read.json)
+  ⎿  Wrote 51 lines to tmp_entries/messaging_read.json
+      2 {"query": "Show me my unread messages.", "function": "read_messag
+        es", "arguments": {"unread_only": true}, "difficulty": "easy"},
+        d_messages", "arguments": {"sender": "John", "limit": 5}, "diffic
+        ulty": "easy"},
+      4 {"query": "Show me all messages from Sarah.", "function": "read_m
+        ,ssages", "arguments": {"sender": "Sarah"}, "difficulty": "easy"}
+      5 {"query": "Get my 10 most recent messages.", "function": "read_me
+      6 {"query": "Show me my unread messages from Mike, limit to 3.", "f
+        unction": "read_messages", "arguments": {"sender": "Mike", "unrea
+        d_only": true, "limit": 3}
+     … +122 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic messaging/read_messages --entries - <
+      tmp_entries/messaging_read.json 2>&1 | grep -E "embedding|error" | head
+      -5)
+  ⎿  Loading embedding model and embedding 49 entries...
+
+⏺ Now topic 13: messaging/manage_threads.
+
+⏺ Write(tmp_entries/messaging_manage.json)
+  ⎿  Wrote 50 lines to tmp_entries/messaging_manage.json
+      2 {"query": "Archive thread th_1001.", "function": "manage_thread",
+         "arguments": {"thread_id": "th_1001", "action": "archive"}, "dif
+      3 {"query": "Delete thread th_2002.", "function": "manage_thread", 
+        "arguments": {"thread_id": "th_2002", "action": "delete"}, "diffi
+        culty": "easy"},
+        nage_thread", "arguments": {"thread_id": "th_3003", "action": "la
+        bel", "label": "Important"}, "difficulty": "easy"},
+        e_thread", "arguments": {"thread_id": "th_4004", "action": "archi
+        ve"}, "difficulty": "easy"},
+      6 {"query": "Add the label 'Work' to thread th_5005."
+     … +139 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic messaging/manage_threads --entries - <
+      tmp_entries/messaging_manage.json 2>&1 | grep -E "embedding|error" | head
+      -5)  ⎿  Loading embedding model and embedding 48 entries...
+
+⏺ Now topic 14: math/arithmetic (calculate, expression).
+
+⏺ Write(tmp_entries/math_arithmetic.json)
+  ⎿  Wrote 50 lines to tmp_entries/math_arithmetic.json
+      2 {"query": "What's 47 plus 89?", "function": "calculate", "argumen
+        ts": {"expression": "47 + 89"}, "difficulty": "easy"},
+      3 {"query": "Calculate 156 minus 78.", "function": "calculate", "ar
+      4 {"query": "What is 12 times 34?", "function": "calculate", "argum
+        ents": {"expression": "12 * 34"}, "difficulty": "easy"},
+      5 {"query": "Divide 144 by 12.", "function": "calculate", "argument
+      6 {"query": "What's 2 to the power of 10?", "function": "calculate"
+        , "arguments": {"expression": "2^10"}, "difficulty": "easy"},
+      7 {"query": "Calculate the square root of 81.", "function": "calcul
+        ate", "a
+     … +124 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic math/arithmetic --entries - <
+      tmp_entries/math_arithmetic.json 2>&1 | grep -E "embedding|error" | head
+      -5)
+  ⎿  Loading embedding model and embedding 48 entries...
+
+⏺ Now topic 15: math/unit_conversion (convert_units).
+
+⏺ Write(tmp_entries/math_unit_conversion.json)
+  ⎿  Wrote 51 lines to tmp_entries/math_unit_conversion.json
+      2 {"query": "Convert 10 miles to kilometers.", "function": "convert
+        _units", "arguments": {"value": 10, "from_unit": "miles", "to_uni
+        t": "kilometers"}, "difficulty": "easy"},
+        _units", "arguments": {"value": 5, "from_unit": "kilograms", "to_
+        unit": "pounds"}, "difficulty": "easy"},
+      4 {"query": "Convert 100 Fahrenheit to Celsius.", "function": "conv
+        , "to_unit": "celsius"}, "difficulty": "easy"},nit": "fahrenheit"
+      5 {"query": "How many liters is 3 gallons?", "function": "convert_u
+        nits", "arguments": {"value": 3, "from_unit": "gallons", "to_unit
+        ": "liters"}, "difficulty": "easy"},
+     … +164 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic math/unit_conversion --entries - <
+      tmp_entries/math_unit_conversion.json 2>&1 | grep -E "embedding|error" |
+      head -5)
+  ⎿  Loading embedding model and embedding 49 entries...
+
+⏺ Last topic, 16: math/statistics (compute_stats).
+
+⏺ Write(tmp_entries/math_statistics.json)
+  ⎿  Wrote 50 lines to tmp_entries/math_statistics.json
+      2 {"query": "What's the mean of 4, 8, 15, 16, 23, 42?", "function":
+         "compute_stats", "arguments": {"data": [4, 8, 15, 16, 23, 42], "
+        operation": "mean"}, "difficulty": "easy"},
+        ": "compute_stats", "arguments": {"data": [3, 1, 4, 1, 5, 9, 2, 6
+        ], "operation": "median"}, "difficulty": "easy"},
+      4 {"query": "Calculate the standard deviation of 10, 12, 23, 23, 16
+        : [10, 12, 23, 23, 16, 23, 21, 16], "operation": "std"}, "difficu
+        lty": "easy"},
+      5 {"query": "What's the sum of 5, 10, 15, 20, 25?", "function": "co
+        mpute_stats", "arguments": {"data": [5, 10, 15, 20, 25], "o
+     … +163 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic math/statistics --entries - <
+      tmp_entries/math_statistics.json 2>&1 | grep -E "embedding|error" | head
+      -5)
+  ⎿  Loading embedding model and embedding 48 entries...
+
+⏺ All 16 topics done. Final report to check balance.
+
+⏺ Bash(uv run okgv report 2>/dev/null)
+  ⎿  {
+       "total_entries": 776,
+       "leaf_topics": 16,
+     … +399 lines (ctrl+o to expand)
+
+⏺ Write(tmp_entries/topup_calendar_modify.json)
+  ⎿  Wrote 3 lines to tmp_entries/topup_calendar_modify.json
+      1 [
+      2 {"query": "Change the title of event evt_6060 to 'Weekly Check-in
+        '.", "function": "modify_event", "arguments": {"event_id": "evt_6
+        060", "title": "Weekly Check-in"}, "difficulty": "easy"}
+      3 ]
+
+⏺ Write(tmp_entries/topup_math_arithmetic.json)
+  ⎿  Wrote 4 lines to tmp_entries/topup_math_arithmetic.json
+      1 [
+      2 {"query": "I need to know what's left if I start with 2000, spend
+         a third of it, then add 150.", "function": "calculate", "argumen
+        ts": {"expression": "2000 - (2000/3) + 150"}, "difficulty": "hard
+        "},
+      3 {"query": "Figure out the total if 4 items cost 23.75 each and th
+        en a flat 15 dollar shipping fee is added.", "function": "calcula
+        te", "arguments": {"expression": "(4 * 23.75) + 15"}, "difficulty
+        ": "hard"}
+      4 ]
+⏺ Write(tmp_entries/topup_math_statistics.json)
+  ⎿  Wrote 4 lines to tmp_entries/topup_math_statistics.json
+      1 [
+      2 {"query": "These survey response times keep bouncing around: 5, 7
+        , 6, 22, 5, 6, 7 - how wild is that?", "function": "compute_stats
+        ", "arguments": {"data": [5, 7, 6, 22, 5, 6, 7], "operation": "st
+        d"}, "difficulty": "hard"},
+      3 {"query": "Add up whatever's left in these accounts: 234.50, 1200
+        , 76.25, 980.10.", "function": "compute_stats", "arguments": {"da
+        ta": [234.50, 1200, 76.25, 980.10], "operation": "sum"}, "difficu
+        lty": "hard"}
+      4 ]
+
+⏺ Write(tmp_entries/topup_math_unit_conversion.json)
+  ⎿  Wrote 3 lines to tmp_entries/topup_math_unit_conversion.json
+      1 [
+      2 {"query": "The trail marker says 3000, probably meters, what's th
+        at in miles for my app?", "function": "convert_units", "arguments
+        ": {"value": 3000, "from_unit": "meters", "to_unit": "miles"}, "d
+        ifficulty": "hard"}
+      3 ]
+
+⏺ Write(tmp_entries/topup_messaging_manage.json)
+  ⎿  Wrote 4 lines to tmp_entries/topup_messaging_manage.json
+      1 [
+      2 {"query": "I'm done following that thread th_5151, put it out of 
+        the way.", "function": "manage_thread", "arguments": {"thread_id"
+        : "th_5151", "action": "archive"}, "difficulty": "medium"},
+      3 {"query": "Tag thread th_5252 so I remember it's about the car in
+        surance.", "function": "manage_thread", "arguments": {"thread_id"
+        : "th_5252", "action": "label", "label": "Car Insurance"}, "diffi
+        culty": "medium"}
+      4 ]
+
+⏺ Write(tmp_entries/topup_messaging_read.json)
+  ⎿  Wrote 3 lines to tmp_entries/topup_messaging_read.json
+      1 [
+      2 {"query": "Did I miss anything important while I was in the meeti
+        ng?", "function": "read_messages", "arguments": {"unread_only": t
+        rue}, "difficulty": "hard"}
+      3 ]
+
+⏺ Write(tmp_entries/topup_messaging_send.json)
+  ⎿  Wrote 5 lines to tmp_entries/topup_messaging_send.json
+      2 {"query": "Tell the group the plan changed, they'll figure out th
+        e rest.", "function": "send_message", "arguments": {"to": "the gr
+        oup", "body": "The plan changed."}, "difficulty": "hard"},
+      3 {"query": "Send word to the office that we're closing early today
+        , time sensitive.", "function": "send_message", "arguments": {"to
+        : "high"}, "difficulty": "hard"},losing early today.", "priority"
+      4 {"query": "Let her know it's confirmed, nothing else needed.", "f
+        unction": "send_message", "arguments": {"to": "her", "body": "It'
+        s confirmed."}, "difficulty": "hard"}
+      5 ]
+     … +2 lines (ctrl+o to expand)
+
+⏺ Write(tmp_entries/topup_search_contact.json)
+  ⎿  Wrote 5 lines to tmp_entries/topup_search_contact.json
+      2 {"query": "I need to reach the person who handles our office supp
+        lies order.", "function": "contact_lookup", "arguments": {"name":
+         "office supplies contact"}, "difficulty": "hard"},
+      3 {"query": "Who do I call about a noise complaint in the building?
+        ", "function": "contact_lookup", "arguments": {"name": "building 
+      4 {"query": "There's someone from the bank I need to email about th
+        e loan, find their info.", "function": "contact_lookup", "argumen
+        ts": {"name": "bank loan officer", "field": "email"}, "difficulty
+        ": "hard"}
+      5 ]
+     … +2 lines (ctrl+o to expand)
+
+⏺ Write(tmp_entries/topup_search_file.json)
+  ⎿  Wrote 5 lines to tmp_entries/topup_search_file.json
+      2 {"query": "Somewhere I saved a file with the Wi-Fi setup instruct
+        ions for guests, find it.", "function": "file_search", "arguments
+        ": {"query": "guest wifi setup instructions"}, "difficulty": "har
+        d"},
+      3 {"query": "I need the file with the floor plan for the new office
+        ", "path": "Office"}, "difficulty": "medium"},query": "floor plan
+      4 {"query": "Can you find the presentation template I used last tim
+        e?", "function": "file_search", "arguments": {"query": "presentat
+        ion template", "file_type": "pptx"}, "difficulty": "medium"}
+      5 ]
+     … +1 line (ctrl+o to expand)
+
+⏺ Write(tmp_entries/topup_search_web.json)
+  ⎿  Wrote 4 lines to tmp_entries/topup_search_web.json
+      1 [
+      2 {"query": "I want to understand more about how 401k matching work
+        s.", "function": "web_search", "arguments": {"query": "how 401k m
+        atching works"}, "difficulty": "medium"},
+      3 {"query": "Can you check what people recommend for a first trip t
+        o Japan?", "function": "web_search", "arguments": {"query": "firs
+        t trip to Japan recommendations", "num_results": 5}, "difficulty"
+        : "medium"}
+      4 ]
+
+⏺ Write(tmp_entries/topup_weather_alerts.json)
+  ⎿  Wrote 4 lines to tmp_entries/topup_weather_alerts.json
+      1 [
+      2 {"query": "Is there a heat advisory in effect for Las Vegas?", "f
+        unction": "get_weather_alerts", "arguments": {"location": "Las Ve
+        gas", "severity": "advisory"}, "difficulty": "medium"},
+      3 {"query": "Check whether there's a flood warning for areas near t
+        he river in Sacramento.", "function": "get_weather_alerts", "argu
+        ments": {"location": "Sacramento", "severity": "warning"}, "diffi
+        culty": "medium"}
+      4 ]
+
+⏺ Write(tmp_entries/topup_weather_nounit.json)
+  ⎿  Wrote 3 lines to tmp_entries/topup_weather_nounit.json
+      1 [
+      2 {"query": "How's it looking outside in Albuquerque this afternoon
+        ?", "function": "get_current_weather", "arguments": {"location": 
+        "Albuquerque"}, "difficulty": "medium"}
+      3 ]
+
+⏺ Write(tmp_entries/topup_weather_forecast.json)
+  ⎿  Wrote 3 lines to tmp_entries/topup_weather_forecast.json
+      1 [
+      2 {"query": "I'm trying to decide between two weekends for the trip
+         to Denver, what's the forecast for the next 10 days?", "function
+        ": "get_forecast", "arguments": {"location": "Denver", "days": 10
+        }, "difficulty": "medium"}
+      3 ]
+
+⏺ Bash(set -e
+      uv run okgv submit-batch --topic calendar/modify_event --entries - <
+      tmp_entries/topup_calendar_modify.json 2>&1 | grep -E "embedding|error"…)
+  ⎿  Loading embedding model and embedding 1 entries...
+     Loading embedding model and embedding 2 entries...
+     Loading embedding model and embedding 2 entries...
+     … +10 lines (ctrl+o to expand)
+
+⏺ All top-ups submitted without dedup losses. Final report:
+
+⏺ Bash(uv run okgv report 2>/dev/null | python3 -c "
+      import json,sys…)
+  ⎿  total_entries: 800
+     calendar/create_event                         count= 50  easy=17 mediu
+     m=16 hard=17
+     … +18 lines (ctrl+o to expand)
+
+⏺ Bash(rm -rf tmp_entries)
+  ⎿  Done
+
+⏺ Done. 800 entries, 50 per leaf topic (16 topics), each ~17/16/17 split across
+  easy/medium/hard. No empty cells. Temp files cleaned up.
+
+✻ Baked for 18m 13s

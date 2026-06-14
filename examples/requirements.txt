@@ -1,0 +1,8 @@
+# Cosmetic dependencies for examples/viz.py only. NOT required to use okgv.
+matplotlib>=3.7
+
+# Only needed for diversity_map (the embedding scatter). Reuses the same
+# embedding model okgv defaults to, so an okgv[embeddings] install already has
+# sentence-transformers.
+scikit-learn>=1.3
+sentence-transformers>=3.0
