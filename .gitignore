@@ -3,6 +3,7 @@ __pycache__
 *.egg-info
 .venv
 .env
+.pypirc
 .pytest_cache
 .DS_Store
 .claude/
