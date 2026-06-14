@@ -35,7 +35,7 @@ pytest -v
 
 ## Code Style
 
-This project uses [ruff](https://docs.astral.sh/ruff/) for linting and formatting. CI will reject PRs that fail these checks.
+This project uses [ruff](https://docs.astral.sh/ruff/) for linting and formatting, and [mypy](https://mypy.readthedocs.io/) for static type checking. CI will reject PRs that fail these checks.
 
 ```bash
 # Check for lint violations
@@ -46,10 +46,15 @@ ruff check --fix .
 
 # Format code
 ruff format .
+
+# Type check
+mypy okgv
 ```
 
+Run mypy in an environment with the optional extras installed (`pip install -e ".[dev,tui]"`). Without `tui`, `textual` is treated as a missing import and type errors in `okgv/tui.py` are silently skipped, so a clean local run can still fail CI.
+
 Other conventions:
-- Use type hints where practical.
+- The package ships `py.typed`: it is type-checked and `mypy okgv` must be clean. Add hints to new code.
 - Keep CLI output as JSON to stdout, logs to stderr.
 
 ## Reporting Bugs

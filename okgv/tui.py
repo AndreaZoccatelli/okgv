@@ -522,8 +522,8 @@ class BrowseApp(App):
             short_id = r.id[:12] + "..."
             table.add_row(short_id, topic_path, key=r.id)
 
-    @on(EntryTable.RowHighlighted)
-    def on_entry_highlighted(self, event: EntryTable.RowHighlighted) -> None:
+    @on(DataTable.RowHighlighted)
+    def on_entry_highlighted(self, event: DataTable.RowHighlighted) -> None:
         if not event.row_key or not event.row_key.value:
             return
         entry_id = str(event.row_key.value)
