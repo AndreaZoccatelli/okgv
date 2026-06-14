@@ -211,7 +211,7 @@ def upsert_entries_batch(
     topic: str,
     raws: list[dict],
     entries: list | None = None,
-    vectors: list[list[float]] = None,
+    vectors: list[list[float]] | None = None,
     overwrite: bool = False,
     spec=None,
 ) -> tuple[list[str], list[dict]]:
@@ -224,8 +224,12 @@ def upsert_entries_batch(
     Schema is validated once using the first entry. `spec` is the topic's folded
     effective spec, passed to validate_entry_topic per entry.
     """
+    if not raws:
+        return [], []
     if entries is None:
         entries = [build_entry(schema, raw) for raw in raws]
+    if vectors is None:
+        raise ValueError("upsert_entries_batch requires precomputed vectors (one per raw)")
 
     # Validate schema structure once (key collisions, property definitions).
     # Entry-level validation (missing fields) happens in build_entry() above.
