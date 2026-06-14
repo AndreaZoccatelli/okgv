@@ -33,8 +33,14 @@ REPO_ROOT = TEMPLATES_DIR.parents[1]
 EXAMPLES_DIR = REPO_ROOT / "examples"
 
 PRESETS = sorted(TEMPLATES)
-# Presets that ship a worked project under examples/ (default is a blank scaffold).
-EXAMPLE_PRESETS = [p for p in PRESETS if p != "default"]
+# Presets that ship a worked project under examples/. Discovered from disk so the
+# drift guard tracks whatever example set exists (default is a blank scaffold with
+# no example project). test_examples_are_known_presets keeps the set honest.
+EXAMPLE_PRESETS = (
+    sorted(p.name for p in EXAMPLES_DIR.iterdir() if p.is_dir() and p.name != "__pycache__")
+    if EXAMPLES_DIR.exists()
+    else []
+)
 
 # One representative (schema class, sample raw entry, leaf topic) per preset.
 # The leaf is chosen to exercise the preset's _meta where it has one: qa's
@@ -160,6 +166,13 @@ _DRIFT_PAIRS = [
     ("schema.py.txt", "config/schema.py"),
     ("structure.json", "config/structure.json"),
 ]
+
+
+def test_examples_are_known_presets():
+    # Every worked example must correspond to a scaffold preset (no stray/typo dirs).
+    assert set(EXAMPLE_PRESETS) <= set(TEMPLATES), (
+        f"examples/ has dirs with no matching template preset: {sorted(set(EXAMPLE_PRESETS) - set(TEMPLATES))}"
+    )
 
 
 @pytest.mark.parametrize("preset", EXAMPLE_PRESETS)

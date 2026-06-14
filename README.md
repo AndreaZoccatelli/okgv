@@ -113,7 +113,7 @@ okgv export --output dataset.jsonl --split "train=0.8,val=0.1,test=0.1"   # stra
 
 One JSONL file, or one per split. `--split` divides each topic × balance-field stratum by the given fractions, so train/val/test all keep the dataset's distribution. Preview with `--dry-run` to see per-split counts and balance before writing.
 
-See [`example/`](https://github.com/AndreaZoccatelli/okgv/tree/main/example) for a complete worked project: a filled-in schema, topic structure, generation guide, and a populated database.
+See [`examples/function-calling/`](https://github.com/AndreaZoccatelli/okgv/tree/main/examples/function-calling) for a complete worked project: a filled-in schema, topic structure, and generation guide. More worked projects live under [`examples/`](https://github.com/AndreaZoccatelli/okgv/tree/main/examples).
 
 ## How it works
 
