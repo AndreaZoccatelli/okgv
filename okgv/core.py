@@ -370,6 +370,34 @@ def log_count(
         conn.close()
 
 
+def log_operations(db_path: Path, limit: int = 1000) -> list[dict]:
+    """Group the submission log into operations, newest first.
+
+    A submit/submit-batch writes its rows under one shared timestamp, so a
+    timestamp identifies one operation. Each returned dict is
+    ``{timestamp, count, topics}`` where ``topics`` maps topic -> entry count.
+    Drives the interactive undo view: pick an operation to roll back to and
+    everything newer than its timestamp is what `undo` would delete.
+    """
+    conn = _connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT timestamp, topic, count(*) FROM log GROUP BY timestamp, topic ORDER BY timestamp DESC"
+        ).fetchall()
+    finally:
+        conn.close()
+    ops: dict[str, dict] = {}
+    order: list[str] = []
+    for ts, topic, n in rows:
+        op = ops.get(ts)
+        if op is None:
+            op = ops[ts] = {"timestamp": ts, "count": 0, "topics": {}}
+            order.append(ts)
+        op["count"] += n
+        op["topics"][topic] = op["topics"].get(topic, 0) + n
+    return [ops[ts] for ts in order[:limit]]
+
+
 def log_remove_entries(db_path: Path, entry_ids: list[str]) -> None:
     """Remove entries from log by ID."""
     conn = _connect(db_path)

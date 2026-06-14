@@ -13,11 +13,14 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable, Footer, Header, Static, Tree
 
 from okgv.core import (
+    log_count,
+    log_get_entries_after,
     log_remove_entries,
     review_count,
     review_get_rejected,
     review_list,
     review_purge_rejected,
+    review_remove_entries,
     review_update,
 )
 from okgv.protocols import GraphDB, VectorDB
@@ -579,3 +582,152 @@ def run_browse(
         entry_limit=entry_limit,
     )
     app.run()
+
+
+# ── Undo TUI ───────────────────────────────────────────────────────────
+
+
+def _fmt_local(ts_iso: str) -> str:
+    """Render a stored UTC timestamp as local wall-clock for the timeline."""
+    from datetime import datetime
+
+    try:
+        return datetime.fromisoformat(ts_iso).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return ts_iso
+
+
+def _topics_summary(topics: dict[str, int], width: int = 48) -> str:
+    parts = [f"{t} ({n})" for t, n in sorted(topics.items(), key=lambda kv: -kv[1])]
+    s = ", ".join(parts)
+    return s if len(s) <= width else s[: width - 1] + "…"
+
+
+class UndoApp(App):
+    """Pick a checkpoint in the submission timeline; everything submitted *after*
+    the highlighted operation is what `undo` will delete. Newest first, so the
+    rows above the cursor are removed and the cursor row (plus everything below)
+    is kept. Nothing is touched until you confirm.
+    """
+
+    CSS = """
+    #ops {
+        height: 1fr;
+    }
+    """
+
+    BINDINGS = [
+        Binding("c", "commit", "Roll back to checkpoint", priority=True),
+        Binding("enter", "commit", "Roll back to checkpoint", show=False, priority=True),
+        Binding("q", "quit", "Quit", priority=True),
+    ]
+
+    def __init__(
+        self,
+        db_path: Path,
+        graph_db: GraphDB,
+        vector_db: VectorDB,
+        operations: list[dict],
+        total: int,
+    ):
+        super().__init__()
+        self._db_path = db_path
+        self._graph_db = graph_db
+        self._vector_db = vector_db
+        self._operations = operations  # newest first
+        self._total = total
+        self._sentinel = len(operations)  # row index of the "undo everything" line
+        self._commit_pending = False
+
+    # ── pure planning (unit-tested) ──
+    def _plan(self, cursor_index: int) -> dict:
+        """What a roll-back at ``cursor_index`` would do.
+
+        Rows above the cursor (newer operations) are deleted; the cursor row and
+        below are kept. ``cursor_index == len(operations)`` is the sentinel row:
+        delete everything (``cutoff_iso`` is None -> no lower bound).
+        """
+        delete_ops = self._operations[:cursor_index]
+        delete_count = sum(o["count"] for o in delete_ops)
+        delete_topics: dict[str, int] = {}
+        for o in delete_ops:
+            for t, n in o["topics"].items():
+                delete_topics[t] = delete_topics.get(t, 0) + n
+        cutoff_iso = self._operations[cursor_index]["timestamp"] if cursor_index < self._sentinel else None
+        return {
+            "delete_count": delete_count,
+            "delete_topics": delete_topics,
+            "keep_count": self._total - delete_count,
+            "cutoff_iso": cutoff_iso,
+        }
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield DataTable(id="ops")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        table = self.query_one("#ops", DataTable)
+        table.cursor_type = "row"
+        table.cursor_foreground_priority = "renderable"
+        table.add_columns("", "When", "Entries", "Topics")
+        for op in self._operations:
+            table.add_row("", _fmt_local(op["timestamp"]), str(op["count"]), _topics_summary(op["topics"]))
+        table.add_row(Text("↧", style="bold red"), Text("undo everything (empty database)", style="bold red"), "", "")
+        table.move_cursor(row=0)
+        self._sync(0)
+
+    def _sync(self, cursor_index: int) -> None:
+        """Refresh per-row delete/keep markers and the blast-radius preview."""
+        self._commit_pending = False
+        table = self.query_one("#ops", DataTable)
+        for i in range(self._sentinel):
+            marker = Text("✗ delete", style="bold red") if i < cursor_index else Text("keep", style="dim green")
+            table.update_cell_at((i, 0), marker)
+        plan = self._plan(cursor_index)
+        if plan["delete_count"] == 0 and plan["cutoff_iso"] is not None:
+            self.sub_title = "newest operation — nothing newer to undo (move down to pick a checkpoint)"
+        else:
+            topics = _topics_summary(plan["delete_topics"], width=60) or "—"
+            self.sub_title = f"roll back here → delete {plan['delete_count']}, keep {plan['keep_count']}  [{topics}]"
+        self.title = "okgv undo"
+
+    @on(DataTable.RowHighlighted)
+    def on_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        self._sync(event.cursor_row)
+
+    def action_commit(self) -> None:
+        idx = self.query_one("#ops", DataTable).cursor_coordinate.row
+        plan = self._plan(idx)
+        if plan["delete_count"] == 0:
+            self.notify("Nothing newer to undo here — move down to select a checkpoint.", severity="warning")
+            return
+        if not self._commit_pending:
+            self._commit_pending = True
+            self.notify(
+                f"Will delete {plan['delete_count']} entries (keep {plan['keep_count']}) — press c again to confirm.",
+                severity="warning",
+            )
+            return
+        self._commit_pending = False
+
+        from datetime import UTC, datetime
+
+        cutoff = (
+            datetime(1, 1, 1, tzinfo=UTC) if plan["cutoff_iso"] is None else datetime.fromisoformat(plan["cutoff_iso"])
+        )
+        ids = log_get_entries_after(self._db_path, cutoff)
+        self._vector_db.delete_by_ids(ids)
+        self._graph_db.delete_entries(ids)
+        log_remove_entries(self._db_path, ids)
+        review_remove_entries(self._db_path, ids)
+        self.exit({"deleted": ids, "count": len(ids), "kept": plan["keep_count"]})
+
+    def action_quit(self) -> None:
+        self.exit(None)
+
+
+def run_undo(db_path: Path, graph_db: GraphDB, vector_db: VectorDB, operations: list[dict]) -> dict | None:
+    total = log_count(db_path).get("total", sum(o["count"] for o in operations))
+    app = UndoApp(db_path=db_path, graph_db=graph_db, vector_db=vector_db, operations=operations, total=total)
+    return app.run()

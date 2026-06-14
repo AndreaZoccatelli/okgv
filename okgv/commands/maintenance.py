@@ -7,6 +7,7 @@ import click
 from okgv.core import (
     log_count,
     log_get_entries_after,
+    log_operations,
     log_query,
     log_remove_entries,
     review_remove_entries,
@@ -88,7 +89,14 @@ def log_cmd(
 
 
 @click.command()
-@click.argument("timestamp")
+@click.argument("timestamp", required=False)
+@click.option(
+    "--interactive",
+    "-i",
+    is_flag=True,
+    default=False,
+    help="Pick a checkpoint to roll back to in an interactive timeline.",
+)
 @click.option(
     "--dry-run",
     is_flag=True,
@@ -96,11 +104,44 @@ def log_cmd(
     help="Preview entries that would be deleted.",
 )
 @click.pass_obj
-def undo(session: Session, timestamp: str, dry_run: bool):
-    """Delete all entries submitted after TIMESTAMP from both DBs and log."""
+def undo(session: Session, timestamp: str | None, interactive: bool, dry_run: bool):
+    """Delete all entries submitted after TIMESTAMP from both DBs and log.
+
+    With -i, opens an interactive timeline of submission operations: highlight
+    the checkpoint to keep and everything newer than it is deleted.
+    """
     from datetime import datetime
 
     db_path = session.db_path
+
+    if interactive:
+        if not db_path.exists():
+            err("no_db", detail="okgv.db not found", exit_code=EXIT_NOT_FOUND)
+        operations = log_operations(db_path)
+        if not operations:
+            output({"deleted": [], "count": 0, "message": "No submissions to undo"})
+            return
+        try:
+            from okgv.tui import run_undo
+        except ImportError:
+            err("missing_dependency", "textual is required for interactive mode: pip install okgv[tui]", exit_code=1)
+        result = run_undo(
+            db_path=db_path,
+            graph_db=session.graph_db,
+            vector_db=session.vector_db,
+            operations=operations,
+        )
+        output(result or {"deleted": [], "count": 0, "message": "Cancelled"})
+        return
+
+    if not timestamp:
+        err(
+            "missing_argument",
+            detail="Provide a TIMESTAMP or use -i for the interactive checkpoint view",
+            suggestion="e.g. `okgv undo 2025-01-15T12:00:00` or `okgv undo -i`",
+            exit_code=EXIT_USAGE,
+        )
+
     try:
         cutoff = datetime.fromisoformat(timestamp)
     except ValueError as e:

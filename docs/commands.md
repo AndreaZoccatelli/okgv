@@ -34,7 +34,7 @@ All output is JSON to stdout. Logs go to stderr.
 | `approve` | Mark entry as approved in review queue |
 | `reject` | Mark entry as rejected in review queue |
 | `log` | Query submission log. `--topic`, `--after`, `--before`, `--count` |
-| `undo` | Delete entries submitted after a timestamp. `--dry-run` to preview |
+| `undo` | Delete entries submitted after a timestamp. `-i` opens an interactive checkpoint timeline (pick where to roll back to). `--dry-run` to preview |
 | `reconcile` | Find and fix orphan entries across the graph and vector tables. `--dry-run` to preview |
 | `revalidate` | Report entries that violate their topic's current effective spec (after tightening `_meta`) and queue them for review. `--topic` to scope, `--no-queue` to only report |
 | `export` | Export all entries to JSONL. `--fields`, `--exclude-in-review`, `--split` for stratified train/val/test, `--dry-run` |
@@ -114,6 +114,7 @@ okgv log --count
 
 # Undo recent submissions
 okgv undo 2025-01-15T12:00:00
+okgv undo -i                               # interactive: pick a checkpoint to roll back to
 
 # Find and fix cross-DB inconsistencies
 okgv reconcile --dry-run
