@@ -1,4 +1,4 @@
-"""Tests for the example function-calling schema (example/config/schema.py)."""
+"""Tests for the example function-calling schema (examples/function-calling/config/schema.py)."""
 
 import importlib.util
 from pathlib import Path
@@ -8,7 +8,7 @@ import pytest
 import okgv.core as core
 from okgv.core import EntryError
 
-SCHEMA_PATH = Path(__file__).parents[2] / "example" / "config" / "schema.py"
+SCHEMA_PATH = Path(__file__).parents[2] / "examples" / "function-calling" / "config" / "schema.py"
 
 spec = importlib.util.spec_from_file_location("example_schema", SCHEMA_PATH)
 assert spec is not None and spec.loader is not None

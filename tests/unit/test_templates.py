@@ -30,9 +30,11 @@ from okgv.specs import build_specs
 
 TEMPLATES_DIR = Path(okgv.templates.__file__).parent
 REPO_ROOT = TEMPLATES_DIR.parents[1]
-EXAMPLE_CONFIG = REPO_ROOT / "example" / "config"
+EXAMPLES_DIR = REPO_ROOT / "examples"
 
 PRESETS = sorted(TEMPLATES)
+# Presets that ship a worked project under examples/ (default is a blank scaffold).
+EXAMPLE_PRESETS = [p for p in PRESETS if p != "default"]
 
 # One representative (schema class, sample raw entry, leaf topic) per preset.
 # The leaf is chosen to exercise the preset's _meta where it has one: qa's
@@ -148,15 +150,27 @@ def test_every_preset_has_a_case():
     assert set(CASES) == set(TEMPLATES)
 
 
-# ── 3. function-calling preset stays in sync with example/ ─────────────────
+# ── 3. preset templates stay in sync with their worked examples/ ───────────
+
+# Template file -> its counterpart under examples/<preset>/. schema.py and
+# structure.json are the worked artifacts a user scaffolds, so they must stay
+# byte-identical to the example. generation-guide.md is intentionally not here:
+# the example carries a fuller, project-specific guide than the scaffold stub.
+_DRIFT_PAIRS = [
+    ("schema.py.txt", "config/schema.py"),
+    ("structure.json", "config/structure.json"),
+]
 
 
-@pytest.mark.parametrize("name", ["schema.py", "structure.json"])
-def test_function_calling_matches_example(name):
-    preset_name = "schema.py.txt" if name == "schema.py" else name
-    preset_text = (TEMPLATES_DIR / "function-calling" / preset_name).read_text()
-    example_text = (EXAMPLE_CONFIG / name).read_text()
-    assert preset_text == example_text, f"function-calling/{preset_name} has drifted from example/config/{name}"
+@pytest.mark.parametrize("preset", EXAMPLE_PRESETS)
+@pytest.mark.parametrize(("template_name", "example_rel"), _DRIFT_PAIRS)
+def test_preset_template_matches_example(preset, template_name, example_rel):
+    example_path = EXAMPLES_DIR / preset / example_rel
+    assert example_path.is_file(), f"examples/{preset}/{example_rel} is missing"
+    template_text = (TEMPLATES_DIR / preset / template_name).read_text()
+    assert template_text == example_path.read_text(), (
+        f"okgv/templates/{preset}/{template_name} has drifted from examples/{preset}/{example_rel}"
+    )
 
 
 # ── 4. Schemas are valid against a representative entry + leaf ──────────────
