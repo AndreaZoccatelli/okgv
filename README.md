@@ -30,7 +30,7 @@ It is meant to be driven directly by a coding agent. You point the agent at the 
 - The dataset is naturally **hierarchical** and must stay **balanced** across that hierarchy. The topic tree doubles as the balance stratum and the dedup scope.
 - You want a **human or a second agent to review** generated entries before they ship.
 - You want **zero infrastructure**: one portable SQLite file, no server, JSON in and out.
-- You need the dataset to be an **auditable artifact**: inspectable, reviewable, traceable through the submission log, and reversible with `undo` and `reconcile`. Useful when you have to trust the data, such as eval sets or regulated domains.
+- You need the dataset to be an **auditable artifact**: inspectable, reviewable, with every submission recorded in the log and reversible with `undo`, and checkable for cross-table consistency with `reconcile`. Useful when you have to trust the data, such as eval sets or regulated domains.
 - Each **leaf topic stays bounded** (roughly up to a few thousand entries). Similarity is scoped to the exact topic, so its cost tracks the per-topic count, not the total. The overall dataset can be large as long as individual leaf topics stay small. Where possible, group entries into finer sub-topics to keep each leaf small.
 
 **Reach for something else when:**
