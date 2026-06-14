@@ -32,7 +32,7 @@ dependencies = [
 [project.optional-dependencies]
 embeddings = ["sentence-transformers>=3.0"]
 tui = ["textual>=1.0"]
-dev = ["pytest", "ruff"]
+dev = ["pytest", "ruff", "mypy"]
 
 [project.urls]
 Homepage = "https://github.com/AndreaZoccatelli/okgv"
@@ -61,6 +61,12 @@ markers = [
     "integration: tests requiring real DB connections (SQLite + sqlite-vec)",
 ]
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+packages = ["okgv"]
+ignore_missing_imports = true
+warn_unused_ignores = true
 
 [tool.ruff]
 target-version = "py311"

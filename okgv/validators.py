@@ -38,7 +38,7 @@ from __future__ import annotations
 import re
 from typing import Protocol, runtime_checkable
 
-VALIDATOR_REGISTRY: dict[str, type] = {}
+VALIDATOR_REGISTRY: dict[str, type[Validator]] = {}
 
 
 def register(cls):
@@ -105,10 +105,16 @@ def _check_same_field(a, b):
 @runtime_checkable
 class Validator(Protocol):
     field: str
+    tag: str
 
     def validate(self, value): ...
 
     def prompt(self) -> str: ...
+
+    def to_json(self) -> dict: ...
+
+    @classmethod
+    def from_json(cls, d: dict) -> Validator: ...
 
 
 @register
@@ -242,7 +248,7 @@ class IsType:
     tag = "is_type"
     args = ("expected",)  # tagged shorthand: {"is_type": ["int", "float"]}
 
-    _NAMES = {
+    _NAMES: dict[type, str] = {
         dict: "JSON object",
         list: "list",
         str: "string",
@@ -251,8 +257,8 @@ class IsType:
         bool: "boolean",
     }
     # JSON-serializable types; custom classes cannot round-trip through to_json
-    _TYPE_TAGS = {t: t.__name__ for t in (dict, list, str, int, float, bool)}
-    _TAG_TYPES = {name: t for t, name in _TYPE_TAGS.items()}
+    _TYPE_TAGS: dict[type, str] = {t: t.__name__ for t in (dict, list, str, int, float, bool)}
+    _TAG_TYPES: dict[str, type] = {name: t for t, name in _TYPE_TAGS.items()}
 
     def __init__(self, field: str, expected: type | tuple[type, ...]):
         self.field = field

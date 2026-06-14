@@ -2,6 +2,8 @@
 
 import json
 import sys
+from collections.abc import Callable
+from typing import TextIO
 
 import click
 
@@ -131,7 +133,7 @@ def similar_batch(session: Session, topic: str, entries: str, top_k: int):
     log(f"Loading embedding model and embedding {len(rows)} candidates...")
     # Build entries, skipping bad ones
     valid = []
-    results_all = []
+    results_all: list[dict] = []
     for i, raw in enumerate(rows):
         try:
             entry_obj = build_entry(schema, raw)
@@ -620,7 +622,7 @@ def export_cmd(
     split_counts: dict[str, int] = {}
     balance_counts: dict[str, dict] = {}
     warning: dict | None = None
-    split_of = None
+    split_of: Callable[[str], str | None] | None = None
     if splits:
         if split_method == "hash":
             split_counts, balance_counts, strata_sizes = _hash_split_stats(
@@ -683,7 +685,9 @@ def export_cmd(
         )
         return
 
+    assert output_path is not None  # guaranteed non-None once past the dry-run guard
     out_path = output_path if os.path.isabs(output_path) else os.path.join(os.getcwd(), output_path)
+    handles: dict[str | None, TextIO]
     if splits:
         stem, ext = os.path.splitext(out_path)
         split_files = {name: f"{stem}-{name}{ext or '.jsonl'}" for name, _ in splits}
@@ -700,7 +704,7 @@ def export_cmd(
             records = vector_db.get_by_ids(chunk)
             topic_map = graph_db.get_topics_for_ids(chunk)
             for rec in records:
-                target = split_of(rec.id) if splits else None
+                target = split_of(rec.id) if (splits and split_of) else None
                 if splits and target is None:
                     continue
                 row: dict = {"id": rec.id, "topic": topic_map.get(rec.id)}

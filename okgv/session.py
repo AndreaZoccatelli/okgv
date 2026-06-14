@@ -6,8 +6,13 @@ import os
 from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from okgv.protocols import EntrySchema
+from okgv.protocols import EntrySchema, GraphDB, VectorDB
+
+if TYPE_CHECKING:
+    from okgv.db import ManagedConnection
+    from okgv.specs import Spec
 
 
 class Session:
@@ -21,8 +26,8 @@ class Session:
 
     def __init__(
         self,
-        graph_db=None,
-        vector_db=None,
+        graph_db: GraphDB | None = None,
+        vector_db: VectorDB | None = None,
         embedder: Callable | None = None,
         schema: EntrySchema | None = None,
         db_path: Path | None = None,
@@ -32,9 +37,9 @@ class Session:
         self._embedder = embedder
         self._schema = schema
         self._db_path = db_path
-        self._conn = None
+        self._conn: ManagedConnection | None = None
         self._owns_connections = graph_db is None and vector_db is None
-        self._specs = None  # lazily built {topic_path: Spec} from the structure file
+        self._specs: dict[str, Spec] | None = None  # lazily built {topic_path: Spec} from the structure file
         self._validators_loaded = False
 
     @property
@@ -60,6 +65,7 @@ class Session:
     def _ensure_vector_db(self) -> None:
         """Create vector DB layer. Loads model only if dim not yet stored."""
         self._ensure_conn()
+        assert self._conn is not None  # _ensure_conn guarantees this
         if self._vector_db is not None:
             return
         from okgv.connections import get_embed_dim
@@ -92,15 +98,17 @@ class Session:
         return len(test_vec[0])
 
     @property
-    def graph_db(self):
+    def graph_db(self) -> GraphDB:
         if self._graph_db is None:
             self._ensure_conn()
+        assert self._graph_db is not None
         return self._graph_db
 
     @property
-    def vector_db(self):
+    def vector_db(self) -> VectorDB:
         if self._vector_db is None:
             self._ensure_vector_db()
+        assert self._vector_db is not None
         return self._vector_db
 
     @property
@@ -246,6 +254,7 @@ class Session:
             yield
             return
         self._ensure_conn()
+        assert self._conn is not None
         with self._conn.transaction():
             yield
 

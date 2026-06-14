@@ -122,7 +122,7 @@ def review_cmd(
             for r in rows
             if "status" in r and r["status"] not in valid_statuses
         ]
-        results = {}
+        results: dict = {}
         if approved:
             review_update(db_path, approved, "approved")
             results["approved"] = len(approved)
@@ -189,10 +189,10 @@ def review_cmd(
         entry_ids = [e["entry_id"] for e in entries]
         fetched = {r.id: r.properties for r in session.vector_db.get_by_ids(entry_ids)}
         export_data = []
-        for e in entries:
-            item = {"id": e["entry_id"], "status": e["status"], "topic": e["topic"]}
-            if e["entry_id"] in fetched:
-                item.update(fetched[e["entry_id"]])
+        for row in entries:
+            item = {"id": row["entry_id"], "status": row["status"], "topic": row["topic"]}
+            if row["entry_id"] in fetched:
+                item.update(fetched[row["entry_id"]])
             export_data.append(item)
         from pathlib import Path
 

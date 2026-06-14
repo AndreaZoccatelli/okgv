@@ -10,6 +10,7 @@ from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.coordinate import Coordinate
 from textual.widgets import DataTable, Footer, Header, Static, Tree
 
 from okgv.core import (
@@ -159,7 +160,7 @@ class ReviewApp(App):
         status = self._get_status(entry_id)
         for i, e in enumerate(self._entries):
             if e["entry_id"] == entry_id:
-                table.update_cell_at((i, 2), _status_text(status))
+                table.update_cell_at(Coordinate(i, 2), _status_text(status))
                 break
 
     def _update_status(self) -> None:
@@ -683,7 +684,7 @@ class UndoApp(App):
         table = self.query_one("#ops", DataTable)
         for i in range(self._sentinel):
             marker = Text("✗ delete", style="bold red") if i < cursor_index else Text("keep", style="dim green")
-            table.update_cell_at((i, 0), marker)
+            table.update_cell_at(Coordinate(i, 0), marker)
         plan = self._plan(cursor_index)
         if plan["delete_count"] == 0 and plan["cutoff_iso"] is not None:
             self.sub_title = "newest operation — nothing newer to undo (move down to pick a checkpoint)"
@@ -723,7 +724,7 @@ class UndoApp(App):
         review_remove_entries(self._db_path, ids)
         self.exit({"deleted": ids, "count": len(ids), "kept": plan["keep_count"]})
 
-    def action_quit(self) -> None:
+    async def action_quit(self) -> None:
         self.exit(None)
 
 

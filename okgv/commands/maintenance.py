@@ -199,14 +199,14 @@ def reconcile(session: Session, dry_run: bool, batch_size: int):
     vector_db = session.vector_db
 
     # Find graph-only orphans: iterate graph, check existence in vector
-    graph_only = []
+    graph_only: list[str] = []
     log("Scanning graph DB for orphans...")
     for chunk in graph_db.iter_entry_ids(batch_size):
         existing_in_vector = vector_db.exists_batch(chunk)
         graph_only.extend(eid for eid in chunk if eid not in existing_in_vector)
 
     # Find vector-only orphans: iterate vector, check existence in graph
-    vector_only = []
+    vector_only: list[str] = []
     log("Scanning vector DB for orphans...")
     for chunk in vector_db.iter_entry_ids(batch_size):
         existing_in_graph = graph_db.exists_batch(chunk)

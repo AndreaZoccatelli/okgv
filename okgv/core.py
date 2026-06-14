@@ -1,14 +1,20 @@
 """Core logic: upsert, logging, schema validation, review."""
 
+from __future__ import annotations
+
 import inspect
 import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from okgv.errors import EntryError, RelocationError
 from okgv.helpers import EXIT_USAGE, err
 from okgv.protocols import EntrySchema, GraphDB, VectorDB, entry_id
+
+if TYPE_CHECKING:
+    from okgv.specs import Spec
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS log (
@@ -73,7 +79,7 @@ def validate_schema(schema: EntrySchema, meta: dict, graph_props: dict, vector_p
         )
 
 
-def build_entry(schema: EntrySchema, raw: dict):
+def build_entry(schema: EntrySchema, raw: dict) -> Any:
     """Build entry object from raw dict using schema's entry_class.
 
     Raises EntryError on missing fields (catchable in batch operations).
@@ -84,7 +90,7 @@ def build_entry(schema: EntrySchema, raw: dict):
         raise EntryError(f"Entry JSON missing required key: {e}") from e
 
 
-def enforce_entry_spec(spec, entry) -> None:
+def enforce_entry_spec(spec: Spec, entry: Any) -> None:
     """Run a topic's folded `entry`-namespace validators against the entry.
 
     This is the generic half of per-topic validation: each `entry` constraint
@@ -107,7 +113,7 @@ def enforce_entry_spec(spec, entry) -> None:
             validator.validate(value)
 
 
-def _hook_accepts_spec(hook) -> bool:
+def _hook_accepts_spec(hook: Callable) -> bool:
     """True when validate_for_topic can take the folded spec as a 3rd argument."""
     try:
         params = list(inspect.signature(hook).parameters.values())
@@ -122,7 +128,7 @@ def _hook_accepts_spec(hook) -> bool:
     return positional >= 3
 
 
-def validate_entry_topic(schema: EntrySchema, entry, topic: str, spec=None) -> None:
+def validate_entry_topic(schema: EntrySchema, entry: Any, topic: str, spec: Spec | None = None) -> None:
     """Validate an entry against its topic's effective spec, then the schema hook.
 
     When ``spec`` (the folded effective spec for ``topic``) is provided, the
@@ -160,7 +166,7 @@ def upsert_entry(
     embedder: Callable[[list[str]], list[list[float]]],
     overwrite: bool = False,
     vector: list[float] | None = None,
-    spec=None,
+    spec: Spec | None = None,
 ) -> str:
     """Upsert entry into both DBs.
 
@@ -210,10 +216,10 @@ def upsert_entries_batch(
     vector_db: VectorDB,
     topic: str,
     raws: list[dict],
-    entries: list | None = None,
+    entries: list[Any] | None = None,
     vectors: list[list[float]] | None = None,
     overwrite: bool = False,
-    spec=None,
+    spec: Spec | None = None,
 ) -> tuple[list[str], list[dict]]:
     """Batch upsert entries into both DBs.
 
@@ -327,7 +333,7 @@ def log_query(
     conn = _connect(db_path)
     try:
         clauses = []
-        params = []
+        params: list = []
         if topic:
             clauses.append("topic = ?")
             params.append(topic)

@@ -202,7 +202,7 @@ def get_depth(session: Session, root: str | None):
         else:
             err("no_topics", detail="No topics found in graph", exit_code=EXIT_NOT_FOUND)
     depth = session.graph_db.get_topic_depth(root=root)
-    result = {"depth": depth}
+    result: dict = {"depth": depth}
     if root:
         result["root"] = root
     output(result)
@@ -399,6 +399,7 @@ def topic_stats(session: Session, topic: str, fields: str | None):
     Aggregation is performed in the database, not in Python.
     """
     graph_db = session.graph_db
+    field_list: list[str] | None
     if fields:
         field_list = [f.strip() for f in fields.split(",")]
     else:
