@@ -1,6 +1,8 @@
 <p align="center">
-  <img src="resources/okgv-logo-light.svg#gh-light-mode-only" alt="okgv logo" width="720">
-  <img src="resources/okgv-logo-dark.svg#gh-dark-mode-only" alt="okgv logo" width="720">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/AndreaZoccatelli/okgv/main/resources/okgv-logo-dark.svg">
+    <img alt="okgv logo" src="https://raw.githubusercontent.com/AndreaZoccatelli/okgv/main/resources/okgv-logo-light.svg" width="720">
+  </picture>
 </p>
 
 # okgv - organizing knowledge: graphs and vectors
@@ -18,7 +20,7 @@ This makes the agent work one topic at a time. It checks which topics are underr
 
 Handing an agent full ownership of generation requires a degree of trust that isn't always warranted. For that reason, okgv also supports a review stage: entries can be inspected and approved or discarded, interactively through a TUI by a human, or via CLI commands by an agent prompted to act as the reviewer.
 
-![demo](examples/classification/media/classification-chat.gif)
+![demo](https://raw.githubusercontent.com/AndreaZoccatelli/okgv/main/examples/classification/media/classification-chat.gif)
 
 ## When to use okgv (and when not to)
 
