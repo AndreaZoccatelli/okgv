@@ -57,7 +57,7 @@ A threshold is cheaper and deterministic, and for filtering a fixed corpus it is
 ## Quickstart
 
 ```bash
-pip install -e ".[embeddings]"
+pip install "okgv[embeddings]"
 cd my-dataset-project
 okgv init                      # generic scaffold to fill in
 okgv init --template qa        # or start from a worked preset

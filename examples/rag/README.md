@@ -65,7 +65,7 @@ EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2
 
 ```bash
 cd rag
-pip install -e "..[embeddings]"
+pip install "okgv[embeddings]"
 okgv create-structure --file config/structure.json
 claude "read generation-guide.md and start generating"
 okgv export --output dataset.jsonl

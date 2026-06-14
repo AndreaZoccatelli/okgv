@@ -66,7 +66,7 @@ EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2
 
 ```bash
 cd classification
-pip install -e "..[embeddings]"
+pip install "okgv[embeddings]"
 okgv create-structure --file config/structure.json
 claude "read generation-guide.md and start generating"   # the agent loop
 okgv export --output dataset.jsonl                        # export the result

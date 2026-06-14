@@ -82,7 +82,7 @@ A child can narrow or add but never relax: `weather/current_conditions/metric` p
 
 ```bash
 cd function-calling
-pip install -e "..[embeddings]"
+pip install "okgv[embeddings]"
 okgv create-structure --file config/structure.json
 claude "read generation-guide.md and start generating"
 claude "read prompts/reviewer-prompt.md and review the pending queue"

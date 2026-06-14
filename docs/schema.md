@@ -23,8 +23,8 @@ The unifying thread is the **validator vocabulary**: the same `OneOf`/`InRange`/
 No external services required. Everything runs locally via SQLite and sqlite-vec.
 
 ```bash
-pip install -e ".[embeddings]"    # with sentence-transformers (default embedding backend)
-pip install -e .                  # core only, bring your own embedding backend
+pip install "okgv[embeddings]"    # with sentence-transformers (default embedding backend)
+pip install okgv                  # core only, bring your own embedding backend
 ```
 
 Optional extras:
@@ -34,7 +34,7 @@ Optional extras:
 | `embeddings` | `sentence-transformers`, local embedding via transformer models |
 | `tui` | `textual`, interactive terminal UI for review and browsing |
 
-Install multiple: `pip install -e ".[embeddings,tui]"`
+Install multiple: `pip install "okgv[embeddings,tui]"`
 
 ## Configuration
 
