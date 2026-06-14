@@ -115,15 +115,6 @@ okgv log --count
 # Undo recent submissions
 okgv undo 2025-01-15T12:00:00
 okgv undo -i                               # interactive: pick a checkpoint to roll back to
-
-# Find and fix cross-DB inconsistencies
-okgv reconcile --dry-run
-okgv reconcile
-okgv reconcile --batch-size 500
-
-# Nuclear option (hidden command)
-okgv purge --confirm "delete all" --dry-run
-okgv purge --confirm "delete all"
 ```
 
 ![Undo TUI](../resources/undo_tui.svg)
