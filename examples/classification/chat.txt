@@ -1,0 +1,203 @@
+❯ @generation-guide.md                                                          
+  ⎿  Read generation-guide.md (21 lines)
+
+⏺ Bash(uv run okgv cli-prompt)
+  ⎿  # okgv — Knowledge Base CLI
+
+     You are interacting with a self-organized knowledge base via the `okgv
+     … +117 lines (ctrl+o to expand)
+
+⏺ Got CLI. What you want do?
+
+✻ Crunched for 7s
+
+❯ check current structure and generate 2 entries per leaf/metadata              
+
+⏺ Bash(uv run okgv get-structure)
+  ⎿  Error: Exit code 3
+     {
+       "error": "no_topics",
+       "detail": "No topics found in graph"
+     }
+
+⏺ Bash(uv run okgv entry-prompt)
+  ⎿  warning: topics in structure.json but not in the DB: ['account', 'acco
+     unt/close_account', 'account/password_reset', 'billing', 'billing/char
+     ge_dispute', 'billing/invoice_request', 'billing/refund', 'technical',
+     … +19 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv report)
+  ⎿  Error: Exit code 3
+     warning: topics in structure.json but not in the DB: ['account', 
+     'account/close_account', 'account/password_reset', 'billing', 
+     'billing/charge_dispute', 'billing/invoice_request', 'billing/refund', 
+     'technical', 'technical/bug_report', 'technical/feature_request', 
+     'technical/login_issue']; run create-structure
+     {
+       "error": "no_topics",
+       "detail": "No topics found in graph"
+     }
+
+⏺ DB empty. structure.json got topics not yet in DB. Run create-structure first?
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ 8 leaf topics, 3 channels (chat/email/voice). 2 entries per leaf x metadata =
+  832 = 48 entries total. First create structure in DB.
+
+⏺ Bash(uv run okgv create-structure --file config/structure.json)
+  ⎿  warning: topics in structure.json but not in the DB: ['account', 'acco
+     unt/close_account', 'account/password_reset', 'billing', 'billing/char
+     ge_dispute', 'billing/invoice_request', 'billing/refund', 'technical',
+     … +84 lines (ctrl+o to expand)
+⏺ Tasks made. Start billing/refund.
+
+⏺ Bash(uv run okgv entry-prompt --topic billing/refund)
+  ⎿  # Entry Fields — billing/refund
+
+     Each entry under `billing/refund` has the following fields:
+     … +19 lines (ctrl+o to expand)
+
+⏺ Bash(cat <<'EOF' > /tmp/refund_entries.json
+      […)
+  ⎿  Warning: You are sending unauthenticated requests to the HF Hub. Pleas
+     e set a HF_TOKEN to enable higher rate limits and faster downloads.
+     Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weight
+     … +38 lines (ctrl+o to expand)
+
+⏺ Empty DB, no dupes. Submit.
+
+⏺ Bash(uv run okgv submit-batch --topic billing/refund --entries - <
+      /tmp/refund_entries.json)
+  ⎿  Loading embedding model and embedding 6 entries...
+     Warning: You are sending unauthenticated requests to the HF Hub. Pleas
+     e set a HF_TOKEN to enable higher rate limits and faster downloads.
+     … +27 lines (ctrl+o to expand)
+
+⏺ Done refund. Next: charge_dispute.
+
+⏺ Bash(cat <<'EOF' > /tmp/dispute_entries.json
+      […)
+  ⎿  [
+       {
+         "candidate_id": "c2dbf521-15d7-5f6e-b7df-cc35247daf40",
+     … +29 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic billing/charge_dispute --entries - <
+      /tmp/dispute_entries.json 2>/dev/null)
+  ⎿  [
+       {
+         "id": "c2dbf521-15d7-5f6e-b7df-cc35247daf40",
+     … +23 lines (ctrl+o to expand)
+
+⏺ Bash(cat <<'EOF' > /tmp/invoice_entries.json
+      […)
+  ⎿  [
+       {
+         "candidate_id": "e9370c38-0dac-5aa8-a03e-4a51b75f3830",
+     … +29 lines (ctrl+o to expand)
+⏺ Bash(uv run okgv submit-batch --topic billing/invoice_request --entries - <
+      /tmp/invoice_entries.json 2>/dev/null)
+  ⎿  [
+       {
+         "id": "e9370c38-0dac-5aa8-a03e-4a51b75f3830",
+     … +23 lines (ctrl+o to expand)
+
+⏺ Bash(cat <<'EOF' > /tmp/login_entries.json
+      […)
+  ⎿  [
+       {
+         "candidate_id": "f1237491-5eda-5fc2-a169-eb289a5a24d2",
+     … +29 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic technical/login_issue --entries - <
+      /tmp/login_entries.json 2>/dev/null)
+  ⎿  [
+       {
+         "id": "f1237491-5eda-5fc2-a169-eb289a5a24d2",
+     … +23 lines (ctrl+o to expand)
+
+⏺ Bash(cat <<'EOF' > /tmp/bug_entries.json
+      […)
+  ⎿  [
+       {
+         "candidate_id": "57e367f3-e36e-500f-ab67-0231910621eb",
+     … +29 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic technical/bug_report --entries - <
+      /tmp/bug_entries.json 2>/dev/null)
+  ⎿  [
+       {
+         "id": "57e367f3-e36e-500f-ab67-0231910621eb",
+     … +23 lines (ctrl+o to expand)
+
+⏺ Bash(cat <<'EOF' > /tmp/feature_entries.json
+      […)
+  ⎿  [
+       {
+         "candidate_id": "ab96d9f9-2afd-5093-a584-51b89ea41d3b",
+     … +29 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic technical/feature_request --entries - <
+      /tmp/feature_entries.json 2>/dev/null)
+  ⎿  [
+       {
+         "id": "ab96d9f9-2afd-5093-a584-51b89ea41d3b",
+     … +23 lines (ctrl+o to expand)
+
+⏺ Bash(cat <<'EOF' > /tmp/pwreset_entries.json
+      […)
+  ⎿  [
+       {
+         "candidate_id": "9b46ee4f-49b3-5aa6-9699-2b886c1bc571",
+     … +29 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic account/password_reset --entries - <
+      /tmp/pwreset_entries.json 2>/dev/null)
+  ⎿  [
+       {
+         "id": "9b46ee4f-49b3-5aa6-9699-2b886c1bc571",
+     … +23 lines (ctrl+o to expand)
+⏺ Bash(cat <<'EOF' > /tmp/close_entries.json
+      […)
+  ⎿  [
+       {
+         "candidate_id": "2c6cc067-ad94-5a0e-8015-449f275f67f1",
+     … +29 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv submit-batch --topic account/close_account --entries - <
+      /tmp/close_entries.json 2>/dev/null)
+  ⎿  [
+       {
+         "id": "2c6cc067-ad94-5a0e-8015-449f275f67f1",
+     … +23 lines (ctrl+o to expand)
+
+⏺ Bash(uv run okgv report 2>/dev/null)
+  ⎿  {
+       "total_entries": 48,
+       "leaf_topics": 8,
+     … +207 lines (ctrl+o to expand)
+
+⏺ Bash(rm -f /tmp/refund_entries.json /tmp/dispute_entries.json
+      /tmp/invoice_entries.json /tmp/login_entries.json /tmp/bug_entries.json
+      /tmp/feature_entries.json /tmp/…)
+  ⎿  Done
+
+⏺ Done. 48 entries, 8 leaves x 3 channels x 2 each, balanced, empty_cells: [].
+  No dupes found.
+
+✻ Sautéed for 4m 47s
+
+! uv run okgv tree --counts                                                     
+  ⎿  topics
+     ├── account (12)
+     │   ├── close_account (6)
+     │   └── password_reset (6)
+     ├── billing (18)
+     │   ├── charge_dispute (6)
+     │   ├── invoice_request (6)
+     │   └── refund (6)
+     └── technical (18)
+         ├── bug_report (6)
+         ├── feature_request (6)
+         └── login_issue (6)
