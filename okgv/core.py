@@ -467,6 +467,40 @@ def review_update(db_path: Path, entry_ids: list[str], status: str) -> int:
         conn.close()
 
 
+def review_update_topic(db_path: Path, entry_id: str, new_topic: str) -> None:
+    """Reparent a single entry's review row to follow a move (status preserved).
+
+    The review queue keys decisions by entry_id, but also stores topic for the
+    topic-filtered views; a move must keep that topic in sync or `review --topic`
+    and per-topic counts drift. No-op when the entry is not in the queue.
+    """
+    conn = _connect(db_path)
+    try:
+        conn.execute("UPDATE review SET topic = ? WHERE entry_id = ?", (new_topic, entry_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def review_update_topics(db_path: Path, old_prefix: str, new_prefix: str) -> None:
+    """Reparent review rows under a moved subtree (topic == old_prefix or under
+    old_prefix/...), mirroring the graph/vector prefix swap. Status preserved."""
+    conn = _connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT entry_id, topic FROM review WHERE topic = ? OR topic LIKE ?",
+            (old_prefix, old_prefix + "/%"),
+        ).fetchall()
+        for eid, old_topic in rows:
+            conn.execute(
+                "UPDATE review SET topic = ? WHERE entry_id = ?",
+                (new_prefix + old_topic[len(old_prefix) :], eid),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def review_get_pending_ids(db_path: Path) -> set[str]:
     """Return entry IDs currently pending review."""
     if not db_path.exists():

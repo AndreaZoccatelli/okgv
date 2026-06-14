@@ -595,6 +595,11 @@ def move_topic(session: Session, source: str, destination: str, dry_run: bool):
             session.vector_db.update_topics(source, new_path)
     except ValueError as e:
         err("name_conflict", detail=str(e), exit_code=EXIT_USAGE)
+    # Carry the review queue's topic along with the subtree (separate connection,
+    # after the data move commits), so topic-filtered review views stay in sync.
+    from okgv.core import review_update_topics
+
+    review_update_topics(session.db_path, source, new_path)
     output({"moved": source, "new_path": new_path})
 
 
@@ -632,6 +637,11 @@ def move_entry(session: Session, entry_id: str, destination: str, dry_run: bool)
     with session.transaction():
         session.graph_db.move_entry(entry_id, destination)
         session.vector_db.update_entry_topic(entry_id, destination)
+    # Keep the entry's review-queue row on the same topic (separate connection,
+    # after commit); status is preserved.
+    from okgv.core import review_update_topic
+
+    review_update_topic(session.db_path, entry_id, destination)
     output({"id": entry_id, "moved_to": destination})
 
 

@@ -213,6 +213,50 @@ class TestMoveRevalidation:
         assert result.exit_code == 0  # new path animals/dog/cat keeps root 'animals'
 
 
+class TestMoveUpdatesReview:
+    """A move must carry the entry's review-queue row to the new topic, so
+    `review --topic` and per-topic counts stay consistent; status is preserved."""
+
+    def _session(self, tmp_path):
+        session = _kind_session(tmp_path)
+        for t in ("animals", "animals/cat", "animals/dog", "zoo"):
+            parent, _, leaf = t.rpartition("/")
+            if parent:
+                session.graph_db.create_subtopic(parent, leaf)
+            else:
+                session.graph_db.create_topic(t)
+        return session
+
+    def test_move_entry_carries_review_row(self, runner, tmp_path):
+        from okgv.core import review_add, review_list
+
+        session = self._session(tmp_path)
+        _seed(session, "e1", "animals/cat", kind="animals")
+        review_add(session.db_path, "animals/cat", ["e1"])
+
+        result = runner.invoke(cli, ["move-entry", "--id", "e1", "--destination", "animals/dog"], obj=session)
+        assert result.exit_code == 0
+
+        row = {r["entry_id"]: r for r in review_list(session.db_path, status="pending")}["e1"]
+        assert row["topic"] == "animals/dog"  # followed the move
+        assert row["status"] == "pending"  # status preserved
+
+    def test_move_topic_reparents_review_rows(self, runner, tmp_path):
+        from okgv.core import review_add, review_list
+
+        session = self._session(tmp_path)
+        _seed(session, "e1", "animals/cat", kind="animals")
+        review_add(session.db_path, "animals/cat", ["e1"])
+
+        result = runner.invoke(
+            cli, ["move-topic", "--source", "animals/cat", "--destination", "animals/dog"], obj=session
+        )
+        assert result.exit_code == 0
+
+        row = {r["entry_id"]: r for r in review_list(session.db_path, status="pending")}["e1"]
+        assert row["topic"] == "animals/dog/cat"  # prefix swap applied
+
+
 # ── M10d: revalidate command + create-structure warning ───────────────────
 
 
