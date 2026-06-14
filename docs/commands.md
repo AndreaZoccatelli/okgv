@@ -126,6 +126,19 @@ okgv purge --confirm "delete all" --dry-run
 okgv purge --confirm "delete all"
 ```
 
+![Undo TUI](../resources/undo_tui.svg)
+
+```
+# Find and fix cross-DB inconsistencies
+okgv reconcile --dry-run
+okgv reconcile
+okgv reconcile --batch-size 500
+
+# Nuclear option (hidden command)
+okgv purge --confirm "delete all" --dry-run
+okgv purge --confirm "delete all"
+```
+
 ## Agent Workflow
 
 ```

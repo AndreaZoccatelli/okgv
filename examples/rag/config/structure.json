@@ -1,0 +1,14 @@
+{
+  "networking": {
+    "_meta": { "similarity_scope": "subtree" },
+    "vpn": {
+      "setup": {},
+      "troubleshooting": {}
+    },
+    "wifi": {
+      "setup": {},
+      "troubleshooting": {}
+    },
+    "general": {}
+  }
+}

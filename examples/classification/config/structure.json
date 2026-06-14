@@ -1,0 +1,16 @@
+{
+  "billing": {
+    "refund": {},
+    "charge_dispute": {},
+    "invoice_request": {}
+  },
+  "technical": {
+    "login_issue": {},
+    "bug_report": {},
+    "feature_request": {}
+  },
+  "account": {
+    "password_reset": {},
+    "close_account": {}
+  }
+}
